@@ -841,6 +841,39 @@ function buildBear() {
   return { g, body, head, legs, eyes, bear: true };
 }
 const BEAST = { bull: buildBull(), bear: buildBear() };
+function drawTitle() {
+  if (!INTRO.on) return; const a = now - INTRO.t0, al = Math.min(1, Math.max(0, (a - .3) / .7)) * (1 - Math.min(1, Math.max(0, (a - INTRO.hold) / (INTRO.out * .6))));
+  if (al <= .01) return; const LW = W, LH = Hh, fs = Math.min(LW * .11, 92), y = LH * (LW < 600 ? .3 : .34);
+  hg.save(); hg.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const band = hg.createLinearGradient(0, y - fs * 1.4, 0, y + fs * 1.6); band.addColorStop(0, 'rgba(3,5,6,0)'); band.addColorStop(.5, `rgba(3,5,6,${.55 * al})`); band.addColorStop(1, 'rgba(3,5,6,0)');
+  hg.fillStyle = band; hg.fillRect(0, y - fs * 1.4, LW, fs * 3); hg.globalAlpha = al; hg.textAlign = 'center'; hg.textBaseline = 'middle';
+  const gr = hg.createLinearGradient(0, y - fs / 2, 0, y + fs / 2); gr.addColorStop(0, '#fff3c4'); gr.addColorStop(.5, '#f0b93c'); gr.addColorStop(1, '#a8701a');
+  hg.font = `800 ${fs}px ${FD}`; hg.shadowColor = 'rgba(0,0,0,.6)'; hg.shadowBlur = 24; hg.fillStyle = gr; hg.fillText('BATTLE OF BTC', LW / 2, y);
+  hg.shadowBlur = 0; hg.font = `600 ${Math.max(11, fs * .17)}px ${FM}`; hg.fillStyle = 'rgba(255,236,190,.85)'; hg.fillText('STIER  ·  ₿  ·  BEER    —    LIVE', LW / 2, y + fs * .72);
+  if (a < INTRO.hold) { hg.font = `500 ${Math.max(10, fs * .13)}px ${FM}`; hg.fillStyle = 'rgba(233,241,238,.45)'; hg.fillText('tik om te beginnen', LW / 2, LH * .86); }
+  hg.restore();
+}
+// the title: BATTLE OF BTC. The bull and the bear face each other over a heap of gold ₿ coins, the title comes up, then
+// the camera pulls back onto the battlefield and the one the market favours stays: the other one shrinks away. A tap skips it
+const INTRO = { t0: null, hold: 3.6, out: 2.2, coins: null, on: false, k: 0 };
+const coinTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d');
+  const g = x.createRadialGradient(100, 90, 10, 128, 128, 128); g.addColorStop(0, '#fff1b8'); g.addColorStop(.6, '#e3b04a'); g.addColorStop(1, '#9c6a14');
+  x.fillStyle = g; x.fillRect(0, 0, 256, 256); x.strokeStyle = 'rgba(120,80,10,.7)'; x.lineWidth = 5; x.beginPath(); x.arc(128, 128, 112, 0, 7); x.stroke();
+  x.lineWidth = 2; x.beginPath(); x.arc(128, 128, 92, 0, 7); x.stroke();
+  for (let i = 0; i < 48; i++) { const a = i / 48 * Math.PI * 2; x.fillStyle = 'rgba(120,80,10,.65)'; x.fillRect(128 + Math.cos(a) * 101 - 2, 128 + Math.sin(a) * 101 - 2, 4, 4); }      // the circuit ring
+  x.fillStyle = '#8a5a0c'; x.font = '700 124px Georgia,serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('₿', 132, 138);
+  x.fillStyle = '#ffe9a6'; x.fillText('₿', 128, 134);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t; })();
+function buildCoins(x0) {
+  const g = new THREE.Group(), face = new THREE.MeshPhysicalMaterial({ map: coinTex, metalness: 1, roughness: .25, clearcoat: .6, envMapIntensity: .7 });
+  const rimM = new THREE.MeshPhysicalMaterial({ color: 0xd9a441, metalness: 1, roughness: .3, envMapIntensity: .7 }), coin = r => new THREE.Mesh(new THREE.CylinderGeometry(r, r, r * .17, 40), [rimM, face, face]);
+  for (const [sx, sz, n] of [[-.42, .18, 4], [.4, .25, 3], [.1, -.32, 5], [-.15, .45, 2]]) for (let i = 0; i < n; i++) { const c = coin(.17); c.position.set(sx + (hash(sx + i) - .5) * .03, .015 + i * .029, sz); c.rotation.y = i; g.add(c); }
+  for (let i = 0; i < 7; i++) { const c = coin(.17), a = i * 2.4, r = .35 + hash(i * 3.1) * .45; c.position.set(Math.cos(a) * r, .03, Math.sin(a) * r * .8); c.rotation.set((hash(i) - .5) * .5, a, (hash(i + 1) - .5) * .5); g.add(c); }
+  const big = coin(.34); big.rotation.x = Math.PI / 2; big.position.set(0, .35, .05); g.add(big);       // the big coin, standing, facing us
+  g.traverse(n => { if (n.isMesh) n.castShadow = true; });
+  g.position.set(x0, SYx(x0), 0); g.rotation.z = SLOPE; scene.add(g); return g;
+}
+addEventListener('pointerdown', () => { if (INTRO.on && now - INTRO.t0 < INTRO.hold) INTRO.t0 = now - INTRO.hold; });      // a tap: straight to the battlefield
 BEAST.bear.g.visible = false;
 const coreLight = new THREE.PointLight(0x35ffb4, .9, 2.4, 2); coreLight.position.set(0, .7, -.5); hero.add(coreLight);   // an aura behind him in his mood colour
 // sweat, when he is worn down or liquidations are close
@@ -1282,7 +1315,15 @@ function render3d(dt, dtReal = dt) {
   // at a target the camera swings round him and back
   FX.orbit = Math.max(0, FX.orbit - dtReal * .55); const yaw = CYAW + (FX.orbit > 0 ? Math.sin(Math.PI * (1 - FX.orbit)) * .6 : 0);
   camera.position.set(cx - sa * o1 + Math.sin(yaw) * dist + (Math.sin(t * 91) + Math.sin(t * 57)) * sh * .5, camY + ca * o1 + (Math.cos(t * 83) + Math.sin(t * 41)) * sh * .5, Math.cos(yaw) * dist);
-  const ahead = span * .06; camera.lookAt(cx - sa * o2 + ahead, camY + ca * o2 + ahead / TREAD * RISE, 0);
+  const ahead = span * .06; tmpV2.set(cx - sa * o2 + ahead, camY + ca * o2 + ahead / TREAD * RISE, 0);
+  // the title: close in front of the two of them, a slow push in; then over to the battlefield
+  if (INTRO.t0 == null && H.p != null) { INTRO.t0 = t; INTRO.on = true; INTRO.x = WX(H.p); INTRO.coins = buildCoins(INTRO.x); }
+  if (INTRO.on) { const a = t - INTRO.t0, k = EASE.io(Math.min(1, Math.max(0, (a - INTRO.hold) / INTRO.out))), y0 = SYx(INTRO.x), push = Math.min(1, a / INTRO.hold) * .6, iz = Math.max(5.6, 4.4 / aspect);      // far enough for both of them, on a phone too
+    INTRO.k = k; camera.position.lerp(tmpV.set(INTRO.x - .2, y0 + 1.05, iz - push), 1 - k); tmpV2.lerp(tmpV.set(INTRO.x, y0 + (aspect < 1 ? .6 : .85), 0), 1 - k);
+    for (const m of Object.values(propMeshes)) m.visible = k > .5;      // nothing in front of them
+    camera.up.lerp(tmpV.set(0, 1, 0), 1 - k).normalize(); INTRO.coins.scale.setScalar(Math.max(1e-4, 1 - EASE.io(Math.min(1, Math.max(0, (a - INTRO.hold - INTRO.out * .5) / (INTRO.out * .5))))));
+    if (a > INTRO.hold + INTRO.out) { INTRO.on = false; scene.remove(INTRO.coins); dispose(INTRO.coins); INTRO.coins = null; for (const B of Object.values(BEAST)) { B.g.position.x = 0; B.g.rotation.y = 0; } } }
+  camera.lookAt(tmpV2);
   // the shadow box, the sky, the skyline and the dust follow
   key.target.position.set(WX(H.p), H.y, 0); key.position.copy(key.target.position).add(KEYOFF);
   sky.position.copy(camera.position); placeTowers(cx - 330);
@@ -1319,7 +1360,7 @@ function render3d(dt, dtReal = dt) {
     const L = o.L, f = EASE.out(o.fade), age = L.fx ? t - L.fx.t0 : 9;
     o.group.position.set(WX(L.p), SY(L.p), 0); o.group.scale.y = .02 + .98 * f;
     const hot = L.lastFx != null && t - L.lastFx < .5 ? 1 - (t - L.lastFx) / .5 : 0, gone = L.state !== 'live';
-    o.glow.material.opacity = (gone ? .02 : .06 + L.rel * .06 + hot * .1) * f; o.pole.visible = !gone || age < 1;
+    o.glow.material.opacity = (gone ? .02 : .06 + L.rel * .06 + hot * .1) * f; o.pole.visible = (!gone || age < 1) && !(INTRO.on && INTRO.k < .55 && Math.abs(o.group.position.x - INTRO.x) < 2.8);
     if (L.crack) L.crack = Math.max(0, L.crack - dt * .004);
     const occ = !gone && blocks(o.group.position.x, o.group.position.y, o.h, THICK(L));          // a banner in front of him goes see-through
     o.see = (o.see ?? 1) + ((occ ? .16 : 1) - (o.see ?? 1)) * Math.min(1, dt * 6);
@@ -1343,6 +1384,7 @@ function render3d(dt, dtReal = dt) {
         else if (u.st === 'flag' && t - u.t0 > 1.2) { u.st = 'out'; u.t0 = t; }
         else if (u.st === 'out') { u.yaw += wrapA(-Math.PI / 2 * 0 + Math.PI / 2 - u.yaw) * Math.min(1, dt * 3); u.z -= dt * 1.4; u.x += Math.cos(u.yaw) * dt * .2; u.y = SYx(u.x) + gOff(u.x, u.z); if (u.z < -(TRACK + 7)) return false; }
         const k = o.type; if (cnt[k] >= T.cap) return true;
+        if (INTRO.on && INTRO.k < .55 && Math.abs(u.x - INTRO.x) < 2.8) return true;      // the title: the stage is theirs
         const sc = (u.st === 'wreck' ? Math.max(1e-4, Math.min(1, (9 - (t - u.t0)) / .8)) : 1) * (u.st === 'out' ? Math.min(1, Math.max(1e-4, (TRACK + 7 + u.z) / 1.5)) : 1) * (o.gone && u.st !== 'wreck' ? Math.max(1e-4, f) : 1);
         const jolt = Math.max(0, 1 - (t - u.hitT) / .35), pitch = u.st === 'wreck' || u.st === 'fly' ? 0 : SLOPE * Math.cos(u.yaw);
         VR.position.set(u.x + Math.sin(t * 61 + u.seed * 9) * shake, u.y + Math.abs(Math.sin(t * 47 + u.seed * 5)) * shake, u.z); VR.rotation.set(u.rx || 0, u.yaw, (u.rz || 0) + pitch + jolt * .12 * Math.sin(t * 40)); VR.scale.setScalar(sc);
@@ -1379,7 +1421,7 @@ function render3d(dt, dtReal = dt) {
   for (const [p, sp] of labels) {
     const ls = [...objs.values()].filter(o => o.L.p === p), dead = ls.every(o => o.L.state !== 'live'), f = Math.max(0, ...ls.map(o => o.fade));
     const near = Math.max(0, 1 - Math.abs(p - H.p) / (camS * .55));
-    const see = Math.min(1, ...ls.map(o => o.see ?? 1)) * (aspect < 1 && Math.abs(p - H.p) > camS * .3 ? 0 : 1);      // on a phone only the banners close to him
+    const see = Math.min(1, ...ls.map(o => o.see ?? 1)) * (aspect < 1 && Math.abs(p - H.p) > camS * .3 ? 0 : 1) * (INTRO.on ? Math.max(0, INTRO.k * 2 - 1) : 1);      // on a phone only the banners close to him
     cand.push({ p, sp, f, a: (.65 + .35 * near) * (1 - wide) * (dead ? .35 : 1) * f * see, w: Math.max(...ls.map(o => o.L.rel)) * (dead ? .3 : 1) + near });
   }
   cand.sort((a, b) => b.w - a.w);
@@ -1409,7 +1451,7 @@ function render3d(dt, dtReal = dt) {
   // the price pin: at the live price, on its step
   { const tx = WX(P); if (coinX == null) coinX = tx; coinX += (tx - coinX) * Math.min(1, dt * 9);
     coinY += (SYx(coinX) - coinY) * Math.min(1, dt * 14);
-    coin.position.set(coinX, coinY, CZ); coin.userData.gem.rotation.y = t * 1.6; coin.userData.gem.position.y = 1.62 + Math.sin(t * 2.5) * .04; }
+    coin.position.set(coinX, coinY, CZ); coin.visible = !INTRO.on || INTRO.k > .6; coin.userData.gem.rotation.y = t * 1.6; coin.userData.gem.position.y = 1.62 + Math.sin(t * 2.5) * .04; }
   // hero: the bull or the bear, walking, guarding, attacking, rearing at a target, staggering off a wall that holds
   const lock = t - H.lockAt < 1.2 ? 1 - (t - H.lockAt) / 1.2 : 0;
   const run = Math.min(1, H.speed / 430), walk = Math.min(1, H.speed / 140), gd = H.guard, ph = H.phase;
@@ -1417,17 +1459,23 @@ function render3d(dt, dtReal = dt) {
   const jab = u < .03 ? 0 : u < JAB ? EASE.out((u - .03) / (JAB - .03)) : u < .28 ? 1 - EASE.io((u - JAB) / (.28 - JAB)) : 0;
   const cross = u < .25 ? 0 : u < CROSS ? EASE.out((u - .25) / (CROSS - .25)) : u < .47 ? 1 : u < .68 ? 1 - EASE.io((u - .47) / .21) : 0;
   const F = H.face, kn = H.mode === 'knock' ? Math.sin(Math.PI * Math.min(1, (t - H.t0) / KNOCK)) : 0;
-  const pu = H.mode === 'pose' ? t - H.t0 : -1, ps = pu < 0 ? 0 : EASE.out(Math.min(1, pu / .35)) * Math.min(1, (POSE - pu) / .3);
+  const pu = H.mode === 'pose' ? t - H.t0 : -1, ps = pu < 0 ? 0 : EASE.out(Math.min(1, pu / .35)) * Math.min(1, (POSE - pu) / .3), ps0 = ps, pu0 = pu;
   const hitK = Math.max(0, 1 - (t - (H.hitAt ?? -9)) / .2), duck = Math.sin(Math.PI * Math.min(1, Math.max(0, (t - (H.dodgeAt ?? -9)) / .4)));
   const swat = Math.sin(Math.PI * Math.min(1, Math.max(0, (t - (H.parryAt ?? -9)) / .28)));
   const bob = Math.abs(Math.sin(ph * 2)) * .03 * walk * (1 + run) + (1 - walk) * Math.sin(t * 2.2) * .006;
   const lunge = F * (.16 * jab + .34 * cross) * (H.form === 'bear' ? 1.7 : 1);      // the bear steps in further: his reach is his arms
   hero.position.set(WX(H.p) + lunge + Math.sin(t * 70) * .015 * hitK, H.y + bob - .1 * duck, 0); hero.rotation.set(0, H.yaw, SLOPE * Math.cos(H.yaw));
+  if (INTRO.on) { hero.position.set(INTRO.x, SYx(INTRO.x), 0); hero.rotation.set(0, lerp(0, H.yaw, INTRO.k), SLOPE * Math.cos(lerp(0, H.yaw, INTRO.k))); }
   // the change between bull and bear: the old one shrinks away, the new one grows out of a flash
   const mk = Math.min(1, (t - (H.morphAt ?? -9)) / .5);
-  for (const k of ['bull', 'bear']) { const B = BEAST[k], on = k === H.form, sc = on ? EASE.out(Math.max(0, (mk - .35) / .65)) : 1 - EASE.out(Math.min(1, mk / .35));
-    B.g.visible = sc > .01; B.g.scale.setScalar(Math.max(1e-4, sc)); B.g.rotation.y = (1 - sc) * 3 * (on ? -1 : 1); if (!B.g.visible) continue;
-    const bear = B.bear, Lg = B.legs;
+  for (const k of ['bull', 'bear']) { const B = BEAST[k], on = k === H.form; let sc = on ? EASE.out(Math.max(0, (mk - .35) / .65)) : 1 - EASE.out(Math.min(1, mk / .35));
+    B.g.visible = sc > .01; B.g.scale.setScalar(Math.max(1e-4, sc)); B.g.rotation.y = (1 - sc) * 3 * (on ? -1 : 1);
+    const iK = INTRO.on ? 1 - INTRO.k : 0;      // the title: both of them, face to face; the one the market favours walks to the middle, the other shrinks
+    if (INTRO.on) { sc = on ? 1 : Math.max(1e-4, 1 - INTRO.k * 1.6); B.g.visible = sc > .01; B.g.scale.setScalar(sc);
+      B.g.position.x = (B.bear ? .95 : -.95) * (on ? iK : 1); B.g.rotation.y = B.bear ? Math.PI * (on ? iK : 1) : 0; }
+    if (!B.g.visible) continue;
+    const bear = B.bear, Lg = B.legs, gd = INTRO.on ? (bear ? .3 : 1) * iK + H.guard * (1 - iK) : H.guard;
+    const ps = INTRO.on && bear ? Math.max(iK, 0) * (.85 + .15 * Math.sin(t * 3)) : ps0, pu = INTRO.on ? t - INTRO.t0 : pu0;
     // the gait: the bull trots (diagonal pairs) and gallops (front pair, then back pair); the bear walks upright, his arms swinging against his legs
     for (const [key, off0, off1] of [['fl', 0, 0], ['br', 0, Math.PI], ['fr', Math.PI, .4], ['bl', Math.PI, Math.PI + .4]]) {
       const off = bear ? off0 : lerp(off0, off1, run), sw = Math.sin(ph + off), arm = bear && (key === 'fl' || key === 'fr');
@@ -1577,7 +1625,7 @@ function drawHud() {
         hg.fillStyle = 'rgba(5,8,10,.75)'; hg.beginPath(); hg.roundRect(hx - bw / 2 - 2, hy - 3, bw + 4, 8, 4); hg.fill();
         hg.fillStyle = lerpHex(CSS.dn, CSS.up, Math.min(1, Math.max(0, (H.hp - .2) / .7))); hg.beginPath(); hg.roundRect(hx - bw / 2, hy - 1, bw * H.hp, 4, 2); hg.fill(); hg.globalAlpha = 1; } } }
   // the coin's price over the coin
-  { tmpV.set(coin.position.x, coin.position.y + 1.85, CZ).project(camera);
+  if (coin.visible) { tmpV.set(coin.position.x, coin.position.y + 1.85, CZ).project(camera);
     const cxp = (tmpV.x * .5 + .5) * W / k, cyp = (-tmpV.y * .5 + .5) * Hh / k;
     if (cxp > gx && cxp < LW - gx && cyp > ry + 30 && cyp < foot) {
       hg.font = `700 10px ${FM}`; const w2 = hg.measureText('₿ ' + fmtP(P)).width + 14;
@@ -1630,6 +1678,7 @@ function drawHud() {
   txt((mode === 'live' ? `${nBooks} orderboeken · ververst ${ago} s geleden` : `uurdata van GlassSphere · ${nBooks} orderboeken`) + druk, LW - gx, sy, `500 9px ${FM}`, 'rgba(233,241,238,.45)', 'right');
   txt(narrow ? `${stats.walls} muren · ${stats.stops} stops · ${fmtUsd(stats.real)} echte liq.` : `sinds openen: ${stats.walls} muren · ${stats.stops} stops · ${fmtUsd(stats.liq)} liq. geschat · ${fmtUsd(stats.real)} echt · ${stats.targets} doelen`,
     LW - gx, sy + 14, `500 9px ${FM}`, 'rgba(233,241,238,.3)', 'right');
+  drawTitle();
 }
 
 let last = 0, acc = 0;
@@ -1641,7 +1690,7 @@ function frame(ts) {
   // slow motion for half a second at the big moments
   FX.slow = Math.max(0, FX.slow - dtReal * 2); const dt = dtReal * (1 - .72 * Math.min(1, FX.slow * 1.4)); now += dt;
   if (!D) return;
-  think(dt); physics(dt); render3d(dt, dtReal); drawHud();
+  if (!INTRO.on) think(dt); physics(dt); render3d(dt, dtReal); drawHud();
   // too slow for its frame rate: a step down in resolution, at the end without bloom
   Q.n++; Q.t += dt;
   if (Q.t >= 3) { const fps = Q.n / Q.t; Q.n = Q.t = 0;

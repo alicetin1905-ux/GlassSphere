@@ -359,16 +359,16 @@ const lerpHex = (a, b, k) => { const f = (x, y) => Math.round(x + (y - x) * k), 
   return '#' + [f(P >> 16, Q >> 16), f(P >> 8 & 255, Q >> 8 & 255), f(P & 255, Q & 255)].map(v => v.toString(16).padStart(2, '0')).join(''); };
 const EASE = { out: u => 1 - Math.pow(1 - u, 3), io: u => u < .5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2 };
 const lerp = THREE.MathUtils.lerp;
-// the price is a staircase: one step per STEP dollars ($25 for BTC), up to the right. A step's tread is TREAD long and
-// RISE high; the stair is SW wide, twice his height. U: world units per dollar, ORIGIN: the price at x = 0
-const TREAD = .4, RISE = .12, SW = 2.7, SLOPE = Math.atan2(RISE, TREAD);
+// the price is a battlefield on a slope: up to the right is more expensive. One cell of TREAD units per STEP dollars
+// ($25 for BTC) climbs RISE; the track where the fight happens is SW wide. U: world units per dollar, ORIGIN: the price at x = 0
+const TREAD = .4, RISE = .07, SW = 2.7, SLOPE = Math.atan2(RISE, TREAD);
 let STEP = 25, U = TREAD / 25, ORIGIN = 0;
 const WX = p => (p - ORIGIN) * U;
-const SYx = x => Math.floor(x / TREAD + 1e-6) * RISE;          // top of the step under world x
+const SYx = x => x * RISE / TREAD;                              // the ground of the track under world x
 const SY = p => SYx(WX(p));
 const K = () => U * 100;                       // world scale against the old $100-per-unit floor (speeds and distances below)
-const SQ_PY = .5, PUNCH_Y = 1.0, MAG_Y = 2.55, HS = 1.4;
-const REACH = () => 62 / K();                  // in dollars: 0.62 units ahead of him, where a jab lands
+const SQ_PY = .4, PUNCH_Y = 1.0, MAG_Y = 2.55;
+const REACH = () => 135 / K();                 // in dollars: 1.35 units ahead of him, horns or claws at the front rank
 
 const glc = $('gl'), hud = $('hud'), hg = hud.getContext('2d');
 const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true, powerPreference: 'high-performance' });
@@ -437,38 +437,113 @@ const dustMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false,
       vec4 mv = modelViewMatrix * vec4(p, 1.); vA = (.25 + .75 * seed) * (.6 + .4 * sin(uT * (1. + seed * 2.) + seed * 40.)); gl_PointSize = (.02 + seed * .03) * uPx / -mv.z; gl_Position = projectionMatrix * mv; }`,
   fragmentShader: `varying float vA; void main(){ float r = length(gl_PointCoord - .5); gl_FragColor = vec4(vec3(.6, .85, 1.) * smoothstep(.5, 0., r) * vA * .35, 1.); }` });
 const dust = new THREE.Points(dustGeo, dustMat); dust.frustumCulled = false; scene.add(dust);
-// the stairs: a pool of steps that follows the camera, each with a lit nosing (brighter every 5 and 10 steps)
-const NS = 700, stepGeo = new THREE.BoxGeometry(TREAD, 8, SW), stepMat = new THREE.MeshStandardMaterial({ color: 0x0a1012, metalness: .2, roughness: .85, envMapIntensity: .12 });
-const steps = new THREE.InstancedMesh(stepGeo, stepMat, NS); steps.frustumCulled = false; steps.receiveShadow = true; scene.add(steps);
-const noseMat = new THREE.MeshBasicMaterial({ toneMapped: false });
-const noses = new THREE.InstancedMesh(new THREE.BoxGeometry(.035, .02, SW + .002), noseMat, NS); noses.frustumCulled = false;
-noses.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(NS * 3), 3); scene.add(noses);
-const edgeMat = new THREE.MeshBasicMaterial({ toneMapped: false, color: 0x1d3a3a });
-const edges = new THREE.InstancedMesh(new THREE.BoxGeometry(TREAD, .012, .012), edgeMat, NS); edges.frustumCulled = false; scene.add(edges);
-let stepsFrom = null;
-const treadPool = Array.from({ length: 14 }, () => { const m = new THREE.Mesh(new THREE.PlaneGeometry(TREAD * .96, SW * .96), new THREE.MeshBasicMaterial({ color: 0x8fd6ff, opacity: 0, ...addBlend }));
-  m.rotation.x = -Math.PI / 2; m.visible = false; scene.add(m); return m; });
+// the battlefield: a long slope of trampled mud that climbs with the price, the track where the fight happens across
+// it, the field beside it torn by craters. It follows the camera in 4-unit jumps; its relief comes from the world
+// position, so a crater is always in the same place
+const GW = 124, GD = 46, GNX = 186, GNZ = 72, GZ0 = -10, TRACK = SW / 2 + .25;
+const groundGeo = new THREE.PlaneGeometry(GW, GD, GNX, GNZ); groundGeo.rotateX(-Math.PI / 2);
+const gBase = groundGeo.attributes.position.array.slice();
+groundGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(gBase.length), 3));
+const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .97, metalness: 0, envMapIntensity: .015 });
+const ground = new THREE.Mesh(groundGeo, groundMat); ground.receiveShadow = true; ground.frustumCulled = false; scene.add(ground);
+let groundAt = null;
+function crater(x, z) {                        // at most one crater per 3 x 3 cell: a bowl with a rim
+  let d = 0; const cx = Math.floor(x / 3), cz = Math.floor(z / 3);
+  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const a = cx + i, b = cz + j; if (hash(a * 17.3 + b * 91.7) < .55) continue;
+    const r = .5 + hash(a * 3.1 + b * 5.7) * 1.1, px = (a + .2 + hash(a + b * 13.1) * .6) * 3, pz = (b + .2 + hash(a * 7.7 + b) * .6) * 3, q = Math.hypot(x - px, z - pz) / r;
+    if (q < 1.3) d += q < 1 ? -(1 - q * q) * r * .3 : (1.3 - q) * (q - 1) * r * .7; }
+  return d;
+}
+const gOff = (x, z) => { const k = Math.min(1, Math.max(0, (Math.abs(z) - TRACK) / 1.4)); return k ? k * (Math.sin(x * .31 + z * .23) * .22 + Math.sin(x * .83 - z * .57) * .08 + crater(x, z)) : 0; };
+function placeGround(cx) {
+  const at = Math.round(cx / 4) * 4; if (at === groundAt) return; groundAt = at;
+  const pa = groundGeo.attributes.position.array, ca = groundGeo.attributes.color.array;
+  for (let i = 0; i < pa.length; i += 3) {
+    const x = gBase[i] + at, z = gBase[i + 2] + GZ0, off = gOff(x, z), az = Math.abs(z), n = hash(Math.floor(x * 3) * 7.1 + Math.floor(z * 3) * 3.3) * .3;
+    pa[i] = x; pa[i + 1] = SYx(x) + off - .012; pa[i + 2] = z;
+    let k = 1, c = [.03, .025, .019];                                     // mud
+    if (az < TRACK) { const rut = Math.min(Math.abs(az - .55), Math.abs(az - .9)) < .08 ? .62 : 1; k = rut * (1 + n); c = [.038, .031, .024]; }     // the track, two pairs of ruts
+    else { k = (off < -.06 ? .5 : 1) * (1 + n * 1.4); if (off > .06) k *= 1.25; }                                                             // scorched crater floors, lit rims
+    ca[i] = c[0] * k; ca[i + 1] = c[1] * k; ca[i + 2] = c[2] * k;
+  }
+  groundGeo.attributes.position.needsUpdate = groundGeo.attributes.color.needsUpdate = true; groundGeo.computeVertexNormals();
+  placeProps(at);
+}
+// price lines across the track: every $25 faint, every $100 and $500 brighter
+const NMK = 420, markMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(.03, .01, TRACK * 2), new THREE.MeshBasicMaterial({ toneMapped: false }), NMK);
+markMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(NMK * 3), 3); markMesh.frustumCulled = false; scene.add(markMesh);
+let marksFrom = null;
+function placeMarks(x0) {
+  const i0 = Math.floor(x0 / TREAD); if (i0 === marksFrom) return; marksFrom = i0;
+  const nc = new THREE.Color();
+  for (let k = 0; k < NMK; k++) { const i = i0 + k, x = i * TREAD, p = ORIGIN + i * STEP;
+    dummy.position.set(x, SYx(x) + .004, 0); dummy.rotation.set(0, 0, SLOPE); dummy.scale.set(1, 1, 1); dummy.updateMatrix(); markMesh.setMatrixAt(k, dummy.matrix);
+    const m = Math.round(p / STEP) % 20 === 0 ? 1 : Math.round(p / STEP) % 4 === 0 ? .45 : .1;      // $500 and $100 for BTC
+    markMesh.setColorAt(k, nc.setRGB(.25 * m + .02, .72 * m + .04, .78 * m + .05)); }
+  markMesh.instanceMatrix.needsUpdate = markMesh.instanceColor.needsUpdate = true;
+}
+// the field: tank traps, sandbags, coils of wire, burnt-out wrecks that smoulder; the same ones each time a stretch comes back
+const propMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: .5, roughness: .7, vertexColors: true, envMapIntensity: .3 });
+function merged(parts) {                       // boxes and cylinders, each with its own shade, as one geometry
+  const geos = parts.map(([g, c, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0]) => { g = g.index ? g.toNonIndexed() : g; g.deleteAttribute('uv');
+    g.rotateX(rx); g.rotateY(ry); g.rotateZ(rz); g.translate(x, y, z); const n = g.attributes.position.count, col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) col.set(c, i * 3); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); return g; });
+  const out = new THREE.BufferGeometry(); for (const k of ['position', 'normal', 'color']) {
+    const arr = new Float32Array(geos.reduce((a, g) => a + g.attributes[k].array.length, 0)); let o = 0; for (const g of geos) { arr.set(g.attributes[k].array, o); o += g.attributes[k].array.length; }
+    out.setAttribute(k, new THREE.BufferAttribute(arr, 3)); }
+  geos.forEach(g => g.dispose()); return out;
+}
+const PAINT = [1, 1, 1], DARK = [.13, .13, .14], MID = [.42, .43, .45], LAMP = [2.4, 2.2, 1.6], RUST = [.1, .055, .03];
+const BX = (w, h, d) => new THREE.BoxGeometry(w, h, d), CYL = (r1, r2, h, s = 14) => new THREE.CylinderGeometry(r1, r2, h, s);
+const PROPS = {
+  hog: merged([[BX(.6, .05, .05), RUST, 0, .2, 0, 0, 0, .8], [BX(.6, .05, .05), RUST, 0, .2, 0, 0, 0, -.8], [BX(.05, .05, .6), RUST, 0, .2, 0, .8, 0, 0]]),
+  bags: merged([0, 1, 2, 3, 4].map(i => [CYL(.07, .07, .26, 8), [.12, .1, .07], (i - 2) * .25, .07, 0, Math.PI / 2, 0, 0]).concat([0, 1, 2, 3].map(i => [CYL(.07, .07, .26, 8), [.1, .085, .06], (i - 1.5) * .25, .19, 0, Math.PI / 2, 0, 0]))),
+  wire: merged([0, 1, 2, 3, 4, 5].map(i => [new THREE.TorusGeometry(.14, .006, 4, 18), [.2, .2, .22], (i - 2.5) * .12, .14, 0, 0, Math.PI / 2 + .3, 0])),
+  wreck: null,
+};
+const PROPN = 90, propMeshes = {}, smokers = [];
+let propsAt = null;
+function placeProps(at) {
+  PROPS.wreck ??= UT.griz.hull;                   // a burnt-out medium tank
+  if (!propMeshes.hog) for (const k in PROPS) { const m = new THREE.InstancedMesh(PROPS[k], propMat, PROPN); m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; m.count = 0;
+    if (k === 'wreck') { const c = new THREE.Color(.05, .045, .04); for (let i = 0; i < PROPN; i++) m.setColorAt(i, c); }      // burnt black
+    scene.add(m); propMeshes[k] = m; }
+  if (propsAt === at) return; propsAt = at; smokers.length = 0;
+  const cnt = { hog: 0, bags: 0, wire: 0, wreck: 0 };
+  for (let c = Math.floor((at - 62) / 4); c <= Math.floor((at + 62) / 4); c++) for (let j = 0; j < 3; j++) {
+    const h = q => hash(c * 31.7 + j * 7.3 + q), near = h(.1) < .7, z = (h(.2) < .62 ? -1 : 1) * (TRACK + .7 + h(.3) * (near ? 3 : 10)) + (h(.2) < .62 ? 0 : 0);
+    if (z > 7) continue; const x = c * 4 + h(.4) * 4, r = h(.5), type = r < .32 ? 'hog' : r < .56 ? 'bags' : r < .8 ? 'wire' : 'wreck', m = propMeshes[type];
+    if (cnt[type] >= PROPN) continue; const y = SYx(x) + gOff(x, z) - .02;
+    dummy.position.set(x, y, z); dummy.rotation.set(type === 'wreck' ? (h(.7) - .5) * .4 : 0, h(.6) * 6.3, type === 'wreck' ? (h(.8) - .5) * .5 : 0); dummy.scale.setScalar(type === 'wreck' ? 1 : .9 + h(.9) * .4);
+    dummy.updateMatrix(); m.setMatrixAt(cnt[type]++, dummy.matrix); if (type === 'wreck') smokers.push([x, y + .3, z]);
+  }
+  for (const k in cnt) { propMeshes[k].count = cnt[k]; propMeshes[k].instanceMatrix.needsUpdate = true; }
+}
+// smoke: soft dark puffs that rise and spread, from wrecks and explosions
+const SMN = 700, smPos = new Float32Array(SMN * 3), smSize = new Float32Array(SMN), smA = new Float32Array(SMN), SMK = [];
+const smGeo = new THREE.BufferGeometry(); smGeo.setAttribute('position', new THREE.BufferAttribute(smPos, 3)); smGeo.setAttribute('size', new THREE.BufferAttribute(smSize, 1)); smGeo.setAttribute('alpha', new THREE.BufferAttribute(smA, 1));
+const smMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, uniforms: { uPx: { value: 500 } },
+  vertexShader: `attribute float size, alpha; uniform float uPx; varying float vA; void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.); vA = alpha; gl_PointSize = size * uPx / -mv.z; gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: `varying float vA; void main(){ float r = length(gl_PointCoord - .5); float a = smoothstep(.5, .1, r) * vA; gl_FragColor = vec4(vec3(.11, .1, .1), a); }` });
+const smoke = new THREE.Points(smGeo, smMat); smoke.frustumCulled = false; scene.add(smoke);
+function puff(x, y, z, s = 1, life = 3.5, vx = 0) { if (SMK.length < SMN) SMK.push({ x, y, z, vx: vx + (R() - .5) * .15, vy: .25 + R() * .25, vz: (R() - .5) * .15, age: 0, life: life * (.7 + R() * .6), s: s * (.6 + R() * .5) }); }
+function smokeStep(dt) {
+  let n = 0;
+  for (let i = SMK.length - 1; i >= 0; i--) { const q = SMK[i]; q.age += dt; if (q.age > q.life) { SMK.splice(i, 1); continue; }
+    q.x += q.vx * dt; q.y += q.vy * dt; q.z += q.vz * dt; q.vy *= Math.exp(-dt * .3); }
+  for (const q of SMK) { const u = q.age / q.life; smPos[n * 3] = q.x; smPos[n * 3 + 1] = q.y; smPos[n * 3 + 2] = q.z; smSize[n] = q.s * (.35 + u * 1.4); smA[n] = Math.min(1, u * 6) * (1 - u) * .55; n++; }
+  smGeo.setDrawRange(0, n); smGeo.attributes.position.needsUpdate = smGeo.attributes.size.needsUpdate = smGeo.attributes.alpha.needsUpdate = true;
+}
+const treadPool = Array.from({ length: 14 }, () => { const m = new THREE.Mesh(new THREE.PlaneGeometry(TREAD * .96, SW * .96).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x8fd6ff, opacity: 0, ...addBlend }));
+  m.rotation.z = SLOPE; m.visible = false; scene.add(m); return m; });
 const treadLit = [];                           // { x, y, t0 }
-// the trail: every tread the price touched in the last five minutes keeps a glow that fades
+// the trail: every cell the price touched in the last five minutes keeps a glow that fades
 const TRAILN = 240, TRAILS = 300, trail = new Map(); let trailLast = null;
-const trailMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(TREAD * .94, SW * .9), new THREE.MeshBasicMaterial({ color: 0xffffff, ...addBlend }), TRAILN);
+const trailMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(TREAD * .94, SW * .9).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, ...addBlend }), TRAILN);
 trailMesh.frustumCulled = false; trailMesh.count = 0; scene.add(trailMesh);
 { const c = new THREE.Color(0); for (let i = 0; i < TRAILN; i++) trailMesh.setColorAt(i, c); }
-const coinTread = new THREE.Mesh(new THREE.PlaneGeometry(TREAD * .96, SW * .96), new THREE.MeshBasicMaterial({ color: 0xf7931a, opacity: .28, ...addBlend }));
-coinTread.rotation.x = -Math.PI / 2; scene.add(coinTread);
-function placeSteps(x0) {                      // steps from world x0 on
-  const i0 = Math.floor(x0 / TREAD); if (i0 === stepsFrom) return; stepsFrom = i0;
-  const nc = new THREE.Color();
-  for (let k = 0; k < NS; k++) {
-    const i = i0 + k, top = i * RISE, p = ORIGIN + i * STEP;
-    dummy.position.set((i + .5) * TREAD, top - 4, 0); dummy.rotation.set(0, 0, 0); dummy.scale.set(1, 1, 1); dummy.updateMatrix(); steps.setMatrixAt(k, dummy.matrix);
-    dummy.position.set(i * TREAD + .0175, top - .009, 0); dummy.updateMatrix(); noses.setMatrixAt(k, dummy.matrix);
-    dummy.position.set((i + .5) * TREAD, top - .006, SW / 2 + .006); dummy.updateMatrix(); edges.setMatrixAt(k, dummy.matrix);
-    const m = Math.round(p / STEP) % 20 === 0 ? 1 : Math.round(p / STEP) % 4 === 0 ? .55 : .22;      // $500 and $100 for BTC
-    noses.setColorAt(k, nc.setRGB(.25 * m + .05, .75 * m + .1, .8 * m + .1));
-  }
-  steps.instanceMatrix.needsUpdate = noses.instanceMatrix.needsUpdate = edges.instanceMatrix.needsUpdate = noses.instanceColor.needsUpdate = true;
-}
+const coinTread = new THREE.Mesh(new THREE.PlaneGeometry(TREAD * .96, SW * .96).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xf7931a, opacity: .28, ...addBlend }));
+coinTread.rotation.z = SLOPE; scene.add(coinTread);
 function textSprite(lines, color, h, mid) {
   const c = document.createElement('canvas'), x = c.getContext('2d'), fs = 44, pad = 10;
   const font = i => i ? `500 ${fs * .8}px ${FM}` : `700 ${fs}px ${FD}`;
@@ -516,160 +591,99 @@ const THICK = L => { const r = Math.min(1, L.rel), room = (D?.B ?? 100) * U * .3
 function buildLevel(L) {
   const o = { L, group: new THREE.Group(), fade: 0, gone: false }; o.group.position.set(WX(L.p), SY(L.p), 0); scene.add(o.group);
   const th = THICK(L), cl = col3(colOf(L));
-  if (isWall(L)) {                                  // an army of mini soldiers, green to buy, red to sell; its banner carries the label
-    const h = 1.9; o.sq = []; o.born = now; o.spawnAt = 0;
-    o.pole = new THREE.Mesh(new THREE.CylinderGeometry(.018, .018, h + .15, 8), dark); o.pole.position.set(-.06, (h + .15) / 2, SW / 2 + .05); o.pole.castShadow = true; o.group.add(o.pole);
-    o.glow = new THREE.Mesh(new THREE.PlaneGeometry(th + .5, SW), new THREE.MeshBasicMaterial({ color: cl, opacity: .1, ...addBlend }));
-    o.glow.rotation.x = -Math.PI / 2; o.glow.position.y = .012; o.group.add(o.glow); o.h = h;
-  } else if (L.k === 'stop') {                      // a minefield across the stair, a tripwire in front: the higher the score, the more mines
-    const nm = 3 + Math.round(Math.min(1, L.rel) * 7), h = 1.25;
-    const metal = new THREE.MeshStandardMaterial({ color: 0x3b4034, metalness: .7, roughness: .45 }), led = new THREE.MeshBasicMaterial({ color: cl.clone().multiplyScalar(2.6), toneMapped: false });
-    o.mines = [];
-    for (let i = 0; i < nm; i++) {
-      const m = new THREE.Group(); m.position.set(i % 2 ? .07 : -.07, 0, -SW / 2 + .22 + i * (SW - .44) / Math.max(1, nm - 1));
-      const disc = new THREE.Mesh(new THREE.CylinderGeometry(.095, .105, .05, 20), metal); disc.position.y = .028; disc.castShadow = true;
-      const cap = new THREE.Mesh(new THREE.CylinderGeometry(.032, .036, .025, 12), dark); cap.position.y = .065;
-      const lamp = new THREE.Mesh(new THREE.SphereGeometry(.014, 8, 6), led); lamp.position.set(.05, .058, 0);
-      m.add(disc, cap, lamp); o.group.add(m); o.mines.push(m);
-    }
-    o.led = led;
-    o.wire = new THREE.Mesh(new THREE.BoxGeometry(.008, .008, SW), new THREE.MeshBasicMaterial({ color: cl.clone().multiplyScalar(2), opacity: .8, ...addBlend }));
-    o.wire.position.set(-.2, .14, 0); o.group.add(o.wire);
-    for (const z of [-SW / 2, SW / 2]) { const st = new THREE.Mesh(new THREE.CylinderGeometry(.014, .02, .22, 8), dark); st.position.set(-.2, .11, z); o.group.add(st); }
-    o.glow = new THREE.Mesh(new THREE.PlaneGeometry(.6, SW), new THREE.MeshBasicMaterial({ color: cl, opacity: .08, ...addBlend }));
-    o.glow.rotation.x = -Math.PI / 2; o.glow.position.y = .012; o.group.add(o.glow); o.h = h;
-  } else {                                          // purple barrels of explosive, stacked: where liquidations would set in; the bigger, the more barrels
-    const nb = 4 + Math.round(Math.min(1, L.rel) * 8), h = 1.4, low = Math.ceil(nb * .62);
-    const c = document.createElement('canvas'); c.width = 128; c.height = 64; const x = c.getContext('2d');
-    x.fillStyle = '#5b33b8'; x.fillRect(0, 0, 128, 64); x.fillStyle = '#3a1f7a'; x.fillRect(0, 8, 128, 5); x.fillRect(0, 51, 128, 5);
-    x.fillStyle = '#e8d24a'; for (let i = -2; i < 16; i++) { x.beginPath(); x.moveTo(i * 10, 24); x.lineTo(i * 10 + 6, 24); x.lineTo(i * 10 + 12, 40); x.lineTo(i * 10 + 6, 40); x.fill(); }
-    const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
-    const bm = new THREE.MeshStandardMaterial({ map: tex, metalness: .55, roughness: .38, emissive: 0x6c3cff, emissiveIntensity: .15 });
-    const top = new THREE.MeshBasicMaterial({ color: cl.clone().multiplyScalar(1.6), toneMapped: false });
-    o.barrels = []; o.bmat = bm;
-    for (let i = 0; i < nb; i++) {
-      const up = i >= low, k = up ? i - low : i, n = up ? nb - low : low, sp = (SW - .3) / Math.max(1, low - 1);
-      const b = new THREE.Group(); const z = up ? -SW / 2 + .15 + (k + .5) * sp * (low - 1) / Math.max(1, n) : -SW / 2 + .15 + k * sp;
-      b.position.set((hash(L.p + i) - .5) * .08, up ? .39 : .13, Math.min(SW / 2 - .15, z)); b.userData.home = b.position.clone();
-      const body = new THREE.Mesh(new THREE.CylinderGeometry(.105, .105, .26, 20), [bm, top, top]); body.castShadow = true; b.add(body);
-      o.group.add(b); o.barrels.push(b);
-    }
-    o.glow = new THREE.Mesh(new THREE.PlaneGeometry(th + .5, SW), new THREE.MeshBasicMaterial({ color: cl, opacity: .1, ...addBlend }));
-    o.glow.rotation.x = -Math.PI / 2; o.glow.position.y = .012; o.group.add(o.glow); o.h = h;
-  }
+  // every level is a group of vehicles: walls small infantry fighting vehicles, stops medium tanks, liquidation levels heavy
+  // tanks. Its banner stands on a pole at the front, a glow on the ground where it stands
+  const h = isWall(L) ? 1.9 : L.k === 'stop' ? 1.6 : 1.8; o.type = isWall(L) ? 'ifv' : L.k === 'stop' ? 'griz' : 'apoc'; o.units = []; o.born = now; o.spawnAt = 0;
+  o.pole = new THREE.Mesh(new THREE.CylinderGeometry(.018, .018, h + .15, 8), dark); o.pole.position.set(-.06, (h + .15) / 2, SW / 2 + .05); o.pole.castShadow = true; o.group.add(o.pole);
+  o.glow = new THREE.Mesh(new THREE.PlaneGeometry(1.2, SW).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: cl, opacity: .1, ...addBlend }));
+  o.glow.rotation.z = SLOPE; o.glow.position.y = .02; o.group.add(o.glow); o.h = h;
   o.th0 = th; return o;
 }
 
-// the armies: every soldier of every wall is drawn from one set of instanced parts. Each one is posed on a little rig:
-// legs that march, a torso, a head under a helmet, a rifle that rests or aims at him, a riot shield for an army that has
-// stood for hours. The bigger the wall, the more soldiers and the deeper the ranks
-const SOLN = 900, SOLS = 1.25;
-const SOL = (() => {
-  const uni = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .75, metalness: .05 });
-  const mk = (geo, mat, col) => { const m = new THREE.InstancedMesh(geo, mat, SOLN); m.frustumCulled = false; m.castShadow = true; m.count = 0;
-    if (col) { const c = new THREE.Color(); for (let i = 0; i < SOLN; i++) m.setColorAt(i, c); } scene.add(m); return m; };
-  const P = {
-    torso: mk(new THREE.CapsuleGeometry(.06, .1, 4, 10), uni, true),
-    head: mk(new THREE.SphereGeometry(.05, 14, 10), new THREE.MeshStandardMaterial({ color: 0xf0c08a, roughness: .6 })),
-    helmet: mk(new THREE.SphereGeometry(.062, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), uni, true),
-    legL: mk(new THREE.CapsuleGeometry(.026, .14, 4, 8), uni, true), legR: mk(new THREE.CapsuleGeometry(.026, .14, 4, 8), uni, true),
-    pack: mk(new THREE.BoxGeometry(.06, .11, .09), uni, true),
-    gun: mk(new THREE.BoxGeometry(.24, .03, .03), new THREE.MeshStandardMaterial({ color: 0x1c1f22, roughness: .45, metalness: .7 })),
-    shield: mk(new THREE.BoxGeometry(.02, .3, .2), new THREE.MeshStandardMaterial({ color: 0x9aa4aa, roughness: .3, metalness: .9, envMapIntensity: .8 })),
-    cap: mk(new THREE.CylinderGeometry(.06, .055, .05, 16), uni, true), brim: mk(new THREE.BoxGeometry(.06, .008, .09), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: .4 })),
-    star: mk(new THREE.OctahedronGeometry(.014), new THREE.MeshStandardMaterial({ color: 0xffd34d, metalness: 1, roughness: .2, emissive: 0x7a5a00, emissiveIntensity: .6 })),
-    mega: mk(new THREE.CylinderGeometry(.045, .016, .13, 14, 1, true), new THREE.MeshStandardMaterial({ color: 0xe8e2d0, roughness: .4, side: THREE.DoubleSide })),
-    fpole: mk(new THREE.CylinderGeometry(.005, .005, .36, 6), new THREE.MeshStandardMaterial({ color: 0x8a6a40, roughness: .6 })),
-    fcloth: mk(new THREE.PlaneGeometry(.17, .11), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .8, side: THREE.DoubleSide, emissive: 0x666666, emissiveIntensity: .4 })),
-  };
-  // the rig: pivots for the legs and the rifle, each part where it sits on a soldier facing +x
-  const root = new THREE.Object3D(), node = {}, at = (k, parent, x, y, z) => { const n = new THREE.Object3D(); n.position.set(x, y, z); parent.add(n); node[k] = n; return n; };
-  for (const [k, sz] of [['legL', -1], ['legR', 1]]) { const hip = at(k + 'P', root, 0, .19, sz * .035); at(k, hip, 0, -.095, 0); }
-  at('torso', root, 0, .3, 0); at('pack', root, -.07, .31, 0); at('head', root, .005, .45, 0); at('helmet', root, 0, .458, 0).scale.set(1, .8, 1);
-  at('gun', at('gunP', root, .03, .33, .045), .09, 0, 0); at('shield', root, .1, .25, 0);
-  at('cap', root, 0, .49, 0); at('brim', root, .045, .475, 0); at('star', root, .058, .495, 0); at('mega', root, .1, .37, .05).rotation.z = -Math.PI / 2;
-  const fp = at('fpoleP', root, .04, .3, .07); at('fpole', fp, 0, .18, 0); at('fcloth', fp, .09, .3, 0);
-  return { P, root, node };
-})();
-const SOLC = { bid: [0x3fae5c, 0x2a4d33], ask: [0xd8434a, 0x5a2326] };        // uniform, helmet and trousers
-const LITE = () => aspect < 1 || Q.i >= 2;          // a phone or a slow machine: smaller armies, fewer parts
-const solWant = L => L.state !== 'live' ? 0 : Math.round((6 + 30 * Math.min(1, L.rel)) * (LITE() ? .6 : 1));
+// the vehicles, in the spirit of an old real-time strategy game: every one is two instanced meshes (hull and turret)
+// built from merged boxes and cylinders; white parts take the team colour, the rest stays dark metal
+const UT = {
+  ifv: { cap: 150, gap: .46, rank: .72, files: 5, ty: .245, flag: [-.18, .44, .11], fire: 3.9, size: .3,
+    hull: merged([[BX(.48, .11, .3), PAINT, 0, .15, 0], [BX(.17, .09, .3), PAINT, .25, .165, 0, 0, 0, -.55], [BX(.26, .04, .24), MID, -.06, .225, 0],
+      ...[-.16, 0, .16].flatMap(x => [-.16, .16].map(z => [CYL(.062, .062, .05, 14), DARK, x, .062, z, Math.PI / 2, 0, 0])),
+      [BX(.01, .025, .05), LAMP, .335, .17, .1], [BX(.01, .025, .05), LAMP, .335, .17, -.1], [CYL(.004, .004, .24, 4), DARK, -.18, .34, .11]]),
+    tur: merged([[BX(.15, .07, .15), PAINT, 0, .035, 0], [BX(.17, .055, .04), MID, .05, .07, .1], [BX(.17, .055, .04), MID, .05, .07, -.1],
+      [BX(.012, .04, .03), [1.8, .35, .2], .14, .07, .1], [BX(.012, .04, .03), [1.8, .35, .2], .14, .07, -.1]]),
+    muzzle: [[.15, .07, .1], [.15, .07, -.1]] },
+  griz: { cap: 60, gap: .64, rank: .95, files: 4, ty: .26, flag: [-.28, .5, .15], fire: 4.6, size: .45,
+    hull: merged([[BX(.7, .13, .4), PAINT, 0, .17, 0], [BX(.2, .1, .4), PAINT, .38, .17, 0, 0, 0, -.5], [BX(.82, .13, .1), DARK, 0, .075, .235], [BX(.82, .13, .1), DARK, 0, .075, -.235],
+      ...[-.3, -.15, 0, .15, .3].flatMap(x => [.235, -.235].map(z => [CYL(.05, .05, .105, 10), MID, x, .06, z, Math.PI / 2, 0, 0])),
+      [BX(.5, .03, .3), MID, -.05, .245, 0], [BX(.012, .03, .05), LAMP, .47, .19, .13], [BX(.012, .03, .05), LAMP, .47, .19, -.13], [CYL(.004, .004, .3, 4), DARK, -.28, .4, .15]]),
+    tur: merged([[CYL(.17, .19, .1, 8), PAINT, 0, .05, 0], [BX(.1, .08, .14), PAINT, .16, .05, 0], [CYL(.022, .026, .5, 10), MID, .42, .06, 0, 0, 0, -Math.PI / 2],
+      [CYL(.032, .032, .06, 10), DARK, .67, .06, 0, 0, 0, Math.PI / 2], [CYL(.05, .05, .03, 10), MID, -.05, .115, .05]]),
+    muzzle: [[.7, .06, 0]] },
+  apoc: { cap: 40, gap: .86, rank: 1.3, files: 3, ty: .39, flag: [-.45, .62, .2], fire: 5.2, size: .7,
+    hull: merged([[BX(1, .2, .6), PAINT, 0, .25, 0], [BX(.24, .15, .6), PAINT, .55, .24, 0, 0, 0, -.55], [BX(1.16, .22, .17), DARK, 0, .12, .375], [BX(1.16, .22, .17), DARK, 0, .12, -.375],
+      ...[-.42, -.21, 0, .21, .42].flatMap(x => [.375, -.375].map(z => [CYL(.08, .08, .175, 12), MID, x, .1, z, Math.PI / 2, 0, 0])),
+      [BX(1.1, .03, .19), PAINT, 0, .245, .375], [BX(1.1, .03, .19), PAINT, 0, .245, -.375], [BX(.6, .04, .44), MID, -.1, .37, 0],
+      [BX(.015, .04, .07), LAMP, .7, .27, .2], [BX(.015, .04, .07), LAMP, .7, .27, -.2], [CYL(.03, .03, .12), DARK, -.48, .42, .18], [CYL(.03, .03, .12), DARK, -.48, .42, -.18]]),
+    tur: merged([[BX(.5, .17, .46), PAINT, 0, .085, 0], [BX(.16, .13, .46), PAINT, .27, .08, 0, 0, 0, -.5],
+      [CYL(.034, .04, .64, 10), MID, .58, .1, .085, 0, 0, -Math.PI / 2], [CYL(.034, .04, .64, 10), MID, .58, .1, -.085, 0, 0, -Math.PI / 2],
+      [BX(.07, .07, .07), DARK, .9, .1, .085], [BX(.07, .07, .07), DARK, .9, .1, -.085], [BX(.22, .13, .11), DARK, -.02, .12, .29], [BX(.22, .13, .11), DARK, -.02, .12, -.29],
+      ...[.03, -.03].flatMap(dy => [.265, .315, -.265, -.315].map(z => [CYL(.018, .018, .02, 8), [1.8, .35, .2], .1, .12 + dy, z, 0, 0, Math.PI / 2]))]),
+    muzzle: [[.94, .1, .085], [.94, .1, -.085]] },
+};
+const vehMat = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: .5, roughness: .5, envMapIntensity: .45 });
+const VM = {};
+for (const k in UT) for (const part of ['hull', 'tur']) { const m = new THREE.InstancedMesh(UT[k][part], vehMat, UT[k].cap); m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; m.count = 0;
+  const c = new THREE.Color(); for (let i = 0; i < UT[k].cap; i++) m.setColorAt(i, c); scene.add(m); VM[k + part] = m; }
+const flagMesh = new THREE.InstancedMesh(merged([[CYL(.004, .004, .3, 4), DARK, 0, .15, 0], [BX(.14, .09, .006), [1.4, 1.4, 1.35], .07, .25, 0]]), vehMat, 60);
+flagMesh.frustumCulled = false; flagMesh.count = 0; { const c = new THREE.Color(1, 1, 1); for (let i = 0; i < 60; i++) flagMesh.setColorAt(i, c); } scene.add(flagMesh);
+const VR = new THREE.Object3D(), VT = new THREE.Object3D(), VF = new THREE.Object3D(); VR.add(VT); VR.add(VF);
+const TEAM = { bid: 0x3fae5c, ask: 0xd8434a, up: 0x4aa877, dn: 0xc4472f, liq: 0x7b52d9 };
+const LITE = () => aspect < 1 || Q.i >= 2;          // a phone or a slow machine: smaller groups
+const unitWant = (o, L) => L.state !== 'live' ? 0 : o.type === 'ifv' ? Math.max(2, Math.round((2 + 8 * Math.min(1, L.rel)) * (LITE() ? .6 : 1))) : o.type === 'griz' ? 1 + Math.round(3 * Math.min(1, L.rel)) : 1 + Math.round(2 * Math.min(1, L.rel));
 const BUL = [], BULN = 260;
 const bulMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(.1, .014, .014), new THREE.MeshBasicMaterial({ color: new THREE.Color(1, .82, .4).multiplyScalar(2.2), ...addBlend }), BULN);
 bulMesh.frustumCulled = false; bulMesh.count = 0; scene.add(bulMesh);
 const AXX = new THREE.Vector3(1, 0, 0), tmpD = new THREE.Vector3();
 let shotSnd = 0;
-// one army, each frame: men march in to fill the ranks, close up when some are gone, aim at him when he comes, shoot
-function squad(o, dt, t, f) {
-  const L = o.L, gx = o.group.position.x, hx = WX(H.p), side = Math.sign(hx - gx) || 1, live = L.state === 'live' && !o.gone;
-  const want = solWant(L), sq = o.sq, up = sq.filter(s => !s.gen && (s.st === 'stand' || s.st === 'drop'));
-  // the biggest army in view has a general, behind the ranks with a megaphone
-  const gen = sq.find(s => s.gen && s.st === 'stand');
-  if (live && o.isBig && !gen && t - o.born > 1) sq.push({ gen: true, st: 'stand', x: gx - side * .6, y: SY(L.p), z: SW / 2 - .04, vx: 0, vy: 0, vz: 0, rx: 0, rz: 0, yaw: 0, ph: 0, next: 1e9, seed: .5, stag: -9, t0: t });
-  if (gen && (!o.isBig || !live)) { gen.st = 'flee'; gen.t0 = t; gen.vz = 1.1; }
-  // a very big wall brings a tank
-  if (live && L.s >= 1e8 && !o.tank) o.tank = buildTank(o, side);
-  // reinforcements: the first ones drop from the sky, later ones march in from the side
-  if (live && up.length < (t - o.born < 1.5 ? want : want - 1) && t > o.spawnAt) {
-    const first = t - o.born < 1.5 || !up.length, n = first ? want - up.length : 1;
-    for (let i = 0; i < n; i++) { const z = first ? 0 : (R() < .5 ? -1 : 1) * (SW / 2 - .04);
-      sq.push({ st: first ? 'drop' : 'stand', x: gx + (R() - .5) * .3, y: SY(L.p) + (first ? 2 + R() * 2.5 : 0), z: first ? (R() - .5) * SW * .9 : z, vx: 0, vy: 0, vz: 0,
-        rx: 0, rz: 0, yaw: side > 0 ? 0 : Math.PI, ph: R() * 6, next: t + 1 + R() * 2, seed: R(), stag: -9, t0: t }); }
-    o.spawnAt = t + (first ? 0 : .3);
+const wrapA = a => Math.atan2(Math.sin(a), Math.cos(a));
+// one group, each frame: vehicles drive in from the back of the field to fill the ranks, close up, turn their turrets
+// to him when he comes close and fire; the extra ones drive off
+function units(o, dt, t, f) {
+  const L = o.L, T = UT[o.type], gx = o.group.position.x, hx = WX(H.p), side = Math.sign(hx - gx) || 1, live = L.state === 'live' && !o.gone;
+  const want = unitWant(o, L), us = o.units, up = us.filter(u => u.st === 'in' || u.st === 'idle');
+  if (live && up.length < want && t > o.spawnAt) {
+    const first = t - o.born < 2 || !up.length, n = first ? want - up.length : 1;
+    for (let i = 0; i < n; i++) us.push({ st: 'in', x: gx + (R() - .5) * 1.5, y: 0, z: -(TRACK + 2.5 + R() * 3), yaw: Math.PI / 2, tur: 0, next: t + 2 + R() * 2, seed: R(), t0: t, rec: 0, hitT: -9 });
+    o.spawnAt = t + (first ? 0 : .7);
   }
-  // too many for its size now: the extra ones leave
-  if (up.length > want + 2) for (const s of up.slice(want)) { s.st = 'flee'; s.t0 = t; s.vz = (s.z >= 0 ? 1 : -1) * (.9 + R() * .5); }
-  // the ranks: front rank toward him; men fill the files across the stair
-  const ranks = Math.max(1, Math.min(4, Math.round(THICK(L) / .12))), stand = up.filter(s => s.st === 'stand'), files = Math.max(1, Math.ceil(stand.length / ranks));
-  const sp = (SW - .34) / Math.max(1, files - .5);
-  const aimR = 4.4, fireR = 3.4, steel = L.ps && L.ps[0] >= L.ps[1] - 1, fresh = L.ps && L.ps[0] <= 1;
-  stand.forEach((s, i) => {
-    const r = i % ranks, fi = Math.floor(i / ranks), tz = Math.min(SW / 2 - .17, -SW / 2 + .17 + (fi + (r % 2 ? .5 : 0)) * sp), tx = gx + side * ((ranks - 1) / 2 - r) * .15;
-    const dx = tx - s.x, dz = tz - s.z, d = Math.hypot(dx, dz), v = Math.min(d, dt * .9);
-    if (d > .005) { s.x += dx / d * v; s.z += dz / d * v; s.ph += v * 26; s.walk = Math.min(1, d * 8); } else s.walk = 0;
-    s.y += (SYx(s.x) - s.y) * Math.min(1, dt * 14); s.front = r === 0; s.steel = steel && r === 0;
-    const dh = hx - s.x, aim = live && Math.abs(dh) < aimR && H.mode !== 'pose';
-    s.aim += ((aim ? 1 : 0) - (s.aim || 0)) * Math.min(1, dt * 5);
-    const yawT = aim ? Math.atan2(s.z, dh) : (side > 0 ? 0 : Math.PI) + Math.sin(t * .7 + s.seed * 20) * (fresh ? .5 : .2);
-    s.yaw += Math.atan2(Math.sin(yawT - s.yaw), Math.cos(yawT - s.yaw)) * Math.min(1, dt * 6);
-    const flag = t - (s.flagT ?? -9) < 2.5;
-    if (aim && !flag && Math.abs(dh) < fireR && s.walk < .3 && t > s.next) { s.next = t + (.8 + R() * 1.9) * (1 + Math.abs(dh) / 2.5) / fury(L.k); fire(s, (L.k === 'bid' ? 'up' : 'dn')); }
+  if (up.length > want + 1) for (const u of up.slice(want)) { u.st = 'out'; u.t0 = t; }
+  const files = Math.min(T.files, Math.max(1, up.length)), ranks = Math.ceil(up.length / files), gap = Math.min(T.gap, (SW - .1) / files);
+  const fz = fury(L.k), steelK = L.ps && L.ps[0] >= L.ps[1] - 1;
+  up.forEach((u, i) => {
+    const r = Math.floor(i / files), fi = i % files, inRank = Math.min(files, up.length - r * files);
+    const tz = (fi - (inRank - 1) / 2) * gap, tx = gx + side * ((ranks - 1) / 2 - r) * T.rank;
+    const dx = tx - u.x, dz = tz - u.z, d = Math.hypot(dx, dz), v = Math.min(d, dt * (u.st === 'in' ? 1.6 : .8));
+    if (d > .01) { u.x += dx / d * v; u.z += dz / d * v; u.yaw += wrapA(Math.atan2(-dz, dx) - u.yaw) * Math.min(1, dt * 5); }
+    else { u.st = 'idle'; u.yaw += wrapA((side > 0 ? 0 : Math.PI) - u.yaw) * Math.min(1, dt * 2.5); }
+    u.y = SYx(u.x); u.front = r === 0;
+    const dh = hx - u.x, aim = live && Math.abs(dh) < T.fire + 1.2 && H.mode !== 'pose' && u.st === 'idle';
+    u.tur += wrapA((aim ? Math.atan2(u.z, dh) - u.yaw : 0) - u.tur) * Math.min(1, dt * 3.5);
+    const flag = t - (u.flagT ?? -9) < 2.5;
+    if (aim && !flag && Math.abs(dh) < T.fire && t > u.next && Math.abs(wrapA(Math.atan2(u.z, dh) - u.yaw - u.tur)) < .25) unitFire(o, u, fz);
+    if (u.st === 'idle' && R() < dt * .3) puff(u.x - Math.cos(u.yaw) * T.size * .9, u.y + .3, u.z + Math.sin(u.yaw) * T.size * .9, .35, 1.6);      // exhaust
   });
-  if (gen) { const tx = gx - side * (ranks * .075 + .28), dx = tx - gen.x, dz = -gen.z, d = Math.hypot(dx, dz), v = Math.min(d, dt * .9);
-    if (d > .005) { gen.x += dx / d * v; gen.z += dz / d * v; gen.ph += v * 26; gen.walk = Math.min(1, d * 8); } else gen.walk = 0;
-    gen.y += (SYx(gen.x) - gen.y) * Math.min(1, dt * 14); gen.aim = live && Math.abs(hx - gen.x) < aimR ? 1 : 0;
-    const yawT = Math.atan2(gen.z, hx - gen.x); gen.yaw += Math.atan2(Math.sin(yawT - gen.yaw), Math.cos(yawT - gen.yaw)) * Math.min(1, dt * 4); }
-  if (o.tank) tankThink(o, dt, t, side, live);
 }
-// a tank: hull, tracks, a turret that turns to him and a barrel that fires a shell every few seconds
-function buildTank(o, side) {
-  const c = SOLC[o.L.k], body = new THREE.MeshStandardMaterial({ color: new THREE.Color(c[1]).convertSRGBToLinear().multiplyScalar(1.3), roughness: .6, metalness: .3 });
-  const g = new THREE.Group(), tur = new THREE.Group(), barrel = new THREE.Group(); g.add(tur); tur.add(barrel);
-  const box = (w, h, d, m, x, y, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.castShadow = true; return b; };
-  g.add(box(.5, .13, .3, body, 0, .12, 0)); for (const z of [-.17, .17]) g.add(box(.56, .1, .07, dark, 0, .06, z));
-  tur.position.y = .22; tur.add(box(.22, .09, .2, body, -.02, .02, 0));
-  barrel.position.set(.08, .03, 0); const bm = new THREE.Mesh(new THREE.CylinderGeometry(.018, .022, .34, 10), dark); bm.rotation.z = -Math.PI / 2; bm.position.x = .17; barrel.add(bm);
-  g.scale.setScalar(1.2); g.position.set(-side * .55, 0, -SW / 2 + .4); g.rotation.y = side > 0 ? 0 : Math.PI; o.group.add(g);
-  g.scale.setScalar(1e-4); return { g, tur, barrel, next: now + 2 + R() * 2, rec: 0, born: now };
-}
-function tankThink(o, dt, t, side, live) {
-  const T = o.tank, L = o.L, hx = WX(H.p);
-  if (T.v) { T.v.y -= 9.8 * dt; T.g.position.addScaledVector(T.v, dt); T.g.rotation.x += T.w.x * dt; T.g.rotation.z += T.w.z * dt;      // blown away with its army
-    const gy = SYx(o.group.position.x + T.g.position.x) - o.group.position.y; if (T.v.y < 0 && T.g.position.y < gy) { T.g.position.y = gy; T.v.multiplyScalar(.25); T.v.y = Math.abs(T.v.y) * .3; T.w.multiplyScalar(.4); T.land ??= t; }
-    if (T.land != null) T.g.scale.setScalar(1.2 * Math.max(1e-4, 1 - Math.max(0, t - T.land - 2.5) / .6)); return; }
-  T.g.position.y = SYx(o.group.position.x + T.g.position.x) - o.group.position.y; T.g.scale.setScalar(1.2 * Math.max(1e-4, EASE.out(Math.min(1, (t - T.born) / .6))));      // it rolls in
-  const wx = o.group.position.x + T.g.position.x, wz = T.g.position.z, dx = hx - wx, ang = Math.atan2(wz, dx) - T.g.rotation.y;
-  T.tur.rotation.y += Math.atan2(Math.sin(ang - T.tur.rotation.y), Math.cos(ang - T.tur.rotation.y)) * Math.min(1, dt * 3);
-  T.barrel.rotation.z = Math.atan2(H.y + .6 - (o.group.position.y + T.g.position.y + .3), Math.hypot(dx, wz)) * .8;
-  T.rec = Math.max(0, T.rec - dt * 4); T.barrel.position.x = .08 - T.rec * .06;
-  if (live && Math.abs(dx) < 4 && H.mode !== 'pose' && t > T.next) { T.next = t + (2.6 + R() * 1.8) / fury(L.k); T.rec = 1;
-    const a = T.g.rotation.y + T.tur.rotation.y, mx = wx + Math.cos(a) * .55, my = o.group.position.y + T.g.position.y + .33, mz = wz - Math.sin(a) * .55;
-    shoot(mx, my, mz, true);
-    for (let i = 0; i < 10; i++) spark(mx, my, mz, Math.cos(a) * (.5 + R()), R() * .6, -Math.sin(a) * (.5 + R()), R() < .5 ? 'stop' : 'txt', .2 + R() * .3, .06);
-    sfx('cannon'); }
+// a vehicle fires: an IFV a pair of tracers from its pods, a medium tank a shell, a heavy tank two shells and sometimes a salvo of missiles
+function unitFire(o, u, fz) {
+  const T = UT[o.type], a = u.yaw + u.tur, c = Math.cos(a), sn = Math.sin(a);
+  const shots = o.type === 'apoc' && R() < .3 ? T.muzzle.concat(T.muzzle) : T.muzzle, big = o.type !== 'ifv';
+  shots.forEach(([mx, my, mz], i) => { const x = u.x + c * mx + sn * mz, y = u.y + T.ty + my, z = u.z - sn * mx + c * mz;
+    if (!shoot(x, y, z, big && i < 2)) return;
+    for (let k = 0; k < (big ? 8 : 3); k++) spark(x, y, z, c * (.5 + R()), R() * .4, -sn * (.5 + R()), k % 2 ? 'stop' : 'txt', .1 + R() * .15, big ? .06 : .04);
+    if (big) puff(x, y, z, .6, 1.4, c * .4); });
+  u.rec = 1; u.next = now + (o.type === 'ifv' ? 1 + R() * 1.6 : o.type === 'griz' ? 2.4 + R() * 1.6 : 3 + R() * 1.5) * (1 + Math.abs(WX(H.p) - u.x) / 4) / fz;
+  if (big) sfx('cannon'); else if (now - shotSnd > .09) { shotSnd = now; sfx('shot'); }
 }
 // how hard an army fires: the share of aggressive selling (red) or buying (green) in the last ten seconds, against the usual pace
-function fury(k) { const tk = TAKER.now(); return Math.max(.35, Math.min(2.4, .3 + (k === 'ask' ? tk.sell : tk.buy) * 1.4 * Math.min(2, tk.act))); }
+function fury(k) { if (k !== 'ask' && k !== 'bid') return 1; const tk = TAKER.now(); return Math.max(.35, Math.min(2.4, .3 + (k === 'ask' ? tk.sell : tk.buy) * 1.4 * Math.min(2, tk.act))); }
 const TAKER = (() => {                         // OKX trades: buy and sell volume per second, the last ten seconds, and the usual pace
   const sec = new Map(); let avg = 0, seen = false;
   return { add(side, usd) { const k = Math.floor(Date.now() / 1000), b = sec.get(k) || sec.set(k, { b: 0, s: 0 }).get(k); if (side === 'buy') b.b += usd; else b.s += usd; seen = true; },
@@ -677,13 +691,6 @@ const TAKER = (() => {                         // OKX trades: buy and sell volum
       for (const [t, v] of sec) { if (t < k - 60) { sec.delete(t); continue; } if (t > k - 10) { bb += v.b; ss += v.s; } }
       const tot = bb + ss; avg = avg ? avg + (tot - avg) * .002 : tot; return { buy: tot ? bb / tot : .5, sell: tot ? ss / tot : .5, act: avg ? tot / avg : 1, seen }; } };
 })();
-// a shot: a tracer from the muzzle to him (most hit, some fly past)
-function fire(s, col) {
-  const c = Math.cos(s.yaw), sn = Math.sin(s.yaw), mx = s.x + c * .27 * SOLS, my = s.y + .33 * SOLS, mz = s.z - sn * .27 * SOLS + .045 * SOLS * c;
-  if (!shoot(mx, my, mz, false)) return;
-  for (let i = 0; i < 3; i++) spark(mx, my, mz, c * (.6 + R()), (R() - .3) * .5, -sn * .6, 'stop', .08 + R() * .06, .05);
-  if (now - shotSnd > .09) { shotSnd = now; sfx('shot'); }
-}
 // where it goes: most hit him; free to move, he ducks some and swats some away with a glove
 function shoot(mx, my, mz, big) {
   if (BUL.length >= BULN) return false;
@@ -739,85 +746,69 @@ const coin = new THREE.Group(); scene.add(coin);
 }
 const CZ = -.9;      // beside his path, on the far side, so it never hides him
 
-// the hero: BTC itself, a fat orange coin with a face, rubber-hose arms in red boxing gloves and legs in sneakers.
-// He faces the camera and moves in its plane, like a cartoon: arms and legs swing sideways, a punch stretches to the wall
-const hero = new THREE.Group(), body = new THREE.Group(); hero.add(body); scene.add(hero);
+// the hero: a bull of polished bronze while the market climbs, a bear of dark steel while it falls; he changes in a
+// flash when it turns. Both walk on four legs; the bull fights with his horns, the bear rears up and swipes
+const hero = new THREE.Group(); scene.add(hero);
 const glowMat = new THREE.MeshBasicMaterial({ color: 0xbfeaff, toneMapped: false });
 const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
-const seamMat = new THREE.MeshBasicMaterial({ color: 0x8fd6ff, toneMapped: false });      // the rim glows in his mood colour
+const seamMat = new THREE.MeshBasicMaterial({ color: 0x8fd6ff, toneMapped: false });
 const dark = new THREE.MeshStandardMaterial({ color: 0x1a1f23, metalness: .85, roughness: .5, envMapIntensity: .6 });
-const rubber = new THREE.MeshStandardMaterial({ color: 0x15171a, metalness: .1, roughness: .55 });
-const cap = (r, l, m) => new THREE.Mesh(new THREE.CapsuleGeometry(r, l, 8, 16), m);
-const CR = .3, CY = .12;                      // the coin: radius and height of its centre
-const FACE = {};
-{
-  const c = document.createElement('canvas'); c.width = c.height = 512; const x = c.getContext('2d');
-  const g = x.createRadialGradient(200, 190, 20, 256, 256, 256); g.addColorStop(0, '#ffcf7a'); g.addColorStop(.65, '#f7931a'); g.addColorStop(1, '#c0680c');
-  x.fillStyle = g; x.fillRect(0, 0, 512, 512);
-  x.strokeStyle = 'rgba(255,240,210,.75)'; x.lineWidth = 14; x.beginPath(); x.arc(256, 256, 214, 0, 7); x.stroke();
-  x.strokeStyle = 'rgba(150,70,0,.35)'; x.lineWidth = 6; x.beginPath(); x.arc(256, 256, 196, 0, 7); x.stroke();
-  x.fillStyle = 'rgba(255,248,235,.95)'; x.font = '700 190px Georgia,serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
-  x.save(); x.translate(256, 345); x.rotate(.22); x.fillText('₿', 0, 0); x.restore();          // the ₿ low on his belly, room for the eyes above
-  const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = 8;
-  const r = document.createElement('canvas'); r.width = 256; r.height = 16; const rx = r.getContext('2d');   // the reeded edge
-  for (let i = 0; i < 256; i += 4) { rx.fillStyle = i % 8 ? '#b9620c' : '#f2a03a'; rx.fillRect(i, 0, 4, 16); }
-  const rtex = new THREE.CanvasTexture(r); rtex.encoding = THREE.sRGBEncoding; rtex.wrapS = THREE.RepeatWrapping; rtex.repeat.x = 6;
-  const faceMat = new THREE.MeshPhysicalMaterial({ map: tex, metalness: .55, roughness: .3, clearcoat: .7, clearcoatRoughness: .2, emissive: 0x7a3d00, emissiveIntensity: .25 });
-  const rimMat = new THREE.MeshPhysicalMaterial({ map: rtex, metalness: .8, roughness: .3, clearcoat: .5 });
-  const disc = new THREE.Mesh(new THREE.CylinderGeometry(CR, CR, .13, 64), [rimMat, faceMat, faceMat]); disc.rotation.x = Math.PI / 2; disc.position.y = CY; body.add(disc);
-  const halo = new THREE.Mesh(new THREE.TorusGeometry(CR + .012, .008, 8, 64), seamMat); halo.position.set(0, CY, 0); body.add(halo);
-  // the face: two eyes with pupils that look where he goes, brows, a mouth
-  const white = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .25 }), black = new THREE.MeshStandardMaterial({ color: 0x0a0b0c, roughness: .3 });
-  FACE.eyes = []; FACE.pupils = []; FACE.brows = [];
-  for (const sx of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(.062, 24, 16), white); eye.scale.set(.85, 1.15, .45); eye.position.set(sx * .085, CY + .11, .07); body.add(eye); FACE.eyes.push(eye);
-    const pupil = new THREE.Mesh(new THREE.SphereGeometry(.03, 16, 12), black); pupil.scale.set(1, 1.15, .5); pupil.position.set(sx * .085, CY + .105, .097); body.add(pupil); FACE.pupils.push(pupil);
-    const hl = new THREE.Mesh(new THREE.SphereGeometry(.009, 8, 6), coreMat); hl.position.set(.012, .014, .014); pupil.add(hl);
-    const brow = new THREE.Mesh(new THREE.BoxGeometry(.075, .016, .02), black); brow.position.set(sx * .085, CY + .2, .085); body.add(brow); FACE.brows.push(brow);
+const bronze = new THREE.MeshPhysicalMaterial({ color: 0xa8742e, metalness: 1, roughness: .3, clearcoat: .5, clearcoatRoughness: .25, envMapIntensity: .45 });
+const steel = new THREE.MeshPhysicalMaterial({ color: 0x6d757d, metalness: 1, roughness: .34, clearcoat: .4, clearcoatRoughness: .3, envMapIntensity: .4 });
+const hoofMat = new THREE.MeshStandardMaterial({ color: 0x15120f, metalness: .6, roughness: .45 });
+const eyeMat = new THREE.MeshBasicMaterial({ color: 0x35ffb4, toneMapped: false });
+const sph = (r, m, sx = 1, sy = 1, sz = 1) => { const s = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), m); s.scale.set(sx, sy, sz); return s; };
+const at3 = (o, x, y, z) => { o.position.set(x, y, z); return o; };
+const tube = (pts, r, m) => new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(...p))), 20, r, 8), m);
+function beast(bear) {
+  const M = bear ? steel : bronze, g = new THREE.Group(), body = new THREE.Group(), head = new THREE.Group(); g.add(body); hero.add(g);
+  body.position.set(-.3, .52, 0);                // the body turns round the hind legs: it can rear up
+  body.add(at3(sph(bear ? .32 : .3, M, bear ? 1.5 : 1.65, bear ? 1.05 : 1, bear ? 1 : .88), .3, .12, 0));
+  body.add(at3(sph(bear ? .3 : .27, M, 1, 1.05, .95), .58, bear ? .3 : .27, 0));
+  body.add(at3(sph(bear ? .29 : .25, M, 1, .95, .92), .02, .13, 0));
+  head.position.set(.84, .24, 0); body.add(head);
+  const eyes = [];
+  if (bear) {
+    head.add(at3(sph(.19, M), .12, -.04, 0)); head.add(at3(sph(.1, M, 1.35, .8, .85), .3, -.1, 0)); head.add(at3(sph(.035, hoofMat), .43, -.08, 0));
+    for (const z of [-.13, .13]) head.add(at3(sph(.065, M, 1, 1, .5), .04, .14, z));
+    body.add(at3(sph(.06, M), -.27, .16, 0));
+  } else {
+    head.add(at3(sph(.16, M, 1.3, .95, .85), .14, -.08, 0));
+    const snout = new THREE.Mesh(new THREE.CylinderGeometry(.085, .1, .14, 18), M); snout.rotation.z = Math.PI / 2; head.add(at3(snout, .3, -.16, 0));
+    for (const z of [-.04, .04]) head.add(at3(sph(.018, hoofMat), .37, -.16, z));
+    for (const z of [-1, 1]) { head.add(tube([[.08, .03, .09 * z], [.06, .1, .25 * z], [.16, .2, .35 * z], [.3, .25, .33 * z]], .026, M)); head.add(at3(sph(.042, M, 1.6, .5, .8), .03, .04, .15 * z)); }
+    body.add(tube([[-.24, .14, 0], [-.38, .06, 0], [-.43, -.14, 0], [-.36, -.3, .04]], .016, M)); body.add(at3(sph(.04, M), -.36, -.31, .04));
   }
-  FACE.mouth = new THREE.Mesh(new THREE.TorusGeometry(.045, .01, 8, 24, Math.PI), black); FACE.mouth.rotation.z = Math.PI; FACE.mouth.position.set(0, CY + .035, .075); body.add(FACE.mouth);
-  FACE.disc = disc;
-  // a round mouth for a whistle or a shock, and two drops of sweat
-  FACE.o = new THREE.Mesh(new THREE.TorusGeometry(.03, .011, 8, 24), black); FACE.o.position.set(0, CY + .03, .075); FACE.o.visible = false; body.add(FACE.o);
-  const sweatMat = new THREE.MeshPhysicalMaterial({ color: 0xbfe6ff, roughness: .05, metalness: 0, clearcoat: 1, emissive: 0x3a9ad0, emissiveIntensity: .6, transparent: true });
-  FACE.drops = [-1, 1].map(sx => { const d = new THREE.Mesh(new THREE.SphereGeometry(.034, 14, 10), sweatMat.clone()); d.scale.set(.8, 1.3, .8); d.userData.sx = sx; d.visible = false; body.add(d); return d; });
+  for (const z of [-.1, .1]) { const e = at3(sph(.022, eyeMat), bear ? .24 : .21, bear ? .01 : -.03, z); head.add(e); eyes.push(e); }
+  const legs = {};
+  for (const [k, front, z] of [['fl', 1, .14], ['fr', 1, -.14], ['bl', 0, .14], ['br', 0, -.14]]) {
+    const hip = new THREE.Group(); if (front) { hip.position.set(.6, 0, z); body.add(hip); } else { hip.position.set(-.32, .52, z); g.add(hip); }
+    const up = new THREE.Mesh(new THREE.CapsuleGeometry(bear ? .085 : .07, bear ? .16 : .18, 6, 12), M); up.position.y = -.14; hip.add(up);
+    const knee = new THREE.Group(); knee.position.y = -.27; hip.add(knee);
+    const lo = new THREE.Mesh(new THREE.CapsuleGeometry(bear ? .07 : .045, bear ? .14 : .16, 6, 12), M); lo.position.y = -.11; knee.add(lo);
+    const foot = bear ? sph(.085, hoofMat, 1.35, .6, 1.1) : new THREE.Mesh(new THREE.CylinderGeometry(.05, .058, .06, 14), hoofMat); foot.position.set(bear ? .03 : 0, -.23, 0); knee.add(foot);
+    legs[k] = { hip, knee };
+  }
+  g.traverse(n => { if (n.isMesh && n.material !== eyeMat) n.castShadow = true; });
+  return { g, body, head, legs, eyes, bear };
 }
-// musical notes when he whistles
+const BEAST = { bull: beast(false), bear: beast(true) };
+BEAST.bear.g.visible = false;
+const coreLight = new THREE.PointLight(0x35ffb4, .9, 2.4, 2); coreLight.position.set(0, .7, -.5); hero.add(coreLight);   // an aura behind him in his mood colour
+// sweat, when he is worn down or liquidations are close
+const sweatMat = new THREE.MeshPhysicalMaterial({ color: 0xbfe6ff, roughness: .05, metalness: 0, clearcoat: 1, emissive: 0x3a9ad0, emissiveIntensity: .6, transparent: true });
+const drops = [-1, 1].map(sx => { const d = new THREE.Mesh(new THREE.SphereGeometry(.03, 12, 10), sweatMat.clone()); d.scale.set(.8, 1.3, .8); d.userData.sx = sx; d.visible = false; scene.add(d); return d; });
+// musical notes when he hums along with a calm market
 const noteTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'); x.fillStyle = '#fff'; x.font = '700 48px Georgia,serif';
   x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('♪', 32, 34); const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t; })();
 const notes = [0, 1, 2].map(() => { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: noteTex, color: 0xffd9a0, transparent: true, depthWrite: false, opacity: 0 })); sp.visible = false; scene.add(sp); return { sp, t0: -9, x: 0, y: 0 }; });
 const FEEL = { sweat: 0, shock: 0, joy: 0, calm: 0, note: 0, force: null }, PH = [];      // PH: the price over the last seconds
-const coreLight = new THREE.PointLight(0x35ffb4, .9, 2.4, 2); coreLight.position.set(0, CY, -.25); body.add(coreLight);   // an aura behind him in his mood colour
-const limbs = {};
-for (const sx of [-1, 1]) {
-  // arms from the rim of the coin: upper arm, elbow, forearm, a red boxing glove with a white cuff
-  const arm = new THREE.Group(); arm.position.set(sx * (CR - .02), CY - .02, sx > 0 ? .03 : -.03); body.add(arm);
-  const up = cap(.022, .13, rubber); up.position.y = -.085; arm.add(up);
-  const fore = new THREE.Group(); fore.position.y = -.17; arm.add(fore);
-  const fa = cap(.021, .12, rubber); fa.position.y = -.075; fore.add(fa);
-  const glove = new THREE.Group(); glove.position.y = -.17; fore.add(glove);
-  const red = new THREE.MeshPhysicalMaterial({ color: 0xd2232a, roughness: .35, clearcoat: .8, clearcoatRoughness: .15 });
-  const gl = new THREE.Mesh(new THREE.SphereGeometry(.068, 24, 16), red); gl.scale.set(1, 1.1, 1); glove.add(gl);
-  const thumb = new THREE.Mesh(new THREE.SphereGeometry(.03, 12, 10), red); thumb.position.set(-sx * .05, .02, .03); glove.add(thumb);
-  const cuff = new THREE.Mesh(new THREE.CylinderGeometry(.045, .05, .04, 16), new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: .5 })); cuff.position.y = .07; glove.add(cuff);
-  // legs from under the coin: thigh, knee, shin, a sneaker
-  const hip = new THREE.Group(); hip.position.set(sx * .1, CY - CR + .06, 0); hero.add(hip);
-  const th = cap(.026, .16, rubber); th.position.y = -.1; hip.add(th);
-  const knee = new THREE.Group(); knee.position.y = -.2; hip.add(knee);
-  const sn = cap(.024, .14, rubber); sn.position.y = -.09; knee.add(sn);
-  const shoe = new THREE.Group(); shoe.position.y = -.2; knee.add(shoe);
-  const upper = new THREE.Mesh(new THREE.SphereGeometry(.06, 20, 14), new THREE.MeshStandardMaterial({ color: 0xf4f4f0, roughness: .45 })); upper.scale.set(1.5, .75, 1); upper.position.set(.03, .0, 0); shoe.add(upper);
-  const sole = new THREE.Mesh(new THREE.BoxGeometry(.19, .022, .1), new THREE.MeshStandardMaterial({ color: 0xf7931a, roughness: .5 })); sole.position.set(.03, -.04, 0); shoe.add(sole);
-  const lace = new THREE.Mesh(new THREE.BoxGeometry(.05, .01, .06), seamMat); lace.position.set(.05, .042, 0); shoe.add(lace);
-  limbs[sx] = { arm, up, fore, fa, glove, hip, knee, shoe };
-}
-hero.scale.setScalar(HS);
-hero.traverse(n => { if (n.isMesh && n.material !== seamMat && n.material !== glowMat && n.material !== coreMat) n.castShadow = true; });
 // behind a wall his silhouette glows through it: drawn after the world, before him, only where something is in front
 const ghostMat = new THREE.MeshBasicMaterial({ color: 0x35ffb4, blending: THREE.AdditiveBlending, depthWrite: false, depthFunc: THREE.GreaterDepth, toneMapped: false, fog: false });
 { const ms = []; hero.traverse(n => { if (n.isMesh) ms.push(n); });
   for (const m of ms) { m.renderOrder = 2; const g = new THREE.Mesh(m.geometry, ghostMat); g.renderOrder = 1; m.add(g); } }
 let blinkAt = 3;
+const tmpV2 = new THREE.Vector3();
 
 // particles, glass shards, rings and impact stars
 const PMAX = 4000, pg = new THREE.BufferGeometry();
@@ -865,7 +856,7 @@ const spent = new Map();         // level key -> time it was settled (kept while
 const labels = new Map();        // price -> label sprite
 const queue = [];                // { p, dir, type: 'cross' | 'hold' | 'target', levels, T }
 const FX = { slow: 0, orbit: 0, sparks: [], shards: [], bills: [], rings: [], stars: [], calls: [], shake: 0, flash: 0, ab: 0, kick: 0 };
-const H = { hp: 1, hpAt: -9, p: null, y: 0, v: 0, face: 1, yaw: Math.PI / 2, mode: 'follow', t0: 0, job: null, speed: 0, dist: 0, phase: 0, guard: 0, idleAt: 0, mood: 0, lockAt: -9, dash: 0 };
+const H = { form: 'bull', morphAt: -9, hp: 1, hpAt: -9, p: null, y: 0, v: 0, face: 1, yaw: Math.PI / 2, mode: 'follow', t0: 0, job: null, speed: 0, dist: 0, phase: 0, guard: 0, idleAt: 0, mood: 0, lockAt: -9, dash: 0 };
 const stats = { walls: 0, liq: 0, stops: 0, targets: 0, real: 0 };
 let now = 0, camOv = 0, camC = null, camS = 1200, camY = null, overviewAt = 20, evAt = null, coinX = null, coinY = 0, coinRot = 0;
 // "the wall holds": the price came within tol x bucket of it and went back away x tol. Tested on 23 h of 1-minute candles
@@ -905,6 +896,7 @@ const SFX = {
   ping: () => { tone(2600 + Math.random() * 800, .09, 'sine', .03, 1900); },
   boom: (k = 1) => { tone(68, .5 * k + .15, 'sine', .45 * Math.min(1.4, k), 28); hiss(.35 * k + .1, .28 * Math.min(1.4, k), 'lowpass', 900, 120); },
   cannon: () => { tone(52, .6, 'sine', .55, 24); hiss(.32, .35, 'lowpass', 1300, 200); },
+  morph: (up = 1) => { tone(up ? 180 : 320, .5, 'sawtooth', .05, up ? 420 : 110); tone(up ? 90 : 70, .6, 'sine', .3, up ? 140 : 40); hiss(.4, .15, 'bandpass', 1200, 300); },
   far: () => { hiss(.07, .045, 'lowpass', 700); tone(80 + Math.random() * 40, .1, 'sine', .04, 45); },
   bugle: () => { [392, 523, 659, 784].forEach((f, i) => tone(f, i === 3 ? .55 : .14, 'triangle', .09, null, i * .13)); },
   scatter: () => { for (let i = 0; i < 6; i++) tone(500 + Math.random() * 700, .12, 'triangle', .04, 900 + Math.random() * 600, Math.random() * .35); },
@@ -940,7 +932,7 @@ function onLevels() {
         if (sameBooks && L.s < oldS * .7 && Math.abs(P - o.L.p) <= D.B * 1.5 && Date.now() - (o.L.crackAt ?? 0) > 60e3) {
           o.L.crackAt = Date.now(); o.L.crack = Math.min(1, crack + (1 - L.s / oldS) * 2); crackFx(o, oldS, L.s); }
         else if (L.s > oldS * 1.15) o.L.crack = Math.max(0, crack - .35);
-        else if (sameBooks && L.s < oldS * .87 && o.sq) for (const s of o.sq.filter(s => s.st === 'stand' && !s.gen).sort(() => R() - .5).slice(0, 3)) s.flagT = now + R() * .4;      // shrinking: a few wave a white flag
+        else if (sameBooks && L.s < oldS * .87) for (const u of o.units.filter(u => u.st === 'idle').sort(() => R() - .5).slice(0, 2)) u.flagT = now + R() * .4;      // shrinking: a few wave a white flag
       }
     }
   }
@@ -1009,34 +1001,31 @@ function callout(title, sub, col, at) {
 const R = Math.random;
 function settle(L, type, dir, quiet) {
   const o = objs.get(L.key); if (!o) return;
-  const base = SY(L.p), y = PUNCH_Y, x = WX(L.p), col = colOf(L), sub = `${nameOf(L.k, L.above)} · ${L.v} · ${fmtP(L.p)}`;
+  const base = SY(L.p), y = SQ_PY, x = WX(L.p), col = colOf(L), sub = `${nameOf(L.k, L.above)} · ${L.v} · ${fmtP(L.p)}`;
   L.queued = false; L.lastFx = now;
   if (type === 'hold') {
     const wy = isWall(L) ? SQ_PY : y;
     L.rip = { t0: now, y, a: 1 }; FX.rings.push({ x, y: base + wy, t0: now, col, kind: 'wall' }); FX.shake = Math.max(FX.shake, .07); FX.ab = 1.2;
     for (let i = 0; i < 26; i++) spark(x - dir * .02, base + wy, (R() - .5) * .2, -dir * (.5 + R() * 2.2), (R() - .5) * 2.4, (R() - .5) * 2.4, R() < .4 ? 'txt' : col, .35 + R() * .4, .05);
-    if (o.sq) for (const s of o.sq) if (s.st === 'stand') { s.next = now + R() * .3; s.aim = 1; }      // the army that holds: a volley, all at once
+    for (const u of o.units) if (u.st === 'idle') u.next = now + R() * .3;      // the group that holds: a volley, all at once
     if (isWall(L)) { H.hp = Math.max(.05, H.hp - .12); H.hpAt = now; }
-    callout(isWall(L) ? 'LEGER HOUDT STAND' : 'MUUR HOUDT', sub, col); if (!quiet) sfx('hold'); return;
+    callout(isWall(L) ? 'MUUR HOUDT STAND' : 'MUUR HOUDT', sub, col); if (!quiet) sfx('hold'); return;
   }
   spent.set(L.key, now);
   if (isWall(L)) {                                  // the army is knocked flying, and the money it guarded with it
     L.state = 'broken'; L.fx = { t0: now, y: SQ_PY }; FX.flash = Math.max(FX.flash, .2); FX.shake = Math.max(FX.shake, .08); FX.ab = 1; stats.walls++; if (!quiet) { FX.slow = 1; FX.kick = 1.8; }
-    for (const s of o.sq) if (s.st === 'stand' || s.st === 'drop' || s.st === 'flee') { const d = Math.abs(s.z) * .5 + Math.abs(s.x - x) * 2;
-      s.st = 'fly'; s.t0 = now; s.vx = dir * (1.4 + R() * 3) / (1 + d * .5); s.vy = 2 + R() * 3.2; s.vz = (R() - .5) * 2 + s.z * .9; s.wx = (R() - .5) * 16; s.wz = (R() - .5) * 16; }
-    if (o.tank && !o.tank.v) { o.tank.v = new THREE.Vector3(dir * 1.2, 3.5, (R() - .5)); o.tank.w = new THREE.Vector3((R() - .5) * 4, 0, (R() - .5) * 6); }
+    for (const u of o.units) if (u.st !== 'fly' && u.st !== 'wreck') { u.boomAt = now + .03 + Math.abs(u.x - x) * .25 + R() * .25; u.dir = dir; }      // the vehicles go up one after another
     plantFlag(L.p, dir, quiet); H.hp = Math.min(1, H.hp + .2); H.hpAt = now;
     for (let i = 0; i < 30; i++) bill(x, base + .2 + R() * .6, (R() - .5) * SW, dir * (.8 + R() * 2.4), .8 + R() * 2.2, (R() - .5) * 2.4, col);
     for (let i = 0; i < 24; i++) spark(x, base + SQ_PY, (R() - .5) * .3, dir * (1 + R() * 3), (R() - .5) * 2.5, (R() - .5) * 2.5, R() < .5 ? 'txt' : col, .4 + R() * .5, .05);
-    callout('LEGER VERSLAGEN', sub, col); if (!quiet) { sfx('cross'); sfx('scatter'); sfx('bugle'); }
-  } else if (L.k === 'stop') {                      // the mines go off one after another, from where he tripped the wire outward
+    callout('MUUR VERNIETIGD', sub, col); if (!quiet) { sfx('cross'); sfx('scatter'); sfx('bugle'); }
+  } else if (L.k === 'stop') {                      // the medium tanks go off one after another
     L.state = 'spent'; L.fx = { t0: now, y }; stats.stops++; H.hp = Math.min(1, H.hp + .05);
-    for (const m of o.mines) m.userData.boom = now + .05 + Math.abs(m.position.z) * .28;
+    for (const u of o.units) if (u.st !== 'fly' && u.st !== 'wreck') { u.boomAt = now + .05 + Math.abs(u.z) * .3; u.dir = dir; }      // the tanks blow, from where he hit outward
     callout('STOPS GERAAKT', sub, col); if (!quiet) sfx('stop');
-  } else {                                          // the purple glass shatters
+  } else {                                          // liquidations: the heavy tanks blow
     L.state = 'spent'; L.fx = { t0: now, y }; FX.shake = Math.max(FX.shake, .16); FX.ab = 1.2; stats.liq += L.s; FX.flash = Math.max(FX.flash, .3); if (!quiet) { FX.slow = .8; FX.kick = 1.5; } H.hp = Math.min(1, H.hp + .05);
-    for (const b of o.barrels) if (!b.userData.gone) { const d = Math.abs(b.position.z) * .4;
-      b.userData.v = new THREE.Vector3(dir * (1.5 + R() * 3) / (1 + d), 2.5 + R() * 3.5 + b.position.y * 3, (R() - .5) * 2 + b.position.z * 1.2); b.userData.w = new THREE.Vector3((R() - .5) * 14, 0, (R() - .5) * 14); }
+    for (const u of o.units) if (u.st !== 'fly' && u.st !== 'wreck') { u.boomAt = now + R() * .2; u.dir = dir; }      // the heavy tanks go up in one purple blast
     for (let i = 0; i < 70; i++) { const a = R() * Math.PI * 2, v = 1 + R() * 4; spark(x, base + .35 + R() * .3, (R() - .5) * SW, Math.cos(a) * v * .6, 1 + R() * 4, Math.sin(a) * v, R() < .35 ? 'stop' : R() < .5 ? 'txt' : 'liq', .5 + R() * .8, .06); }
     FX.rings.push({ x, y: base + .02, t0: now, col, kind: 'floor' });
     for (let i = 0; i < 50; i++) { const sy = base + Math.max(.05, Math.min(o.h, y + (R() - .5) * o.h * 1.1)), sz = (R() - .5) * SW, d = Math.hypot(sy - base - y, sz);
@@ -1087,12 +1076,12 @@ function hitTarget(m, quiet) {
     spark(x, y, 0, Math.cos(a) * Math.cos(b) * v, Math.sin(b) * v, Math.sin(a) * Math.cos(b) * v, R() < .4 ? 'txt' : col, .7 + R() * .9, .05); }
   callout('DOEL GERAAKT', `Doel ${m.up ? '▲' : '▼'} · ${fmtP(m.p)} · kans was ${Math.round(m.prob * 100)}%`, col); if (!quiet) sfx('target');
 }
-// a wall eaten while the price stands against it: part of its army deserts
+// a wall eaten while the price stands against it: part of its group gives up
 function crackFx(o, from, to) {
   const L = o.L, x = WX(L.p), col = colOf(L), base = SY(L.p);
-  const run = o.sq ? o.sq.filter(s => s.st === 'stand' && !s.gen) : [], n = Math.round(run.length * Math.min(.8, 1 - to / from));      // men desert: they run off the stairs
-  for (const s of run.sort(() => R() - .5).slice(0, n)) { s.st = 'surrender'; s.t0 = now + R() * .3; }      // a white flag first, then they run
-  L.lastFx = now; callout('LEGER DUNT UIT', `${nameOf(L.k, L.above)} · ${fmtUsd(from)} → ${fmtUsd(to)} · ${fmtP(L.p)}`, col, Date.now()); sfx('crack');
+  const run = o.units.filter(u => u.st === 'idle'), n = Math.round(run.length * Math.min(.8, 1 - to / from));      // vehicles give up: a white flag, then they drive off
+  for (const u of run.sort(() => R() - .5).slice(0, n)) { u.st = 'flag'; u.t0 = now + R() * .3; }
+  L.lastFx = now; callout('MUUR GEEFT TOE', `${nameOf(L.k, L.above)} · ${fmtUsd(from)} → ${fmtUsd(to)} · ${fmtP(L.p)}`, col, Date.now()); sfx('crack');
 }
 // a real liquidation: gathered over 1.5 s per side, then shown where it happened
 const liqBurst = { long: null, short: null };
@@ -1111,10 +1100,9 @@ function showRealLiq(long, p, usd, ex, at) {
     FX.shake = Math.max(FX.shake, .02 + big * .1);
     // the estimated liquidation level close by lights up: here it actually happens
     for (const o of objs.values()) if (o.L.k === 'liq' && !o.gone && Math.abs(o.L.p - p) <= D.B && o.L.above === !long) { o.L.real = now; o.L.lastFx = now; o.L.rip = { t0: now, y: PUNCH_Y, a: .6 + big * .8 };
-      const left = o.barrels?.filter(b => !b.userData.gone && !b.userData.v);
-      if (usd >= 500e3 && o.L.state === 'live' && left?.length > 2) { const b = left[left.length - 1]; b.userData.gone = true;      // a big one: one barrel blows
-        b.userData.v = new THREE.Vector3((R() - .5) * 2, 4 + R() * 2, (R() - .5) * 3); b.userData.w = new THREE.Vector3((R() - .5) * 12, 0, (R() - .5) * 12);
-        boom(o.group.position.x + b.position.x, o.group.position.y + b.position.y, b.position.z, 'liq', 1); } }
+      const left = o.units.filter(u => u.st === 'idle');
+      if (usd >= 500e3 && o.L.state === 'live' && left.length > 1) left[left.length - 1].boomAt = now;      // a big one: one heavy tank blows
+      else for (const u of left) u.next = Math.min(u.next, now + R() * .4); }      // the others fire into the air
   }
   const sub = `${long ? 'Longs' : 'Shorts'} · ${fmtUsd(usd)} · ${ex.join(' + ')} · ${fmtP(p)}`;
   if (usd >= 250e3) callout('ECHTE LIQUIDATIE', sub, 'liq', at); else if (usd >= 50e3) logEvent('Echte liquidatie', sub, 'liq', at);
@@ -1127,7 +1115,7 @@ function punch(j, big) {
   if (!j.quiet) sfx(big ? 'cross' : 'jab');
   if (big) { for (const L of j.levels) settle(L, j.type === 'hold' ? 'hold' : 'cross', j.dir, j.quiet); return; }
   for (const L of j.levels) { L.lastFx = now; if (L.k !== 'stop') L.rip = { t0: now, y: PUNCH_Y, a: .35 };
-    const o = objs.get(L.key); if (o?.sq) for (const s of o.sq) if (s.st === 'stand' && s.front) s.stag = now; }
+    const o = objs.get(L.key); if (o) for (const u of o.units) if (u.front) u.hitT = now; }
   for (let i = 0; i < 12; i++) spark(x - j.dir * .03, y, (R() - .5) * .1, -j.dir * (.3 + R() * 1.3), (R() - .3) * 1.6, (R() - .5) * 1.6, R() < .5 ? 'txt' : col, .25 + R() * .25, .04);
 }
 
@@ -1172,12 +1160,18 @@ function think(dt) {
     const fxp = WX(H.p) + H.face * .1, run = Math.min(1, H.speed / 430);
     for (let i = 0; i < 4 + run * 8; i++) spark(fxp + (R() - .5) * .12, H.y + .02, (R() - .5) * .25, -H.face * R() * .7 * (.3 + run), .2 + R() * .5 * (.4 + run), (R() - .5) * .5, 'cyan', .3 + R() * .3, .026);
     if (run > .45) FX.rings.push({ x: fxp, y: H.y + .015, t0: now, col: 'cyan', kind: 'step' });
-    const ti = Math.floor(fxp / TREAD + 1e-6); treadLit.push({ x: (ti + .5) * TREAD, y: ti * RISE + .006, t0: now }); if (treadLit.length > 14) treadLit.shift();
+    const ti = Math.floor(fxp / TREAD + 1e-6); treadLit.push({ x: (ti + .5) * TREAD, y: SYx((ti + .5) * TREAD) + .012, t0: now }); if (treadLit.length > 14) treadLit.shift();
   }
   const closing = H.mode === 'approach' && Math.abs(target - H.p) * U < .9;
   const gw = H.mode === 'combo' || H.mode === 'shadow' || H.mode === 'knock' || closing || now - (H.hitAt ?? -9) < .5 ? 1 : 0;      // under fire: gloves up
   H.guard += (gw - H.guard) * Math.min(1, dt * (gw > H.guard ? 12 : 5));
-  H.yaw += ((H.mode === 'pose' ? 0 : .32) * H.face - H.yaw) * Math.min(1, dt * 7);
+  { const tw = H.mode === 'pose' ? .75 : .35, ty = H.face > 0 ? -tw : Math.PI + tw; H.yaw += wrapA(ty - H.yaw) * Math.min(1, dt * 5); }      // side on, a little toward the camera
+  // bull while the market climbs, bear while it falls: he changes when the mood turns clearly
+  H.ema = H.ema == null ? P : H.ema + (P - H.ema) * Math.min(1, dt / 45);      // the price of the last minute or so
+  const form = P > H.ema + STEP * .5 ? 'bull' : P < H.ema - STEP * .5 ? 'bear' : H.form;
+  if (form !== H.form && now - H.morphAt > 8) { H.form = form; H.morphAt = now; const c = form === 'bull' ? 'up' : 'dn';
+    for (let i = 0; i < 40; i++) { const a = R() * Math.PI * 2; spark(WX(H.p), H.y + .6, 0, Math.cos(a) * (1 + R() * 2), R() * 2, Math.sin(a) * (1 + R() * 2), R() < .5 ? c : 'txt', .5 + R() * .4, .05); }
+    FX.rings.push({ x: WX(H.p), y: H.y + .02, t0: now, col: c, kind: 'floor' }); sfx('morph', form === 'bull' ? 1 : 0); }
   const drift = P - (D?.candles?.[Math.max(0, D.candles.length - 25)]?.[4] ?? P);
   H.mood += ((H.mode === 'approach' || H.mode === 'combo' ? H.face : Math.sign(drift) * .6) - H.mood) * dt * 1.5;
   // the magnets pull: motes stream from him toward each target, more for the stronger one
@@ -1209,11 +1203,11 @@ const QUAL = [[1.75, 1, 1, 1], [1.25, 1, 1, 0], [1, 1, 0, 0], [1, 0, 0, 0], [.75
 const Q = { i: MOBILE ? 1 : 0, fps: MOBILE ? 30 : 60, n: 0, t: 0, wait: 3 };
 function resize() {
   W = innerWidth; Hh = innerHeight; aspect = W / Hh; SAT = $('sat').offsetHeight; DPR = Math.min(QUAL[Q.i][0], devicePixelRatio || 1); bloom.enabled = !!QUAL[Q.i][1]; dof.enabled = !!QUAL[Q.i][3];
-  const shd = !!QUAL[Q.i][2]; if (renderer.shadowMap.enabled !== shd) { renderer.shadowMap.enabled = shd; stepMat.needsUpdate = true; } key.castShadow = shd; key.shadow.mapSize.set(MOBILE ? 1024 : 2048, MOBILE ? 1024 : 2048);
+  const shd = !!QUAL[Q.i][2]; if (renderer.shadowMap.enabled !== shd) { renderer.shadowMap.enabled = shd; groundMat.needsUpdate = true; propMat.needsUpdate = true; } key.castShadow = shd; key.shadow.mapSize.set(MOBILE ? 1024 : 2048, MOBILE ? 1024 : 2048);
   renderer.setPixelRatio(DPR); renderer.setSize(W, Hh, false); composer.setPixelRatio(DPR); composer.setSize(W, Hh);
   bloom.resolution.set(W * DPR, Hh * DPR); hud.width = Math.round(W * DPR); hud.height = Math.round(Hh * DPR);
   camera.aspect = aspect; camera.updateProjectionMatrix();
-  PX = Hh * DPR * .9; pMat.uniforms.uPx.value = PX; for (const o of objs.values()) if (o.pts) o.mat.uniforms.uPx.value = PX;
+  PX = Hh * DPR * .9; pMat.uniforms.uPx.value = PX; smMat.uniforms.uPx.value = PX;
 }
 addEventListener('resize', resize);
 function render3d(dt, dtReal = dt) {
@@ -1253,12 +1247,13 @@ function render3d(dt, dtReal = dt) {
     if (trailLast != null && ti !== trailLast) for (let i = Math.min(ti, trailLast) + 1; i < Math.max(ti, trailLast); i++) trail.set(i, t);   // a jump: the steps in between too
     trailLast = ti; trail.set(ti, t); let n = 0;
     for (const [i, t0] of trail) { const age = t - t0; if (age > TRAILS) { trail.delete(i); continue; } if (n >= TRAILN) break;
-      const a = Math.pow(1 - age / TRAILS, 1.6) * .2; dummy.position.set((i + .5) * TREAD, i * RISE + .004, 0); dummy.rotation.set(-Math.PI / 2, 0, 0); dummy.scale.set(1, 1, 1);
+      const a = Math.pow(1 - age / TRAILS, 1.6) * .2; dummy.position.set((i + .5) * TREAD, SYx((i + .5) * TREAD) + .008, 0); dummy.rotation.set(0, 0, SLOPE); dummy.scale.set(1, 1, 1);
       dummy.updateMatrix(); trailMesh.setMatrixAt(n, dummy.matrix); trailMesh.setColorAt(n, tc.setRGB(.97 * a, .55 * a, .12 * a)); n++; }
     trailMesh.count = n; trailMesh.instanceMatrix.needsUpdate = trailMesh.instanceColor.needsUpdate = true; }
-  if (coinX != null) { const ci = Math.floor(coinX / TREAD + 1e-6); coinTread.position.set((ci + .5) * TREAD, ci * RISE + .007, 0); coinTread.material.opacity = .22 + .08 * Math.sin(t * 4); }
+  if (coinX != null) { const ci = Math.floor(coinX / TREAD + 1e-6); coinTread.position.set((ci + .5) * TREAD, SYx((ci + .5) * TREAD) + .016, 0); coinTread.material.opacity = .22 + .08 * Math.sin(t * 4); }
   scene.fog.near = dist * .7; scene.fog.far = dist * 2.6;
-  placeSteps(cx - span * 1.2 - 4);
+  placeGround(cx); placeMarks(cx - span * 1.2 - 4);
+  if (R() < dt * 2.5) { const s = smokers[Math.floor(R() * smokers.length)]; if (s && Math.abs(s[0] - cx) < span) puff(s[0], s[1], s[2], 1.2, 5); }      // the wrecks smoulder
   const zd = span / (2 * Math.tan(THREE.MathUtils.degToRad(17)) * 1.78);        // how far out, as on a 16:9 screen, so a tall phone counts as close
   const wide = Math.min(1, Math.max(0, (zd - 14) / 14));
   // a wall between the camera and him: is any of his feet, belly or head behind it?
@@ -1268,80 +1263,50 @@ function render3d(dt, dtReal = dt) {
       for (const hy of [.15, .75, 1.3]) for (const xw of [x - th / 2 - .14, x + th / 2 + .14]) { const s = (xw - camP.x) / dx; if (s <= 0 || s >= 1) continue;
         const z = camP.z * (1 - s), y = camP.y + s * (H.y + hy - camP.y); if (Math.abs(z) < SW / 2 + .1 && y > y0 && y < y0 + h) return true; } }
     return false; };
-  // the biggest army in view gets the general
-  { let big = null; for (const o of objs.values()) { o.isBig = false; if (isWall(o.L) && o.L.state === 'live' && !o.gone && Math.abs(o.L.p - camC) < camS * .6 && (!big || o.L.s > big.L.s)) big = o; } if (big) big.isBig = true; }
   // levels: fade in, fade out, react
   for (const [k, o] of objs) {
     o.fade = Math.max(0, Math.min(1, o.fade + (o.gone ? -dt * 1.6 : dt * 1.4)));
-    if (o.gone && o.fade <= 0 && !o.sq?.some(s => s.st === 'fly' || s.st === 'down') && !(o.tank?.v && t - (o.tank.land ?? t) < 3.2)) { scene.remove(o.group); dispose(o.group); objs.delete(k); continue; }
+    if (o.gone && o.fade <= 0 && !o.units.some(u => u.st === 'fly' || u.st === 'wreck')) { scene.remove(o.group); dispose(o.group); objs.delete(k); continue; }
     const L = o.L, f = EASE.out(o.fade), age = L.fx ? t - L.fx.t0 : 9;
     o.group.position.set(WX(L.p), SY(L.p), 0); o.group.scale.y = .02 + .98 * f;
-    if (!isWall(L) && o.panel) o.panel.scale.z = THICK(L) / o.th0;   // a size that changed at a refresh
     const hot = L.lastFx != null && t - L.lastFx < .5 ? 1 - (t - L.lastFx) / .5 : 0, gone = L.state !== 'live';
-    if (isWall(L)) {                                // an army: its banner, its glow on the floor, its men
-      o.glow.material.opacity = (gone ? .02 : .06 + L.rel * .06) * f; o.pole.visible = !gone || age < 1;
-      if (L.crack) L.crack = Math.max(0, L.crack - dt * .004);
-      const occ = !gone && blocks(o.group.position.x, o.group.position.y, o.h, THICK(L));          // a banner in front of him goes see-through
-      o.see = (o.see ?? 1) + ((occ ? .16 : 1) - (o.see ?? 1)) * Math.min(1, dt * 6);
-      squad(o, dt, t, f);
-    } else if (L.k === 'stop') {                    // mines: their lamps blink; once he trips the wire they go off one after another
-      const blink = .5 + .5 * Math.sin(t * 6 + L.p), on = gone ? 0 : (.35 + .65 * (blink > .8 ? 1 : .25)) * (1 + hot);
-      o.led.color.copy(PCOL[colOf(L)]).multiplyScalar(2.6 * on * f); o.wire.material.opacity = (gone ? 0 : .5 + .3 * hot) * f; o.glow.material.opacity = (gone ? .01 : .06 + .06 * hot) * f;
-      for (const m of o.mines) { const b = m.userData.boom;
-        if (b && t >= b && !m.userData.done) { m.userData.done = true; m.visible = false; boom(WX(L.p) + m.position.x, SY(L.p) + .06, m.position.z, colOf(L), .6); } }
-    } else {                                        // barrels: they shake when liquidations happen there; once hit they all go up
-      const shake = L.rip && t - L.rip.t0 < 1.4 ? (1 - (t - L.rip.t0) / 1.4) * .025 * (L.rip.a || 1) : 0;
-      o.bmat.emissiveIntensity = (.12 + L.rel * .12) * (1 + hot * 3) + (L.real && t - L.real < 2 ? 1 - (t - L.real) / 2 : 0);
-      o.glow.material.opacity = (gone ? .02 : .06 + L.rel * .06) * f;
-      for (const b of o.barrels) { const u = b.userData;
-        if (u.v) { u.v.y -= 9.8 * dt; b.position.addScaledVector(u.v, dt); b.rotation.x += u.w.x * dt; b.rotation.z += u.w.z * dt;
-          const g = SYx(o.group.position.x + b.position.x) - o.group.position.y + .1; if (u.v.y < 0 && b.position.y < g && Math.abs(b.position.z) < SW / 2 + .3) { b.position.y = g; u.v.multiplyScalar(.3); u.v.y = Math.abs(u.v.y) * .4; u.w.multiplyScalar(.5); u.land ??= t; }
-          if (u.land != null) b.scale.setScalar(Math.max(1e-4, 1 - Math.max(0, t - u.land - 2.2) / .6)); }
-        else if (!u.gone) { b.position.set(u.home.x + Math.sin(t * 61 + u.home.z * 9) * shake, u.home.y + Math.abs(Math.sin(t * 47 + u.home.z * 5)) * shake, u.home.z + Math.sin(t * 53 + u.home.x * 7) * shake); }
-      }
-    }
+    o.glow.material.opacity = (gone ? .02 : .06 + L.rel * .06 + hot * .1) * f; o.pole.visible = !gone || age < 1;
+    if (L.crack) L.crack = Math.max(0, L.crack - dt * .004);
+    const occ = !gone && blocks(o.group.position.x, o.group.position.y, o.h, THICK(L));          // a banner in front of him goes see-through
+    o.see = (o.see ?? 1) + ((occ ? .16 : 1) - (o.see ?? 1)) * Math.min(1, dt * 6);
+    units(o, dt, t, f);
   }
   flags(t);
   // a big army close by: the battle grumbles in the distance
   if (SND.on && R() < dt * 1.4) { const nearBig = [...objs.values()].some(o => isWall(o.L) && o.L.state === 'live' && o.L.rel > .5 && Math.abs(WX(o.L.p) - WX(H.p)) < 4.4); if (nearBig) sfx('far'); }
-  // the soldiers: flying, lying, running off, standing; each one posed on the rig and written into the parts
-  { let n = 0; const P = SOL.P, N = SOL.node, cU = tmpC, cH = new THREE.Color(), lift = new THREE.Vector3();
-    for (const o of objs.values()) { if (!o.sq) continue; const f = EASE.out(o.fade), cols = SOLC[o.L.k];
-      o.sq = o.sq.filter(s => {
-        if (s.st === 'drop') { s.vy -= 9.8 * dt; s.y += s.vy * dt; const g = SYx(s.x); if (s.y <= g) { s.y = g; s.vy = 0; s.st = 'stand'; s.stag = now - .2; } }
-        else if (s.st === 'fly') { s.vy -= 9.8 * dt; s.x += s.vx * dt; s.y += s.vy * dt; s.z += s.vz * dt; s.rx += s.wx * dt; s.rz += s.wz * dt;
-          const g = SYx(s.x); if (s.vy < 0 && s.y <= g && Math.abs(s.z) < SW / 2 + .3) { s.y = g; s.st = 'down'; s.t0 = now; s.rx = 0; s.rz = (R() < .5 ? 1 : -1) * Math.PI / 2; } if (s.y < g - 6) return false; }
-        else if (s.st === 'flee') { s.z += s.vz * dt; s.ph += Math.abs(s.vz) * dt * 26; s.walk = 1; s.yaw = s.vz > 0 ? -Math.PI / 2 : Math.PI / 2;
-          if (Math.abs(s.z) > SW / 2 + .03) { s.vy -= 9.8 * dt; s.y += s.vy * dt; } else s.y += (SYx(s.x) - s.y) * Math.min(1, dt * 14);      // off the edge of the stair they drop
-          if (s.y < SYx(s.x) - 2.5) return false; }
-        else if (s.st === 'down' && now - s.t0 > 3.2) return false;
-        else if (s.st === 'surrender') { s.walk = 0; if (now - s.t0 > 1.2) { s.st = 'flee'; s.t0 = now; s.vz = (s.z >= 0 ? 1 : -1) * (1.8 + R()); } }
-        if (n >= SOLN) return true;
-        const sc = SOLS * (s.gen ? 1.45 : 1) * f * (s.st === 'down' ? Math.min(1, Math.max(0, (3.2 - (now - s.t0)) / .5)) : 1) * (s.st === 'flee' ? Math.min(1, Math.max(0, (s.y - SYx(s.x) + 2.5) / 1.2)) : 1);
-        const stag = Math.max(0, 1 - (now - s.stag) / .45), wk = s.walk || 0, aim = s.st === 'stand' ? s.aim || 0 : 0;
-        SOL.root.position.set(s.x, s.y + (s.st === 'down' ? .07 * SOLS : 0), s.z); SOL.root.rotation.set(s.rx, s.yaw, s.rz + stag * .55 + (s.st === 'drop' ? Math.sin(now * 9 + s.seed * 9) * .2 : 0));
-        SOL.root.scale.setScalar(Math.max(1e-4, sc));
-        const sw = Math.sin(s.ph) * .7 * wk + (s.st === 'fly' ? .8 : s.st === 'drop' ? .4 : 0);
-        N.legLP.rotation.z = sw; N.legRP.rotation.z = -sw; N.torso.position.y = .3 + Math.sin(now * 2.2 + s.seed * 9) * .004;
-        // the rifle: down across the chest at rest, up at him when aiming, flung up when flying
-        let pitch = -.9, across = .55;
-        if (aim > 0) { lift.set(WX(H.p), H.y + .75, 0); const dh = Math.hypot(lift.x - s.x, lift.z - s.z), dy = lift.y - (s.y + .33 * SOLS); pitch = lerp(pitch, Math.atan2(dy, dh), aim); across = lerp(across, 0, aim); }
-        if (s.st === 'fly' || s.st === 'down') { pitch = 1.2; across = 0; }
-        const flag = s.st === 'surrender' || now - (s.flagT ?? -9) < 2.5, H0 = 1e-4;
-        if (flag) { pitch = -1.1; across = .6; }
-        N.gunP.rotation.set(0, across, pitch); N.shield.scale.setScalar(s.steel && s.st === 'stand' && !flag ? 1 : H0);
-        N.gun.scale.setScalar(s.gen ? H0 : 1); N.helmet.scale.set(s.gen ? H0 : 1, s.gen ? H0 : .8, s.gen ? H0 : 1);
-        for (const k of ['cap', 'brim', 'star', 'mega']) N[k].scale.setScalar(s.gen ? 1 : H0);
-        N.mega.rotation.set(0, 0, -Math.PI / 2 + (aim ? Math.sin(now * 3) * .1 : -.5));
-        N.fpoleP.scale.setScalar(flag ? 1 : H0); N.fpoleP.rotation.z = flag ? Math.sin(now * 7 + s.seed * 9) * .35 : 0; N.fcloth.rotation.y = Math.sin(now * 12 + s.seed * 5) * .5;
-        SOL.root.updateMatrixWorld(true);
-        for (const k in P) P[k].setMatrixAt(n, N[k].matrixWorld);
-        const v = .85 + s.seed * .3; cU.setHex(cols[0]).convertSRGBToLinear().multiplyScalar(v); cH.setHex(cols[1]).convertSRGBToLinear().multiplyScalar(v);
-        if (s.gen) cU.multiplyScalar(.7);
-        P.torso.setColorAt(n, cU); P.pack.setColorAt(n, cH); P.helmet.setColorAt(n, cH); P.legL.setColorAt(n, cH); P.legR.setColorAt(n, cH); P.cap.setColorAt(n, cU);
-        n++; return true; });
+  // the vehicles: driving, firing, waving a white flag, blown up, burning out; each one written into its instanced meshes
+  { const cnt = { ifv: 0, griz: 0, apoc: 0 }; let nf = 0; const c = tmpC, wreckC = new THREE.Color(.05, .045, .04);
+    for (const o of objs.values()) { const T = UT[o.type], f = EASE.out(o.fade), team = new THREE.Color(TEAM[isWall(o.L) ? o.L.k : o.L.k === 'stop' ? colOf(o.L) : 'liq']).convertSRGBToLinear();
+      const shake = o.L.rip && t - o.L.rip.t0 < 1.4 ? (1 - (t - o.L.rip.t0) / 1.4) * .03 * (o.L.rip.a || 1) : 0;
+      o.units = o.units.filter(u => {
+        if (u.boomAt && t >= u.boomAt) { u.boomAt = 0; boom(u.x, u.y + .2, u.z, o.type === 'apoc' ? 'liq' : colOf(o.L), o.type === 'ifv' ? .7 : o.type === 'griz' ? 1 : 1.5);
+          for (let i = 0; i < 3; i++) puff(u.x, u.y + .3, u.z, 1.6, 4);
+          u.st = 'fly'; u.t0 = t; const d = u.dir || 1; u.vx = d * (.8 + R() * 2.2) / (o.type === 'apoc' ? 2 : 1); u.vy = (o.type === 'apoc' ? 2.2 : 3) + R() * 2.5; u.vz = (R() - .5) * 2 + u.z * .5; u.wx = (R() - .5) * 9; u.wz = (R() - .5) * 9; }
+        if (u.st === 'fly') { u.vy -= 9.8 * dt; u.x += u.vx * dt; u.y += u.vy * dt; u.z += u.vz * dt; u.rx = (u.rx || 0) + u.wx * dt; u.rz = (u.rz || 0) + u.wz * dt;
+          const g = SYx(u.x) + gOff(u.x, u.z); if (u.vy < 0 && u.y <= g) { u.y = g; u.st = 'wreck'; u.t0 = t; u.rx = R() < .35 ? Math.PI : (R() - .5) * .5; u.rz = (R() - .5) * .4; } }
+        else if (u.st === 'wreck') { if (R() < dt * 3) puff(u.x, u.y + .25, u.z, 1, 4); if (R() < dt * 6) spark(u.x + (R() - .5) * .2, u.y + .2, u.z + (R() - .5) * .2, 0, .6 + R(), 0, 'stop', .4, .04);
+          if (t - u.t0 > 7) u.y -= dt * .12; if (t - u.t0 > 9) return false; }
+        else if (u.st === 'flag' && t - u.t0 > 1.2) { u.st = 'out'; u.t0 = t; }
+        else if (u.st === 'out') { u.yaw += wrapA(-Math.PI / 2 * 0 + Math.PI / 2 - u.yaw) * Math.min(1, dt * 3); u.z -= dt * 1.4; u.x += Math.cos(u.yaw) * dt * .2; u.y = SYx(u.x) + gOff(u.x, u.z); if (u.z < -(TRACK + 7)) return false; }
+        const k = o.type; if (cnt[k] >= T.cap) return true;
+        const sc = (u.st === 'wreck' ? Math.max(1e-4, Math.min(1, (9 - (t - u.t0)) / .8)) : 1) * (u.st === 'out' ? Math.min(1, Math.max(1e-4, (TRACK + 7 + u.z) / 1.5)) : 1) * (o.gone && u.st !== 'wreck' ? Math.max(1e-4, f) : 1);
+        const jolt = Math.max(0, 1 - (t - u.hitT) / .35), pitch = u.st === 'wreck' || u.st === 'fly' ? 0 : SLOPE * Math.cos(u.yaw);
+        VR.position.set(u.x + Math.sin(t * 61 + u.seed * 9) * shake, u.y + Math.abs(Math.sin(t * 47 + u.seed * 5)) * shake, u.z); VR.rotation.set(u.rx || 0, u.yaw, (u.rz || 0) + pitch + jolt * .12 * Math.sin(t * 40)); VR.scale.setScalar(sc);
+        u.rec = Math.max(0, u.rec - dt * 4); VT.position.set(-u.rec * .05, T.ty, 0); VT.rotation.set(0, u.tur, 0);
+        VR.updateMatrixWorld(true); VM[k + 'hull'].setMatrixAt(cnt[k], VR.matrixWorld); VM[k + 'tur'].setMatrixAt(cnt[k], VT.matrixWorld);
+        const wk = u.st === 'wreck' || u.st === 'fly' ? Math.min(1, (t - u.t0) * 4 + .3) : 0; c.copy(team).multiplyScalar(.85 + u.seed * .3 * (o.L.ps && o.L.ps[0] >= o.L.ps[1] - 1 ? .5 : 1)).lerp(wreckC, wk);
+        VM[k + 'hull'].setColorAt(cnt[k], c); VM[k + 'tur'].setColorAt(cnt[k], c); cnt[k]++;
+        if ((u.st === 'flag' || t - (u.flagT ?? -9) < 2.5) && nf < 60) { VF.position.set(...T.flag); VF.rotation.set(0, Math.sin(t * 9 + u.seed * 7) * .5, 0); VR.updateMatrixWorld(true); flagMesh.setMatrixAt(nf++, VF.matrixWorld); }
+        return true; });
     }
-    for (const k in SOL.P) { const m = SOL.P[k]; m.count = k === 'pack' && LITE() ? 0 : n; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; } }
+    for (const k in UT) for (const part of ['hull', 'tur']) { const m = VM[k + part]; m.count = cnt[k]; m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; }
+    flagMesh.count = nf; flagMesh.instanceMatrix.needsUpdate = true; }
+  smokeStep(dt);
   // the tracers: they hit him in a spray of sparks and he flinches; the ones that miss fly on and go
   { let n = 0;
     for (let i = BUL.length - 1; i >= 0; i--) { const b = BUL[i]; b.age += dt; const u = b.age / b.dur;
@@ -1353,7 +1318,7 @@ function render3d(dt, dtReal = dt) {
       if (b.fate === 'hit' && u >= 1) { BUL.splice(i, 1); H.hitAt = now; const shield = H.guard > .6;
         H.hp = Math.max(.05, H.hp - (b.big ? .03 : shield ? .0015 : .004)); H.hpAt = now;
         for (let k = 0; k < (b.big ? 22 : 4); k++) spark(b.x1, b.y1, b.z1 + .05, (b.x1 - b.x0) * -.1 + (R() - .5) * (b.big ? 2.4 : .8), R() * (b.big ? 2 : .9), .3 + R() * .5, R() < .5 ? 'stop' : 'txt', .15 + R() * .2, b.big ? .05 : .035);
-        if (b.big) { FX.shake = Math.max(FX.shake, .05); FX.rings.push({ x: b.x1, y: b.y1, t0: now, col: 'stop', kind: 'wall' }); sfx('boom', .6); }
+        if (b.big) { FX.shake = Math.max(FX.shake, .05); puff(b.x1, b.y1, b.z1, .7, 1.5); sfx('boom', .6); }
         else if (now - (H.pingAt || 0) > .12) { H.pingAt = now; sfx('ping'); } continue; }
       if (u > 1.8) { BUL.splice(i, 1); continue; }
       if (n >= BULN) continue;
@@ -1396,48 +1361,48 @@ function render3d(dt, dtReal = dt) {
   { const tx = WX(P); if (coinX == null) coinX = tx; coinX += (tx - coinX) * Math.min(1, dt * 9);
     coinY += (SYx(coinX) - coinY) * Math.min(1, dt * 14);
     coin.position.set(coinX, coinY, CZ); coin.userData.gem.rotation.y = t * 1.6; coin.userData.gem.position.y = 1.62 + Math.sin(t * 2.5) * .04; }
-  // hero: walking, guard, jab and cross, the stagger off a wall that holds, the fist raised at a target
+  // hero: the bull or the bear, walking, guarding, attacking, rearing at a target, staggering off a wall that holds
   const lock = t - H.lockAt < 1.2 ? 1 - (t - H.lockAt) / 1.2 : 0;
   const run = Math.min(1, H.speed / 430), walk = Math.min(1, H.speed / 140), gd = H.guard, ph = H.phase;
-  const bob = Math.abs(Math.sin(ph)) * .028 * walk * (1 + run) + (1 - walk) * Math.sin(t * 2.2) * .005;
-  hero.position.set(WX(H.p), H.y + .585 * HS + bob, 0); hero.rotation.set(0, H.yaw, 0);
   const u = H.mode === 'combo' || H.mode === 'shadow' ? (t - H.t0) * (queue.length > 2 ? 1.6 : 1) : -1;
   const jab = u < .03 ? 0 : u < JAB ? EASE.out((u - .03) / (JAB - .03)) : u < .28 ? 1 - EASE.io((u - JAB) / (.28 - JAB)) : 0;
   const cross = u < .25 ? 0 : u < CROSS ? EASE.out((u - .25) / (CROSS - .25)) : u < .47 ? 1 : u < .68 ? 1 - EASE.io((u - .47) / .21) : 0;
-  const low = (H.mode === 'combo' || H.mode === 'approach') && H.job?.levels?.some(isWall) ? 1 : 0;      // an army is small: he punches down at it
-  H.lowK = (H.lowK ?? 0) + (low - (H.lowK ?? 0)) * Math.min(1, dt * 8); const lowK = H.lowK;
   const F = H.face, kn = H.mode === 'knock' ? Math.sin(Math.PI * Math.min(1, (t - H.t0) / KNOCK)) : 0;
   const pu = H.mode === 'pose' ? t - H.t0 : -1, ps = pu < 0 ? 0 : EASE.out(Math.min(1, pu / .35)) * Math.min(1, (POSE - pu) / .3);
-  if (ps > 0) hero.position.y += Math.abs(Math.sin(pu * 7)) * .22 * ps;             // a target: he jumps for joy
-  // the body leans where he goes, twists into the cross, rocks back off a wall that holds
-  const tug = MAG.up.p != null && MAG.dn.p != null ? (MAG.up.prob - MAG.dn.prob) * (1 - Math.max(gd, cross)) : 0;      // the likelier target tugs at him
-  body.rotation.set(0, F * .45 * cross, -F * (.06 * walk + .12 * run + .2 * H.dash + .08 * gd + .12 * cross) + F * .4 * kn - tug * .22);
   const hitK = Math.max(0, 1 - (t - (H.hitAt ?? -9)) / .2), duck = Math.sin(Math.PI * Math.min(1, Math.max(0, (t - (H.dodgeAt ?? -9)) / .4)));
   const swat = Math.sin(Math.PI * Math.min(1, Math.max(0, (t - (H.parryAt ?? -9)) / .28)));
-  body.position.set(Math.sin(t * 70) * .012 * hitK, Math.sin(ph * 2) * .012 * walk - .03 * lowK * gd - .16 * duck, 0); body.rotation.z += F * .3 * duck;
-  const lead = F, rear = -F;      // the arm on the side he faces jabs; the other one throws the cross across his front
-  for (const sx of [-1, 1]) {
-    const Lm = limbs[sx], s = Math.sin(ph + (sx > 0 ? 0 : Math.PI)), stance = gd * (1 - walk * .7);
-    // legs: a stride in the plane, the knee bending back; a fighting stance with the lead foot forward
-    Lm.hip.rotation.z = lerp(F * s * (.5 + .3 * run) * walk, (sx === lead ? .38 : -.3) * F, stance) - F * .3 * kn * (sx === lead ? 1 : .4);
-    Lm.knee.rotation.z = lerp(-F * Math.max(0, Math.sin(ph + (sx > 0 ? 0 : Math.PI) + 1.3)) * (.8 + .6 * run) * walk, -F * .3, stance);
-    Lm.shoe.rotation.z = -Lm.hip.rotation.z - Lm.knee.rotation.z; Lm.shoe.scale.x = F;            // the sole stays level, the toe points ahead
-    // arms: hanging and swinging, the guard with gloves up, the jab and the stretched cross, both up at a target, flailing off a wall
-    const e = sx === lead ? jab : cross, swing = -F * s * (.45 + .4 * run) * walk;
-    let ua = lerp(sx * .25 + swing, F * .8, gd), fa = lerp(sx * -.25, F * 1.5, gd), stretch = 1;
-    ua = lerp(ua, F * (Math.PI / 2 - .62 * lowK), e); fa = lerp(fa, 0, e); stretch = 1 + e * (sx === lead ? .25 : 1.5);
-    if (ps > 0) { ua = lerp(ua, sx * 2.6, ps); fa = lerp(fa, sx * .3, ps); }
-    if (swat > 0 && sx === lead) { ua = lerp(ua, F * 2.3, swat); fa = lerp(fa, F * .4, swat); }
-    if (kn > 0) { ua = lerp(ua, sx * 1.9 + Math.sin(t * 30 + sx) * .4, kn); fa = lerp(fa, sx * .8, kn); }
-    Lm.arm.rotation.z = ua; Lm.fore.rotation.z = fa; Lm.arm.position.z = sx === rear && cross > .05 ? .09 : sx > 0 ? .03 : -.03;
-    Lm.up.scale.y = stretch; Lm.up.position.y = -.085 * stretch; Lm.fore.position.y = -.17 * stretch;
-    Lm.fa.scale.y = stretch; Lm.fa.position.y = -.075 * stretch; Lm.glove.position.y = -.17 * stretch;
-    Lm.glove.scale.setScalar(1 + e * .25);
+  const bob = Math.abs(Math.sin(ph * 2)) * .03 * walk * (1 + run) + (1 - walk) * Math.sin(t * 2.2) * .006;
+  const lunge = F * (.16 * jab + .34 * cross);
+  hero.position.set(WX(H.p) + lunge + Math.sin(t * 70) * .015 * hitK, H.y + bob - .1 * duck, 0); hero.rotation.set(0, H.yaw, SLOPE * Math.cos(H.yaw));
+  // the change between bull and bear: the old one shrinks away, the new one grows out of a flash
+  const mk = Math.min(1, (t - (H.morphAt ?? -9)) / .5);
+  for (const k of ['bull', 'bear']) { const B = BEAST[k], on = k === H.form, sc = on ? EASE.out(Math.max(0, (mk - .35) / .65)) : 1 - EASE.out(Math.min(1, mk / .35));
+    B.g.visible = sc > .01; B.g.scale.setScalar(Math.max(1e-4, sc)); B.g.rotation.y = (1 - sc) * 3 * (on ? -1 : 1); if (!B.g.visible) continue;
+    const bear = B.bear, Lg = B.legs;
+    // the gait: a trot while walking (diagonal pairs), a gallop when running (front pair, then back pair)
+    for (const [key, off0, off1] of [['fl', 0, 0], ['br', 0, Math.PI], ['fr', Math.PI, .4], ['bl', Math.PI, Math.PI + .4]]) {
+      const off = lerp(off0, off1, run), sw = Math.sin(ph + off);
+      Lg[key].hip.rotation.z = sw * (.42 + .3 * run) * walk; Lg[key].knee.rotation.z = -Math.max(0, Math.sin(ph + off + 1.2)) * (.55 + .4 * run) * walk; }
+    let rear = 0, headZ = 0, headY = 0;
+    if (!bear) {          // the bull: head down in a fight, a thrust of the horns, then a toss; pawing the ground on guard; rearing at a target
+      headZ = -.38 * gd - .3 * jab + .55 * cross - .2 * kn; rear = .12 * cross + .6 * ps + .25 * kn;
+      if (gd > .3 && walk < .3) Lg.fl.hip.rotation.z += Math.max(0, Math.sin(t * 9)) * .5 * gd, Lg.fl.knee.rotation.z -= Math.max(0, Math.sin(t * 9)) * .6 * gd;
+      if (ps > 0) { Lg.fl.hip.rotation.z = .9 + Math.sin(pu * 14) * .5; Lg.fr.hip.rotation.z = .9 - Math.sin(pu * 14) * .5; headZ += .4 * ps; }
+      headY = Math.sin(t * 22) * .5 * swat;
+    } else {              // the bear: rears up and swipes, the right paw then the left; stands up and roars at a target
+      rear = .5 * jab + .85 * cross + 1.1 * ps + .3 * kn + .15 * gd; headZ = -.2 * gd + .3 * ps + .2 * cross;
+      Lg.fl.hip.rotation.z += 1.7 * jab + 2 * ps + 1.8 * swat; Lg.fl.knee.rotation.z += -.5 * jab;
+      Lg.fr.hip.rotation.z += 2 * cross + 2.2 * ps; Lg.fr.knee.rotation.z += -.6 * cross;
+    }
+    B.body.rotation.z = rear - .12 * duck; B.body.position.y = .52 - .05 * gd * (bear ? 1 : 0);
+    B.head.rotation.set(0, headY, headZ + Math.sin(ph * 2) * .04 * walk);
+    // his eyes: his mood colour, bright in a fight, white with shock, dim when calm; a blink now and then
+    if (t > blinkAt + .13) blinkAt = t + 2.5 + Math.random() * 3;
+    B.eyes.forEach(e => e.scale.set(1, t > blinkAt ? .15 : 1 - FEEL.calm * .5, 1));
   }
-  // the face: eyes that look ahead and blink, angry brows in a fight, a grin at a target, an 'o' off a wall
-  // what the market does to him: sweat near a big liquidation, wide eyes on a fast drop, a grin on a fast rise, a whistle when nothing happens
+  // what the market does to him: sweat near a big liquidation or when worn down, white eyes on a fast drop, steam in a fight, a hum when nothing happens
   if (!PH.length || t - PH[PH.length - 1][0] > .5) { PH.push([t, P]); while (PH.length > 2 && t - PH[1][0] > 8) PH.shift(); }
-  const dv = (P - PH[0][1]) / STEP, cl = v => Math.max(0, Math.min(1, v));         // steps moved in the last eight seconds
+  const dv = (P - PH[0][1]) / STEP, cl = v => Math.max(0, Math.min(1, v));         // cells moved in the last eight seconds
   let liqNear = 0, lvNear = false;
   for (const L of LV) { if (L.state && L.state !== 'live') continue; const d = Math.abs(L.p - P) / STEP;
     if (L.k === 'liq') liqNear = Math.max(liqNear, Math.min(1, L.rel) * cl(1 - d / 6)); if (d < 5) lvNear = true; }
@@ -1445,27 +1410,18 @@ function render3d(dt, dtReal = dt) {
   const want = { sweat: Math.max(cl((liqNear - .2) / .4), cl((.35 - H.hp) / .25)), shock: cl((-dv - 2) / 2), joy: cl((dv - 2) / 2), calm: !busy && H.mode === 'follow' && H.speed < 200 && !lvNear && Math.abs(dv) < 1.2 ? 1 : 0 };
   Object.assign(want, FEEL.force);                // a test can hold a feeling
   for (const k in want) FEEL[k] += (want[k] - FEEL[k]) * Math.min(1, dt * (k === 'calm' ? .8 : 3));
-  const { sweat, shock, joy, calm } = FEEL, pull = MAG.up.p != null && MAG.dn.p != null ? MAG.up.prob - MAG.dn.prob : 0;
-  if (t > blinkAt + .13) blinkAt = t + 2.5 + Math.random() * 3;
-  const blink = t > blinkAt ? .12 : 1, look = busy ? F * .02 * (1 - ps) : lerp(F * .02, pull * .03, .7);   // idle, he eyes the stronger magnet
-  FACE.eyes.forEach((eye, i) => { const sx = i ? 1 : -1, lid = ps > .3 ? .35 : blink * (1 - calm * .45);
-    eye.scale.set(.85 * (1 + shock * .25), 1.15 * lid * (1 + kn * .3 + shock * .35), .45);
-    FACE.pupils[i].position.set(sx * .085 + look, CY + .105 - calm * .012 + shock * .01, .097); FACE.pupils[i].scale.set(1 - shock * .45, 1.15 * (ps > .3 ? .2 : lid) * (1 - shock * .4), .5);
-    FACE.brows[i].rotation.z = sx * (fight * .45 - ps * .3 - sweat * .35 - shock * .25); FACE.brows[i].position.y = CY + .2 - fight * .02 + ps * .02 + shock * .035 + sweat * .012; });
-  const round = Math.max(shock, calm) * (1 - fight);
-  FACE.o.visible = round > .35 && kn < .3; FACE.mouth.visible = !FACE.o.visible;
-  FACE.o.scale.setScalar(.45 + shock * .8); FACE.o.position.x = calm > shock ? .02 : 0;
-  FACE.mouth.scale.set(1 + ps * .5 + joy * .5 - fight * .3, ((1 + ps + joy * .6) * (1 - fight * .6) + kn * 1.5) * (1 - sweat * .5), 1);
-  FACE.mouth.rotation.z = kn > .3 || (sweat > .5 && !ps && !joy) ? 0 : Math.PI;                 // a frown off a wall or with liquidations close
-  FACE.drops.forEach((d, i) => { const u = (t * .9 + i * .5) % 1, sx = d.userData.sx; d.visible = sweat > .08;
-    d.position.set(sx * (.2 + u * .05), CY + .25 - u * .32, .075); d.scale.set(.8, 1.3, .8).multiplyScalar(sweat * (1 - u * .4)); d.material.opacity = 1 - u; });
-  if (calm > .6 && t > FEEL.note) { FEEL.note = t + 1.1 + Math.random() * .6;            // a whistled note rises from his mouth
-    const n = notes.find(n => t - n.t0 > 2.2); if (n) { tmpV.set(.05, CY + .03, .1); FACE.o.parent.localToWorld(tmpV); n.t0 = t; n.x = tmpV.x; n.y = tmpV.y; } }
+  const { sweat, shock, joy, calm } = FEEL, B = BEAST[H.form];
+  const moodC = lerpHex(CSS.dn, CSS.up, (H.mood + 1) / 2);
+  eyeMat.color.set(shock > .4 ? '#ffffff' : moodC).multiplyScalar(1.4 + fight * 2.2 + shock * 1.5 + lock * 2 - calm * .7);
+  B.head.updateWorldMatrix(true, false);
+  drops.forEach((d, i) => { const q = (t * .9 + i * .5) % 1; d.visible = sweat > .08 && B.g.visible;
+    tmpV2.set(.15, .12 - q * .25, d.userData.sx * .16); B.head.localToWorld(tmpV2); d.position.copy(tmpV2); d.scale.set(.8, 1.3, .8).multiplyScalar(Math.max(1e-4, sweat * (1 - q * .4))); d.material.opacity = 1 - q; });
+  if ((fight > .5 || joy > .5) && R() < dt * 10) { tmpV2.set(B.bear ? .42 : .38, B.bear ? -.08 : -.16, 0); B.head.localToWorld(tmpV2); puff(tmpV2.x, tmpV2.y, tmpV2.z, .25, .8, F * .6); }      // steam from the nose
+  if (calm > .6 && t > FEEL.note) { FEEL.note = t + 1.1 + Math.random() * .6;
+    const n = notes.find(n => t - n.t0 > 2.2); if (n) { tmpV2.set(.35, -.05, 0); B.head.localToWorld(tmpV2); n.t0 = t; n.x = tmpV2.x; n.y = tmpV2.y; } }
   for (const n of notes) { const a = t - n.t0; n.sp.visible = a < 2.2; if (!n.sp.visible) continue;
     n.sp.position.set(n.x + a * .18 * F + Math.sin(a * 4) * .05, n.y + a * .35, .3); n.sp.scale.setScalar(.13 + a * .03); n.sp.material.opacity = Math.min(1, a * 4) * (1 - a / 2.2) * .9; }
-  const moodC = lerpHex(CSS.dn, CSS.up, (H.mood + 1) / 2);
-  ghostMat.color.set(moodC).multiplyScalar(.28); coreMat.color.set(0xffffff); coreLight.color.set(moodC); coreLight.intensity = .9 + lock * 1.5 + ps;
-  glowMat.color.set(0xbfeaff).multiplyScalar(1.5 + Math.max(jab, cross) * 1.5); seamMat.color.set(moodC).multiplyScalar(1.3 + lock * 2 + Math.max(jab, cross));
+  ghostMat.color.set(moodC).multiplyScalar(.28); coreLight.color.set(moodC); coreLight.intensity = .9 + lock * 1.5 + ps;
   // particles, shards, rings, stars
   let n = 0;
   for (const q of FX.sparks) { if (n >= PMAX) break; const a = 1 - q.age / q.life, c = PCOL[q.col] || PCOL.txt;
@@ -1556,13 +1512,13 @@ function drawHud() {
   // the price of every 4th, 20th or 40th step ($100, $500, $1000 for BTC), on the side of the stairs
   const every = STEP * (camS / STEP > 120 ? 40 : camS / STEP > 40 ? 20 : 4);
   for (let q = Math.ceil((camC - camS * .7) / every) * every; q <= camC + camS * .7; q += every) {
-    tmpV.set(WX(q) + TREAD * .5, SY(q) - .1, SW / 2 + .02).project(camera); if (tmpV.z > 1) continue;
+    tmpV.set(WX(q), SY(q) + .02, TRACK + .1).project(camera); if (tmpV.z > 1) continue;
     const sx = (tmpV.x * .5 + .5) * W / k, sy = (-tmpV.y * .5 + .5) * Hh / k; if (sy < ry + 20 || sy > foot - 50) continue;
     txt(fmtP(q), sx, sy, `500 8.5px ${FM}`, Math.round(q / STEP) % 20 === 0 ? 'rgba(143,214,255,.6)' : 'rgba(143,214,255,.32)', 'center');
   }
   // his energy: a bar over his head while he is worn down
   { const a = H.hp < .985 ? 1 : Math.max(0, 1 - (now - H.hpAt) / 2);
-    if (a > .01) { tmpV.set(WX(H.p), H.y + 1.62, 0).project(camera); const hx = (tmpV.x * .5 + .5) * W / k, hy = (-tmpV.y * .5 + .5) * Hh / k;
+    if (a > .01) { tmpV.set(WX(H.p), H.y + 1.35, 0).project(camera); const hx = (tmpV.x * .5 + .5) * W / k, hy = (-tmpV.y * .5 + .5) * Hh / k;
       if (hx > gx && hx < LW - gx && hy > ry + 20) { const bw = 46; hg.globalAlpha = a;
         hg.fillStyle = 'rgba(5,8,10,.75)'; hg.beginPath(); hg.roundRect(hx - bw / 2 - 2, hy - 3, bw + 4, 8, 4); hg.fill();
         hg.fillStyle = lerpHex(CSS.dn, CSS.up, Math.min(1, Math.max(0, (H.hp - .2) / .7))); hg.beginPath(); hg.roundRect(hx - bw / 2, hy - 1, bw * H.hp, 4, 2); hg.fill(); hg.globalAlpha = 1; } } }
@@ -1651,7 +1607,7 @@ function frame(ts) {
 })();
 // a hidden tab: the stream and the frames rest; back again, the hero catches up with the price
 document.addEventListener('visibilitychange', () => { last = 0; acc = 0; Q.n = Q.t = 0; Q.wait = 2; });
-window.HELD = { overview() { overviewAt = now - .01; }, get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, H, queue, onPrice, live, realLiq, objs, onLevels, LOG, Q, FEEL, PH, MAG, labels, get now() { return now; } };
+window.HELD = { scene, overview() { overviewAt = now - .01; }, get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, H, queue, onPrice, live, realLiq, objs, onLevels, LOG, Q, FEEL, PH, MAG, labels, get now() { return now; } };
 })();
 </script>
 </body>

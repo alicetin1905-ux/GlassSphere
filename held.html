@@ -358,10 +358,10 @@ const lerpHex = (a, b, k) => { const f = (x, y) => Math.round(x + (y - x) * k), 
   return '#' + [f(P >> 16, Q >> 16), f(P >> 8 & 255, Q >> 8 & 255), f(P & 255, Q & 255)].map(v => v.toString(16).padStart(2, '0')).join(''); };
 const EASE = { out: u => 1 - Math.pow(1 - u, 3), io: u => u < .5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2 };
 const lerp = THREE.MathUtils.lerp;
-// the price is a staircase: one step per STEP dollars ($10 for BTC), up to the right. A step's tread is TREAD long and
+// the price is a staircase: one step per STEP dollars ($25 for BTC), up to the right. A step's tread is TREAD long and
 // RISE high; the stair is SW wide, twice his height. U: world units per dollar, ORIGIN: the price at x = 0
 const TREAD = .4, RISE = .12, SW = 2.7, SLOPE = Math.atan2(RISE, TREAD);
-let STEP = 10, U = TREAD / 10, ORIGIN = 0;
+let STEP = 25, U = TREAD / 25, ORIGIN = 0;
 const WX = p => (p - ORIGIN) * U;
 const SYx = x => Math.floor(x / TREAD + 1e-6) * RISE;          // top of the step under world x
 const SY = p => SYx(WX(p));
@@ -458,7 +458,7 @@ function placeSteps(x0) {                      // steps from world x0 on
     dummy.position.set((i + .5) * TREAD, top - 4, 0); dummy.rotation.set(0, 0, 0); dummy.scale.set(1, 1, 1); dummy.updateMatrix(); steps.setMatrixAt(k, dummy.matrix);
     dummy.position.set(i * TREAD + .0175, top - .009, 0); dummy.updateMatrix(); noses.setMatrixAt(k, dummy.matrix);
     dummy.position.set((i + .5) * TREAD, top - .006, SW / 2 + .006); dummy.updateMatrix(); edges.setMatrixAt(k, dummy.matrix);
-    const m = Math.round(p / STEP) % 10 === 0 ? 1 : Math.round(p / STEP) % 5 === 0 ? .55 : .22;
+    const m = Math.round(p / STEP) % 20 === 0 ? 1 : Math.round(p / STEP) % 4 === 0 ? .55 : .22;      // $500 and $100 for BTC
     noses.setColorAt(k, nc.setRGB(.25 * m + .05, .75 * m + .1, .8 * m + .1));
   }
   steps.instanceMatrix.needsUpdate = noses.instanceMatrix.needsUpdate = edges.instanceMatrix.needsUpdate = noses.instanceColor.needsUpdate = true;
@@ -575,7 +575,7 @@ const billFS = `uniform sampler2D uMap; uniform vec3 uCol; uniform float uA, uT,
 const uvVS = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }`;
 let PX = 500;
 // one height for every level; its size shows as thickness (world units)
-const THICK = L => { const r = Math.min(1, L.rel), room = (D?.B ?? 100) * U * .5;     // never thicker than half the room between two buckets
+const THICK = L => { const r = Math.min(1, L.rel), room = (D?.B ?? 100) * U * .35;     // never thicker than a third of the room between two buckets
   return Math.min(room, isWall(L) ? .08 + .55 * r : L.k === 'stop' ? .08 : .05 + .45 * r); };
 // one level in the scene: built when it appears in the table, faded out when it leaves. Every level spans the stair
 // (SW deep) and is taller than him; its size shows as thickness
@@ -791,7 +791,7 @@ const queue = [];                // { p, dir, type: 'cross' | 'hold' | 'target',
 const FX = { slow: 0, orbit: 0, sparks: [], shards: [], bills: [], rings: [], stars: [], calls: [], shake: 0, flash: 0, ab: 0, kick: 0 };
 const H = { p: null, y: 0, v: 0, face: 1, yaw: Math.PI / 2, mode: 'follow', t0: 0, job: null, speed: 0, dist: 0, phase: 0, guard: 0, idleAt: 0, mood: 0, lockAt: -9, dash: 0 };
 const stats = { walls: 0, liq: 0, stops: 0, targets: 0, real: 0 };
-let now = 0, camC = null, camS = 1200, camY = null, overviewAt = 20, evAt = null, coinX = null, coinY = 0, coinRot = 0;
+let now = 0, camOv = 0, camC = null, camS = 1200, camY = null, overviewAt = 20, evAt = null, coinX = null, coinY = 0, coinRot = 0;
 // "the wall holds": the price came within tol x bucket of it and went back away x tol. Tested on 23 h of 1-minute candles
 // against the walls of the moment: about 30 holds a day over 8 walls, one every 6 h per wall
 const HOLD = { tol: .25, away: 2, cooldown: 90 };
@@ -842,7 +842,7 @@ try { if (localStorage.getItem('held-sound') === '1') {      // on last time: th
 
 function onLevels() {
   const P = live.px || D.price;
-  if (ORIGIN === 0) { STEP = nice(P * 0.000125); U = TREAD / STEP; ORIGIN = Math.round(P / (STEP * 100)) * STEP * 100; }
+  if (ORIGIN === 0) { STEP = nice(P * 0.0003); U = TREAD / STEP; ORIGIN = Math.round(P / (STEP * 100)) * STEP * 100; }
   if (H.p == null) { H.p = P; H.y = SY(P); }
   const keep = new Set(LV.map(L => L.key));
   for (const [k, o] of objs) if (!keep.has(k)) o.gone = true;
@@ -1096,16 +1096,18 @@ function render3d(dt, dtReal = dt) {
   const portrait = Math.max(.45, Math.min(1, aspect / 1.78)), base = 9 / U * portrait;      // about 9 units wide
   let tc = H.p + H.face * (H.mode === 'approach' ? 120 : 50) / K(), ts = H.mode === 'combo' || H.mode === 'pose' || H.mode === 'knock' ? base * .82 : base * (1 + Math.min(.4, H.speed / 1000));
   const both = MAG.up.p != null && MAG.dn.p != null;
-  if (both && t > overviewAt && t < overviewAt + 6 && H.mode === 'follow' && !queue.length) { tc = (MAG.up.p + MAG.dn.p) / 2; ts = (MAG.up.p - MAG.dn.p) * 1.35; }
+  const ov = both && t > overviewAt && t < overviewAt + 6 && H.mode === 'follow' && !queue.length;
+  if (ov) { tc = (MAG.up.p + MAG.dn.p) / 2; ts = (MAG.up.p - MAG.dn.p) * 1.35; }
   else if (t >= overviewAt + 6) overviewAt = t + 45;
   if (camC == null) { camC = tc; camS = ts * 4; }
+  camOv += ((ov ? 1 : 0) - camOv) * (1 - Math.exp(-dt * 1.5));      // the overview is seen straight on, both magnets in the picture
   camC += (tc - camC) * (1 - Math.exp(-dt * 2.4)); camS += (ts - camS) * (1 - Math.exp(-dt * 1.5));
   const lo = camC - camS * .33, hi = camC + camS * .33; if (H.p < lo) camC -= lo - H.p; else if (H.p > hi) camC += H.p - hi;
   const span = camS * U, dist = span / (2 * Math.tan(THREE.MathUtils.degToRad(17)) * aspect) * (1 - .05 * FX.kick);
   const cx = WX(camC), sh = FX.shake;                // the stairs climb left to right, up with the price
   const cyT = (cx - WX(H.p)) / TREAD * RISE + H.y; camY = camY == null ? cyT : camY + (cyT - camY) * (1 - Math.exp(-dt * 3));
   // low, in front and a little down the stairs, looking up them: the steps rise into the picture
-  const sa = Math.sin(SLOPE * .35), ca = Math.cos(SLOPE * .35), o1 = .6 + dist * .12, o2 = 1.05 + dist * .04, CYAW = -.3;
+  const sa = Math.sin(SLOPE * .35), ca = Math.cos(SLOPE * .35), o1 = .6 + dist * .12, o2 = 1.05 + dist * .04, CYAW = -.3 * (1 - camOv);
   camera.up.set(-sa, ca, 0);
   // at a target the camera swings round him and back
   FX.orbit = Math.max(0, FX.orbit - dtReal * .55); const yaw = CYAW + (FX.orbit > 0 ? Math.sin(Math.PI * (1 - FX.orbit)) * .6 : 0);
@@ -1310,12 +1312,12 @@ function drawHud() {
   hg.fillStyle = moodC; hg.fillRect(px - .5, ry - 16, 1, 26);
   hg.font = `600 9.5px ${FM}`; const lw = hg.measureText(fmtP(P)).width + 12;
   hg.beginPath(); hg.roundRect(px - lw / 2, ry + 10, lw, 15, 2); hg.fill(); txt(fmtP(P), px, ry + 21, `600 9.5px ${FM}`, '#05080a', 'center');
-  // the price of every 5th or 10th step, on the side of the stairs
-  const every = STEP * (camS / STEP > 160 ? 50 : camS / STEP > 50 ? 10 : 5);
+  // the price of every 4th, 20th or 40th step ($100, $500, $1000 for BTC), on the side of the stairs
+  const every = STEP * (camS / STEP > 120 ? 40 : camS / STEP > 40 ? 20 : 4);
   for (let q = Math.ceil((camC - camS * .7) / every) * every; q <= camC + camS * .7; q += every) {
     tmpV.set(WX(q) + TREAD * .5, SY(q) - .1, SW / 2 + .02).project(camera); if (tmpV.z > 1) continue;
     const sx = (tmpV.x * .5 + .5) * W / k, sy = (-tmpV.y * .5 + .5) * Hh / k; if (sy < ry + 20 || sy > foot - 50) continue;
-    txt(fmtP(q), sx, sy, `500 8.5px ${FM}`, Math.round(q / STEP) % 10 === 0 ? 'rgba(143,214,255,.6)' : 'rgba(143,214,255,.32)', 'center');
+    txt(fmtP(q), sx, sy, `500 8.5px ${FM}`, Math.round(q / STEP) % 20 === 0 ? 'rgba(143,214,255,.6)' : 'rgba(143,214,255,.32)', 'center');
   }
   // the coin's price over the coin
   { tmpV.set(coin.position.x, coin.position.y + 1.85, CZ).project(camera);

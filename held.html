@@ -26,10 +26,12 @@ html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--sa
 #stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 #msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;font:500 12px var(--mono);letter-spacing:.1em;color:var(--dim);padding:24px}
 #msg[hidden]{display:none}
-#back{position:absolute;left:max(14px,env(safe-area-inset-left,0px));bottom:max(12px,env(safe-area-inset-bottom,0px));font:600 11px var(--mono);
-  color:var(--dim);text-decoration:none;border:1px solid var(--line2);border-radius:6px;padding:6px 10px;background:rgba(5,8,10,.7)}
-#back:hover{color:var(--txt)}
-#back:focus-visible{outline:2px solid var(--up);outline-offset:2px}
+.tools{position:absolute;left:max(14px,env(safe-area-inset-left,0px));bottom:max(12px,env(safe-area-inset-bottom,0px));display:flex;gap:8px}
+.tools a,.tools button{font:600 11px var(--mono);color:var(--dim);text-decoration:none;border:1px solid var(--line2);border-radius:6px;padding:6px 10px;
+  background:rgba(5,8,10,.7);cursor:pointer}
+.tools a:hover,.tools button:hover{color:var(--txt)}
+.tools button[aria-pressed="true"]{color:var(--txt);border-color:var(--dim)}
+.tools a:focus-visible,.tools button:focus-visible{outline:2px solid var(--up);outline-offset:2px}
 </style>
 </head>
 <body>
@@ -38,7 +40,7 @@ html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--sa
   <canvas id="hud" aria-hidden="true"></canvas>
   <div id="msg">LIVE DATA LADEN…</div>
   <div id="sat" style="position:fixed;top:0;left:0;width:0;height:env(safe-area-inset-top,0px)"></div>
-  <a id="back" href="./#btc">← GlassSphere</a>
+  <div class="tools"><a href="./#btc">← GlassSphere</a><button id="snd" type="button" aria-pressed="false">♪ Geluid uit</button></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
@@ -207,6 +209,16 @@ function volumeWeights(books, market, P) {
   for (const e of Object.keys(depth)) w[e] = has.includes(e) && dT && vT && depth[e] ? Math.min(1, (market[e].vol / vT) / (depth[e] / dT)) : 1;
   return w;
 }
+function histEntry(books, weights, P, ts) {
+  const m = new Map(), HB = A.histBin;
+  for (const [ex, bk] of Object.entries(books)) {
+    const w = weights[ex] ?? 1;
+    [['b', 0], ['a', 1]].forEach(([side, i]) => { for (const [p, v] of bk[side]) {
+      if (p < P * 0.94 || p > P * 1.06) continue;
+      const k = +(Math.floor(p / HB + 1e-9) * HB).toFixed(digits(HB)), o = m.get(k) || [0, 0]; o[i] += v * w; m.set(k, o); } });
+  }
+  return { t: Math.floor(ts / 3.6e6) * 3.6e6, b: [...m].sort((x, y) => x[0] - y[0]).map(([k, [b, a]]) => [k, Math.round(b), Math.round(a)]) };
+}
 const READ = { range: 0.15 };
 function poolsOf(stops, liqs, P) {
   const B = nice(P * 0.0012), lo = P * (1 - READ.range), hi = P * (1 + READ.range), bins = new Map();
@@ -229,15 +241,19 @@ function targetsOf(cs, pools, P, days) {
 }
 
 // D: the data as the coin page holds it; LV: the levels of its "Alle niveaus" table; TG: its two targets
-let D = null, LV = [], TG = null, nBooks = 0, mode = '', updAt = 0;
+let D = null, LV = [], TG = null, nBooks = 0, mode = '', updAt = 0, liveHist = [], exKey = '', exKeyPrev = '';
 function setData(raw, how) {
   const price = raw.price, lo = price * 0.85, hi = price * 1.15, market = raw.market || {};
   const weights = volumeWeights(raw.books, market, price);
   const gateOi = raw.oi?.length ? raw.oi[raw.oi.length - 1][1] : 0, total = Object.values(market).reduce((s, m) => s + (m.oi || 0), 0);
   const scale = gateOi && total > gateOi ? total / gateOi : 1;
   const liqs = estimateLiqs(raw.candles, raw.oi || [], raw.taker).map(q => ({ ...q, usd: q.usd * scale }));
-  D = { ...raw, market, weights, stops: estimateStops(raw.candles, price, lo, hi), liqs };
-  nBooks = Object.keys(raw.books).length; mode = how; updAt = raw.ts;
+  // the book history: the hourly file's, the hours seen live since, and now
+  const hist = new Map((raw.bookHist || []).map(e => [e.t, e])); for (const e of liveHist) hist.set(e.t, e);
+  const cur = histEntry(raw.books, weights, price, raw.ts); hist.set(cur.t, cur);
+  if (how === 'live') liveHist = [...liveHist.filter(x => x.t !== cur.t), cur].slice(-48);
+  D = { ...raw, market, weights, stops: estimateStops(raw.candles, price, lo, hi), liqs, bookHist: [...hist.values()].sort((a, b) => a.t - b.t).slice(-48) };
+  nBooks = Object.keys(raw.books).length; mode = how; updAt = raw.ts; exKeyPrev = exKey; exKey = Object.keys(raw.books).sort().join();
   // targets, and the chance the upper one comes first (renderReading in index.html)
   const r = targetsOf(D.candles, poolsOf(D.stops, D.liqs, price), price, HORIZON);
   let prob = null, first = null;
@@ -254,16 +270,22 @@ function setData(raw, how) {
     for (const [side, arr] of [['b', bid], ['a', ask]]) for (const [p, v] of bk[side]) { const j = idx(p); if (j >= 0 && j < N) arr[j] += v * w; } }
   for (const s of D.stops) { const j = idx(s.p); if (j >= 0 && j < N) stop[j] += s.w; }
   for (const q of D.liqs) { const j = idx(q.p); if (j >= 0 && j < N) liq[j] += q.usd; }
+  // presence: in how many of the last 6 hours (before this one) the wall held at least half its size now
+  const HB = A.histBin, sub = Math.max(1, Math.round(HB / B)), hr = Math.floor(raw.ts / 3.6e6) * 3.6e6;
+  const prev = D.bookHist.filter(h => h.t < hr).slice(-6).map(e => { const sum = new Float64Array(N);
+    for (const [p, vb, va] of e.b) for (let q = 0; q < sub; q++) { const j = idx(p + (q + .5) * HB / sub); if (j >= 0 && j < N) sum[j] += (vb + va) / sub; }
+    return sum; });
+  const persist = j => { const w = bid[j] + ask[j]; return prev.length < 2 || !w ? null : [prev.filter(h => h[j] >= w * .5).length, prev.length]; };
   const mx = a => { let m = 1e-9; for (const v of a) if (v > m) m = v; return m; };
   const mB = mx([...bid, ...ask]), mS = mx(stop), mL = mx(liq);
   const top = (arr, above, k) => { const out = [];
-    for (let j = 0; j < N; j++) { const mid = (i0 + j + .5) * B; if ((mid > price) === above && arr[j] > 0) out.push([mid, arr[j]]); }
+    for (let j = 0; j < N; j++) { const mid = (i0 + j + .5) * B; if ((mid > price) === above && arr[j] > 0) out.push([mid, arr[j], j]); }
     return out.sort((a, b) => b[1] - a[1]).slice(0, k); };
   const rows = [];
   for (const [k, arr, above, m, fmt] of [['ask', ask, true, mB, fmtUsd], ['bid', bid, false, mB, fmtUsd],
     ['stop', stop, true, mS, v => 'score ' + Math.round(v / mS * 100)], ['stop', stop, false, mS, v => 'score ' + Math.round(v / mS * 100)],
     ['liq', liq, true, mL, fmtUsd], ['liq', liq, false, mL, fmtUsd]])
-    for (const [p, v] of top(arr, above, 4)) rows.push({ key: k + '|' + p, k, p, s: v, rel: v / m, v: fmt(v), above });
+    for (const [p, v, j] of top(arr, above, 4)) rows.push({ key: k + '|' + p, k, p, s: v, rel: v / m, v: fmt(v), above, ps: k === 'bid' || k === 'ask' ? persist(j) : null });
   LV = rows; D.B = B; D.range = rg;
   onLevels();
 }
@@ -280,7 +302,7 @@ async function loadLive() {
     }
     const books = await fetchBooks(); if (!Object.keys(books).length) throw new Error('no books');
     const last = series.candles[series.candles.length - 1][4];
-    setData({ ts: Date.now(), price: live.fresh() || last, books, ...series, market }, 'live');
+    setData({ ts: Date.now(), price: live.fresh() || last, books, ...series, market, bookHist: D?.bookHist || site?.bookHist }, 'live');
     return true;
   } catch (e) { return false; }
 }
@@ -291,14 +313,33 @@ const live = (() => {
   async function pollOnce() { try { apply(+(await getJSON(`https://www.okx.com/api/v5/market/ticker?instId=${A.okx}`)).data[0].last); } catch (e) {} }
   function open() {
     if (ws) return; let me; try { me = ws = new WebSocket('wss://ws.okx.com:8443/ws/v5/public'); } catch (e) { ws = null; return; }
-    me.onopen = () => { retry = 0; clearInterval(poll); poll = 0; me.send(JSON.stringify({ op: 'subscribe', args: [{ channel: 'tickers', instId: A.okx }] }));
+    me.onopen = () => { retry = 0; clearInterval(poll); poll = 0; me.send(JSON.stringify({ op: 'subscribe', args: [{ channel: 'tickers', instId: A.okx }, { channel: 'liquidation-orders', instType: 'SWAP' }] }));
       ping = setInterval(() => me.readyState === 1 && me.send('ping'), 25e3); };
-    me.onmessage = e => { if (e.data === 'pong') return; try { const m = JSON.parse(e.data); if (m.data?.[0]) apply(+m.data[0].last); } catch (er) {} };
+    me.onmessage = e => { if (e.data === 'pong') return; try { const m = JSON.parse(e.data); if (!m.data?.[0]) return;
+      if (m.arg?.channel === 'liquidation-orders') { for (const d of m.data) if (d.instId === A.okx) for (const x of d.details || [])
+        realLiq('OKX', x.posSide === 'long' || (x.posSide !== 'short' && x.side === 'sell'), +x.bkPx, +x.sz * A.okxCt * +x.bkPx); }
+      else apply(+m.data[0].last); } catch (er) {} };
     me.onclose = () => { clearInterval(ping); if (ws !== me) return; ws = null; if (!poll) poll = setInterval(pollOnce, 3000); setTimeout(open, Math.min(30e3, 1000 * 2 ** retry++)); };
     me.onerror = () => me.close();
   }
   return { start() { pollOnce(); open(); }, fresh: () => px && Date.now() - at < 10e3 ? px : null, get px() { return px; }, get at() { return at; } };
 })();
+// real liquidations, as the exchanges stream them: OKX (on the price stream above), Binance and Bybit
+function feed(url, hello, onMsg, pingMsg) {
+  let retry = 0;
+  const open = () => { let ws, ping = 0; try { ws = new WebSocket(url); } catch (e) { return; }
+    ws.onopen = () => { retry = 0; if (hello) ws.send(hello); if (pingMsg) ping = setInterval(() => ws.readyState === 1 && ws.send(pingMsg), 20e3); };
+    ws.onmessage = e => { try { onMsg(JSON.parse(e.data)); } catch (er) {} };
+    ws.onclose = () => { clearInterval(ping); setTimeout(open, Math.min(60e3, 2000 * 2 ** retry++)); };
+    ws.onerror = () => ws.close(); };
+  open();
+}
+function liqFeeds() {
+  feed(`wss://fstream.binance.com/ws/${A.usdt.toLowerCase()}@forceOrder`, null, m => { const o = m.o;      // S SELL: a long was closed
+    if (o?.s === A.usdt) { const p = +o.ap || +o.p; realLiq('Binance', o.S === 'SELL', p, p * (+o.z || +o.q)); } });
+  feed('wss://stream.bybit.com/v5/public/linear', JSON.stringify({ op: 'subscribe', args: [`allLiquidation.${A.usdt}`] }),
+    m => { for (const x of m.data || []) if (x.s === A.usdt) realLiq('Bybit', x.S === 'Buy', +x.p, +x.p * +x.v); }, JSON.stringify({ op: 'ping' }));   // S Buy: a long
+}
 
 /* =====================================================================================================================
    SCENE
@@ -375,11 +416,17 @@ const wallVS = `uniform float uT, uRipT, uRipY, uH, uRipA; varying vec2 vUv; var
     if (age > 0. && age < 2.) { float d = length(vec2(p.x, p.y + uH * .5 - uRipY)); float w = sin(d * 9. - age * 18.) * exp(-age * 2.4) * exp(-d * .9);
       p.z += w * .16 * uRipA; vWave = max(w, 0.) * uRipA; }
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.); }`;
-const wallFS = `uniform vec3 uCol; uniform float uA, uEdge, uT; varying vec2 vUv; varying float vWave;
-  void main(){ vec2 e = abs(vUv * 2. - 1.); float frame = max(smoothstep(.965, 1., e.x), smoothstep(.985, 1., e.y));
+const wallFS = `uniform vec3 uCol; uniform float uA, uEdge, uT, uSteel, uFresh, uCrack, uCrackY; varying vec2 vUv; varying float vWave;
+  void main(){ vec2 e = abs(vUv * 2. - 1.); float fw = mix(.965, .935, uSteel);
+    float frame = max(smoothstep(fw, 1., e.x), smoothstep(fw + .02, 1., e.y)) * (1. + uSteel * .25);
     float top = smoothstep(.97, 1., vUv.y) * 1.5; float scan = .5 + .5 * sin(vUv.y * 160. - uT * 3.);
-    float base = (.05 + .07 * (1. - vUv.y)) * (.85 + .15 * scan);
-    gl_FragColor = vec4(uCol * (base * uA + frame * uEdge * 1.6 + top * uEdge + vWave * 2.2 * uA), 1.); }`;
+    float base = (.05 + .07 * (1. - vUv.y)) * (.85 + .15 * scan) * (1. + uSteel * .12);
+    float fl = 1. - uFresh * .55 * step(.55, fract(sin(floor(uT * 13.) * 91.7 + uCrackY * 7.) * 437.58));
+    vec2 d = (vUv - vec2(.5, uCrackY)) * vec2(1., 1.6); float r = length(d), an = atan(d.y, d.x);
+    float rays = smoothstep(.93, 1., abs(sin(an * 5.5 + sin(an * 13.) * .6))) * step(r, uCrack * .75) * smoothstep(0., .04, r);
+    float rings = smoothstep(.015, 0., abs(r - uCrack * .28)) * step(.3, uCrack) + smoothstep(.015, 0., abs(r - uCrack * .5)) * step(.6, uCrack);
+    float crack = clamp(rays + rings * .7, 0., 1.) * min(1., uCrack * 2.);
+    gl_FragColor = vec4((uCol * (base * uA + frame * uEdge * 1.6 + top * uEdge + vWave * 2.2 * uA) + vec3(.9, .95, 1.) * crack * .7 * uA) * fl, 1.); }`;
 const stopVS = `uniform float uT, uT0, uY, uSpent, uPx, uSize; varying float vB;
   void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.); float age = uT - uT0, d = abs(position.y - uY), front = age * 3.2;
     float lit = (age > 0. && d < front) ? exp(-(front - d) * 1.4) * 3. + .4 * exp(-age) : 0.;
@@ -404,7 +451,7 @@ function buildLevel(L) {
   if (isWall(L)) {
     const h = 1.9, depth = 2.6, th = THICK(L);      // taller than him; the bigger the wall, the thicker the glass
     o.mat = new THREE.ShaderMaterial({ vertexShader: wallVS, fragmentShader: wallFS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-      uniforms: { uCol: { value: col3(kindCol(L.k)) }, uA: { value: 1 }, uEdge: { value: 1 }, uT: { value: 0 }, uRipT: { value: -9 }, uRipY: { value: 0 }, uRipA: { value: 1 }, uH: { value: h } } });
+      uniforms: { uCol: { value: col3(kindCol(L.k)) }, uA: { value: 1 }, uEdge: { value: 1 }, uT: { value: 0 }, uRipT: { value: -9 }, uRipY: { value: 0 }, uRipA: { value: 1 }, uH: { value: h }, uSteel: { value: 0 }, uFresh: { value: 0 }, uCrack: { value: 0 }, uCrackY: { value: .5 } } });
     o.panel = new THREE.Mesh(new THREE.BoxGeometry(depth, h, th, 26, 44, 1), o.mat); o.panel.rotation.y = Math.PI / 2; o.panel.position.y = h / 2; o.group.add(o.panel);
     o.glow = new THREE.Mesh(new THREE.PlaneGeometry(th + .4, depth), new THREE.MeshBasicMaterial({ color: col3(kindCol(L.k)), opacity: .08, ...addBlend }));
     o.glow.rotation.x = -Math.PI / 2; o.glow.position.y = .01; o.group.add(o.glow); o.h = h;
@@ -541,9 +588,53 @@ const spent = new Map();         // level key -> time it was settled (kept while
 const labels = new Map();        // price -> label sprite
 const queue = [];                // { p, dir, type: 'cross' | 'hold' | 'target', levels, T }
 const FX = { sparks: [], shards: [], rings: [], stars: [], calls: [], shake: 0, flash: 0, ab: 0, kick: 0 };
-const H = { p: null, v: 0, face: 1, yaw: Math.PI / 2, mode: 'follow', t0: 0, job: null, speed: 0, dist: 0, phase: 0, guard: 0, idleAt: 0, mood: 0, lockAt: -9 };
-const stats = { walls: 0, liq: 0, stops: 0, targets: 0 };
-let now = 0, camC = null, camS = 1200, overviewAt = 20;
+const H = { p: null, v: 0, face: 1, yaw: Math.PI / 2, mode: 'follow', t0: 0, job: null, speed: 0, dist: 0, phase: 0, guard: 0, idleAt: 0, mood: 0, lockAt: -9, dash: 0 };
+const stats = { walls: 0, liq: 0, stops: 0, targets: 0, real: 0 };
+let now = 0, camC = null, camS = 1200, overviewAt = 20, evAt = null;
+// "the wall holds": the price came within tol x bucket of it and went back away x tol. Tested on 23 h of 1-minute candles
+// against the walls of the moment: about 30 holds a day over 8 walls, one every 6 h per wall
+const HOLD = { tol: .25, away: 2, cooldown: 90 };
+const LOG = [];                  // the last ten events, with their time
+function logEvent(title, sub, col, at) { LOG.unshift({ at: at ?? evAt ?? Date.now(), title, sub, col }); LOG.length = Math.min(LOG.length, 10); }
+
+// sound: made on the spot with Web Audio, off until the viewer turns it on
+const SND = { on: false, ctx: null, out: null, noise: null };
+function sndInit() {
+  if (SND.ctx) return; const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+  const c = SND.ctx = new AC(), comp = c.createDynamicsCompressor(); SND.out = c.createGain(); SND.out.gain.value = .55; SND.out.connect(comp); comp.connect(c.destination);
+  const b = SND.noise = c.createBuffer(1, c.sampleRate, c.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+}
+function tone(f, dur, type = 'sine', g = .3, f2 = null, delay = 0) {
+  const c = SND.ctx, t = c.currentTime + delay, o = c.createOscillator(), a = c.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  a.gain.setValueAtTime(.0001, t); a.gain.exponentialRampToValueAtTime(g, t + .006); a.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(a); a.connect(SND.out); o.start(t); o.stop(t + dur + .03);
+}
+function hiss(dur, g, type, f, f2 = null, delay = 0, q = 1) {
+  const c = SND.ctx, t = c.currentTime + delay, s = c.createBufferSource(), fl = c.createBiquadFilter(), a = c.createGain();
+  s.buffer = SND.noise; fl.type = type; fl.frequency.setValueAtTime(f, t); if (f2) fl.frequency.exponentialRampToValueAtTime(f2, t + dur); fl.Q.value = q;
+  a.gain.setValueAtTime(g, t); a.gain.exponentialRampToValueAtTime(.0001, t + dur); s.connect(fl); fl.connect(a); a.connect(SND.out); s.start(t, Math.random() * .4); s.stop(t + dur + .03);
+}
+const SFX = {
+  jab: () => { hiss(.07, .5, 'lowpass', 1400); tone(150, .09, 'sine', .4, 70); },
+  cross: () => { hiss(.14, .8, 'lowpass', 900); tone(95, .22, 'sine', .8, 38); },
+  glass: () => { hiss(.6, .45, 'highpass', 2500, 6000); for (let i = 0; i < 7; i++) tone(1800 + Math.random() * 3500, .2 + Math.random() * .35, 'sine', .06, null, Math.random() * .25); },
+  stop: () => { hiss(.9, .25, 'bandpass', 900, 5000, 0, 3); tone(300, .6, 'sawtooth', .04, 900); },
+  liq: (k = 1) => { tone(62, .9, 'sine', .8 * k, 28); hiss(.7, .35 * k, 'lowpass', 400, 80); },
+  hold: () => { tone(200, .7, 'triangle', .45, 130); tone(400, .5, 'sine', .12, 260); },
+  target: () => { tone(660, .6, 'sine', .25); tone(990, .8, 'sine', .22, null, .12); tone(1320, .9, 'sine', .12, null, .24); },
+  crack: () => { hiss(.18, .35, 'highpass', 3000); tone(2400, .08, 'square', .03); },
+};
+function sfx(name, k) { if (!SND.on || !SND.ctx || !SFX[name]) return; if (SND.ctx.state === 'suspended') SND.ctx.resume(); try { SFX[name](k); } catch (e) {} }
+const sndBtn = $('snd'), toolsEl = document.querySelector('.tools');
+function setSound(on) {
+  SND.on = on; if (on) { sndInit(); SND.ctx?.resume(); }
+  sndBtn.textContent = on ? '♪ Geluid aan' : '♪ Geluid uit'; sndBtn.setAttribute('aria-pressed', String(on));
+  try { localStorage.setItem('held-sound', on ? '1' : '0'); } catch (e) {}
+}
+sndBtn.addEventListener('click', () => setSound(!SND.on));
+try { if (localStorage.getItem('held-sound') === '1') {      // on last time: the browser wants a tap before it plays
+  sndBtn.textContent = '♪ Tik om geluid te starten'; addEventListener('pointerdown', e => { if (e.target !== sndBtn) setSound(true); }, { once: true }); } } catch (e) {}
 
 function onLevels() {
   const P = live.px || D.price;
@@ -554,7 +645,16 @@ function onLevels() {
   for (const L of LV) {
     const o = objs.get(L.key);
     if (!o) { const n = buildLevel(L); L.state = spent.has(L.key) ? (isWall(L) ? 'broken' : 'spent') : 'live'; objs.set(L.key, n); }
-    else { const st = o.L.state, fxL = o.L.fx, rip = o.L.rip, last = o.L.lastFx; Object.assign(o.L, L, { state: st, fx: fxL, rip, lastFx: last }); o.gone = false; }
+    else {
+      const st = o.L.state, fxL = o.L.fx, rip = o.L.rip, last = o.L.lastFx, oldS = o.L.s, crack = o.L.crack || 0;
+      Object.assign(o.L, L, { state: st, fx: fxL, rip, lastFx: last, crack }); o.gone = false;
+      if (isWall(o.L) && st === 'live' && oldS > 0) {
+        const sameBooks = exKey === exKeyPrev && mode === 'live';      // a book that did not answer this time is no eaten wall
+        if (sameBooks && L.s < oldS * .75 && Math.abs(P - o.L.p) <= D.B * 2 && Date.now() - (o.L.crackAt ?? 0) > 60e3) {
+          o.L.crackAt = Date.now(); o.L.crack = Math.min(1, crack + (1 - L.s / oldS) * 2); crackFx(o, oldS, L.s); }
+        else if (L.s > oldS * 1.15) o.L.crack = Math.max(0, crack - .35);
+      }
+    }
   }
   for (const k of spent.keys()) if (!keep.has(k)) spent.delete(k);
   // labels, one per price
@@ -562,7 +662,7 @@ function onLevels() {
   for (const [p, sp] of labels) if (!groups.has(p)) { scene.remove(sp); dispose(sp); labels.delete(p); }
   for (const [p, ls] of groups) {
     // written in the level itself, horizontally: what it is, its size, its price
-    const title = ls.map(l => nameOf(l.k, l.above)).join(' + ').toUpperCase(), sub = ls.map(l => l.v).join(' · '), lines = [title, sub, fmtP(p)];
+    const title = ls.map(l => nameOf(l.k, l.above)).join(' + ').toUpperCase(), sub = ls.map(l => l.v + (l.ps ? ` · ${l.ps[0]}/${l.ps[1]} u` : '')).join(' · '), lines = [title, sub, fmtP(p)];
     const old = labels.get(p); if (old && old.userData.txt === lines.join('|')) continue;
     if (old) { scene.remove(old); dispose(old); }
     // on the front of the level (the face toward the camera), the text running up: kind, then size and price
@@ -588,41 +688,45 @@ function onLevels() {
 // the price ticks: a level it crosses is queued; a wall it reaches and turns back from holds
 function onPrice(prev, p) {
   if (!D || prev == null || prev === p) return;
-  const dir = p > prev ? 1 : -1, tol = D.B * .25;
+  const dir = p > prev ? 1 : -1, tol = D.B * HOLD.tol;
   for (const o of objs.values()) {
     const L = o.L; if (o.gone || L.state !== 'live' || L.queued) continue;
     if ((prev - L.p) * (p - L.p) <= 0) { enqueue(L.p, dir, 'cross', L); continue; }
     if (isWall(L)) {
       const d = p - L.p;
       if (Math.abs(d) < tol) L.near = Math.sign(d);
-      else if (L.near && Math.sign(d) === L.near && Math.abs(d) > tol * 3) { L.near = 0;
-        if (now - (L.heldAt ?? -1e9) > 90) { L.heldAt = now; enqueue(L.p, -L.near || -Math.sign(d), 'hold', L); } }
+      else if (L.near && Math.sign(d) === L.near && Math.abs(d) > tol * HOLD.away) { L.near = 0;
+        if (Date.now() - (L.heldAt ?? 0) > HOLD.cooldown * 1e3) { L.heldAt = Date.now(); enqueue(L.p, -Math.sign(d), 'hold', L); } }
     }
   }
   for (const k of ['up', 'dn']) { const m = MAG[k];
-    if (m.p != null && (prev - m.p) * (p - m.p) <= 0 && now - m.hit > 120 && !queue.some(j => j.T === m)) queue.push({ p: m.p, dir, type: 'target', levels: [], T: m }); }
+    if (m.p != null && (prev - m.p) * (p - m.p) <= 0 && now - m.hit > 120 && !queue.some(j => j.T === m)) {
+      queue.push({ p: m.p, dir, type: 'target', levels: [], T: m, at: Date.now(), quiet: document.hidden }); if (document.hidden) sfx('target'); } }
 }
 function enqueue(p, dir, type, L) {
   L.queued = true;
-  const j = queue.find(q => q.p === p && q.type === type && q.dir === dir);
-  if (j) j.levels.push(L); else queue.push({ p, dir: type === 'hold' ? Math.sign(p - (live.px ?? p)) || dir : dir, type, levels: [L] });
+  let j = queue.find(q => q.p === p && q.type === type && q.dir === dir);
+  if (j) j.levels.push(L); else queue.push(j = { p, dir, type, levels: [L], at: Date.now() });
+  if (document.hidden) { j.quiet = true; sfx(type === 'hold' ? 'hold' : isWall(L) ? 'glass' : L.k); }   // in the background: the sound now, the show later
 }
 
 function spark(x, y, z, vx, vy, vz, col, life, size) { if (FX.sparks.length < 3500) FX.sparks.push({ x, y, z, vx, vy, vz, col, life, age: 0, size }); }
-function callout(title, sub, col) {
+function callout(title, sub, col, at) {
   const same = FX.calls.find(c => c.base === title && now - c.t0 < 1.6);
-  if (same) { same.n++; same.title = title + '  ×' + same.n; same.sub = sub; same.t0 = now; return; }
+  if (same) { same.n++; same.title = title + '  ×' + same.n; same.sub = sub; same.t0 = now;
+    if (LOG[0]?.title.startsWith(title)) { LOG[0].title = same.title; LOG[0].sub = sub; } return; }
   FX.calls.unshift({ base: title, title, sub, col, t0: now, n: 1 }); FX.calls.length = Math.min(FX.calls.length, 3);
+  logEvent(title, sub, col, at);
 }
 const R = Math.random;
-function settle(L, type, dir) {
+function settle(L, type, dir, quiet) {
   const o = objs.get(L.key); if (!o) return;
   const y = PUNCH_Y, x = WX(L.p), col = kindCol(L.k), sub = `${nameOf(L.k, L.above)} · ${L.v} · ${fmtP(L.p)}`;
   L.queued = false; L.lastFx = now;
   if (type === 'hold') {
     L.rip = { t0: now, y, a: 1 }; FX.rings.push({ x, y, t0: now, col, kind: 'wall' }); FX.shake = Math.max(FX.shake, .07); FX.ab = 1.2;
     for (let i = 0; i < 26; i++) spark(x - dir * .02, y, (R() - .5) * .2, -dir * (.5 + R() * 2.2), (R() - .5) * 2.4, (R() - .5) * 2.4, R() < .4 ? 'txt' : col, .35 + R() * .4, .05);
-    callout('MUUR HOUDT', sub, col); return;
+    callout('MUUR HOUDT', sub, col); if (!quiet) sfx('hold'); return;
   }
   spent.set(L.key, now);
   if (isWall(L)) {
@@ -633,30 +737,60 @@ function settle(L, type, dir) {
         rx: R() * 6, ry: R() * 6, rz: R() * 6, wx: (R() - .5) * 14, wy: (R() - .5) * 14, wz: (R() - .5) * 14, s: .5 + R() * .9, col, age: 0, life: 1.4 + R() * .8 });
     }
     for (let i = 0; i < 30; i++) spark(x, y, (R() - .5) * .3, dir * (1 + R() * 3), (R() - .5) * 2.5, (R() - .5) * 2.5, R() < .5 ? 'txt' : col, .4 + R() * .5, .05);
-    callout('MUUR DOORBROKEN', sub, col);
+    callout('MUUR DOORBROKEN', sub, col); if (!quiet) sfx('glass');
   } else if (L.k === 'stop') {
-    L.state = 'spent'; L.fx = { t0: now, y }; stats.stops++; callout('STOPS GERAAKT', sub, col);
+    L.state = 'spent'; L.fx = { t0: now, y }; stats.stops++; callout('STOPS GERAAKT', sub, col); if (!quiet) sfx('stop');
   } else {
     L.state = 'spent'; L.fx = { t0: now, y }; FX.shake = Math.max(FX.shake, .12); FX.ab = 1; stats.liq += L.s;
     FX.rings.push({ x, y: .02, t0: now, col, kind: 'floor' });
     for (let i = 0; i < 70; i++) spark(x, .2 + R() * 3, (R() - .5) * 2.2, dir * (1 + R() * 4.5), (R() - .2) * 1.5, (R() - .5) * 1.5, R() < .3 ? 'txt' : col, .6 + R() * .8, .045);
-    callout('LIQUIDATIES', sub, col);
+    callout('LIQUIDATIES', sub, col); if (!quiet) sfx('liq');
   }
 }
-function hitTarget(m) {
+function hitTarget(m, quiet) {
   const x = WX(m.p), y = 1.25, col = m.up ? 'up' : 'dn';
   m.hit = now; H.lockAt = now; FX.flash = .5; FX.shake = Math.max(FX.shake, .14); FX.ab = 1.4; FX.kick = 1.2; stats.targets++;
   for (let i = 0; i < 3; i++) FX.rings.push({ x, y, t0: now + i * .16, col, kind: 'big' });
   FX.rings.push({ x, y: .02, t0: now, col, kind: 'floor' });
   for (let i = 0; i < 80; i++) { const a = R() * Math.PI * 2, b = R() * Math.PI - Math.PI / 2, v = 1.5 + R() * 3.5;
     spark(x, y, 0, Math.cos(a) * Math.cos(b) * v, Math.sin(b) * v, Math.sin(a) * Math.cos(b) * v, R() < .4 ? 'txt' : col, .7 + R() * .9, .05); }
-  callout('DOEL GERAAKT', `Doel ${m.up ? '▲' : '▼'} · ${fmtP(m.p)} · kans was ${Math.round(m.prob * 100)}%`, col);
+  callout('DOEL GERAAKT', `Doel ${m.up ? '▲' : '▼'} · ${fmtP(m.p)} · kans was ${Math.round(m.prob * 100)}%`, col); if (!quiet) sfx('target');
+}
+// a wall eaten while the price stands against it: it cracks, a few pieces drop
+function crackFx(o, from, to) {
+  const L = o.L, x = WX(L.p), col = kindCol(L.k);
+  for (let i = 0; i < 8; i++) FX.shards.push({ x: x + (R() - .5) * .05, y: PUNCH_Y + (R() - .5) * .6, z: (R() - .5) * 2, vx: (R() - .5) * .4, vy: R() * .5, vz: (R() - .5) * .4,
+    rx: R() * 6, ry: R() * 6, rz: R() * 6, wx: (R() - .5) * 8, wy: (R() - .5) * 8, wz: (R() - .5) * 8, s: .25 + R() * .3, col, age: 0, life: 1.2 });
+  L.lastFx = now; callout('MUUR SCHEURT', `${nameOf(L.k, L.above)} · ${fmtUsd(from)} → ${fmtUsd(to)} · ${fmtP(L.p)}`, col, Date.now()); sfx('crack');
+}
+// a real liquidation: gathered over 1.5 s per side, then shown where it happened
+const liqBurst = { long: null, short: null };
+function realLiq(ex, long, p, usd) {
+  if (!(usd > 0) || !(p > 0) || !D) return;
+  const k = long ? 'long' : 'short', b = liqBurst[k] || (liqBurst[k] = { usd: 0, pw: 0, ex: new Set(), at: Date.now() });
+  b.usd += usd; b.pw += p * usd; b.ex.add(ex);
+  if (!b.timer) b.timer = setTimeout(() => { liqBurst[k] = null; showRealLiq(long, b.pw / b.usd, b.usd, [...b.ex], b.at); }, 1500);
+}
+function showRealLiq(long, p, usd, ex, at) {
+  stats.real += usd;
+  const x = WX(p), big = Math.min(1, Math.log10(Math.max(1, usd / 1e4)) / 2.5);      // $10K: 0 .. $3M: 1
+  if (!document.hidden) {
+    FX.rings.push({ x, y: .02, t0: now, col: 'liq', kind: big > .45 ? 'floor' : 'step' });
+    for (let i = 0; i < 10 + big * 70; i++) spark(x + (R() - .5) * .3, .05, (R() - .5) * 1.5, (R() - .5) * 1.2, 1 + R() * (2 + big * 3), (R() - .5) * 1.2, R() < .3 ? 'txt' : 'liq', .6 + R() * .8, .04);
+    FX.shake = Math.max(FX.shake, .02 + big * .1);
+    // the estimated liquidation level close by lights up: here it actually happens
+    for (const o of objs.values()) if (o.L.k === 'liq' && !o.gone && Math.abs(o.L.p - p) <= D.B && o.L.above === !long) { o.L.real = now; o.L.lastFx = now; }
+  }
+  const sub = `${long ? 'Longs' : 'Shorts'} · ${fmtUsd(usd)} · ${ex.join(' + ')} · ${fmtP(p)}`;
+  if (usd >= 250e3) callout('ECHTE LIQUIDATIE', sub, 'liq', at); else if (usd >= 50e3) logEvent('Echte liquidatie', sub, 'liq', at);
+  if (usd >= 20e3) sfx('liq', .3 + big * .7);
 }
 const COMBO = .8, JAB = .15, CROSS = .38, POSE = 1.5, KNOCK = .6;
 function punch(j, big) {
   const x = WX(j.p), col = j.levels[0] ? kindCol(j.levels[0].k) : 'txt';
   FX.stars.push({ x, y: PUNCH_Y, t0: now, col, big }); FX.kick = big ? 1 : .35; FX.shake = Math.max(FX.shake, big ? .05 : .025); FX.ab = Math.max(FX.ab, big ? 1 : .4);
-  if (big) { for (const L of j.levels) settle(L, j.type === 'hold' ? 'hold' : 'cross', j.dir); return; }
+  if (!j.quiet) sfx(big ? 'cross' : 'jab');
+  if (big) { for (const L of j.levels) settle(L, j.type === 'hold' ? 'hold' : 'cross', j.dir, j.quiet); return; }
   for (const L of j.levels) { L.lastFx = now; if (isWall(L)) L.rip = { t0: now, y: PUNCH_Y, a: .35 }; }
   for (let i = 0; i < 12; i++) spark(x - j.dir * .03, PUNCH_Y, (R() - .5) * .1, -j.dir * (.3 + R() * 1.3), (R() - .3) * 1.6, (R() - .5) * 1.6, R() < .5 ? 'txt' : col, .25 + R() * .25, .04);
 }
@@ -669,23 +803,28 @@ function think(dt) {
   let target = P;
   if (H.mode === 'approach') target = H.job.type === 'target' ? H.job.p : H.job.p - H.job.dir * REACH();
   if (H.mode === 'approach' || H.mode === 'follow') {
-    const d = target - H.p, ad = Math.abs(d), vmax = (ad > 300 ? 430 : ad > 120 ? 240 : 165) * spd * (U * 100);
+    // far behind the price (many levels at once, or back from another tab): he dashes
+    const lag = Math.abs(target - H.p) * U; H.dash += (Math.max(0, Math.min(1, (lag - 3) / 3)) - H.dash) * Math.min(1, dt * 4);
+    const d = target - H.p, ad = Math.abs(d), vmax = (ad > 300 ? 430 : ad > 120 ? 240 : 165) * spd * (U * 100) * (1 + 2.2 * H.dash);
     const want = ad < (H.mode === 'follow' ? 3 : .5) / (U * 100) ? 0 : Math.sign(d) * Math.min(vmax, Math.sqrt(2 * 1100 * (U * 100) * ad) * .9);
-    const acc = 1100 * (U * 100) * spd * dt; H.v += Math.max(-acc, Math.min(acc, want - H.v));
+    const acc = 1100 * (U * 100) * spd * (1 + 2 * H.dash) * dt; H.v += Math.max(-acc, Math.min(acc, want - H.v));
     let step = H.v * dt; if (Math.abs(step) > ad) { step = d; H.v = 0; } H.p += step;
     if (H.mode === 'approach') { H.face = H.job.dir;
       if (Math.abs(target - H.p) < 1.5 / (U * 100) && Math.abs(H.v) < 60 * (U * 100)) { H.mode = H.job.type === 'target' ? 'pose' : 'combo'; H.t0 = now; H.v = 0; H.hits = 0; } }
     else if (Math.abs(H.v) > 15 * (U * 100)) H.face = Math.sign(H.v);
   } else {
-    H.v = 0; const u = (now - H.t0) * spd;
+    H.v = 0; H.dash *= .9; const u = (now - H.t0) * spd; evAt = H.job?.at ?? null;
     if (H.mode === 'combo' || H.mode === 'shadow') {
       if (H.mode === 'combo' && H.hits === 0 && u >= JAB) { H.hits = 1; punch(H.job, false); }
       if (H.mode === 'combo' && H.hits === 1 && u >= CROSS) { H.hits = 2; punch(H.job, true);
         if (H.job.type === 'hold') { H.mode = 'knock'; H.t0 = now; H.kFrom = H.p; } }
       if ((H.mode === 'combo' || H.mode === 'shadow') && u >= COMBO) { H.mode = 'follow'; H.idleAt = now; }
     } else if (H.mode === 'knock') { const k = Math.min(1, (now - H.t0) / KNOCK); H.p = H.kFrom - H.face * 32 / (U * 100) * EASE.out(k); if (k >= 1) { H.mode = 'follow'; H.idleAt = now; } }
-    else if (H.mode === 'pose') { if (H.hits === 0 && now - H.t0 > .15) { H.hits = 1; hitTarget(H.job.T); } if (now - H.t0 >= POSE) { H.mode = 'follow'; H.idleAt = now; } }
+    else if (H.mode === 'pose') { if (H.hits === 0 && now - H.t0 > .15) { H.hits = 1; hitTarget(H.job.T, H.job.quiet); } if (now - H.t0 >= POSE) { H.mode = 'follow'; H.idleAt = now; } }
+    evAt = null;
   }
+  if (H.dash > .2) for (let i = 0; i < 3 * dt * 60; i++)       // speed lines behind him
+    spark(WX(H.p) - H.face * (.15 + R() * .4), .25 + R() * 1.2, (R() - .5) * .5, -H.face * (3 + R() * 4) * H.dash, 0, 0, 'cyan', .16, .024);
   // standing still a while: a little shadow-boxing
   if (H.mode === 'follow' && Math.abs(H.v) < 1e-6 && now - H.idleAt > 14) { H.mode = 'shadow'; H.t0 = now; H.idleAt = now; }
   // body state for the animation
@@ -726,8 +865,11 @@ function physics(dt) {
    ===================================================================================================================== */
 const tmpV = new THREE.Vector3();
 let W = 960, Hh = 540, DPR = 1, aspect = 16 / 9, SAT = 0;
+const MOBILE = matchMedia('(pointer: coarse)').matches;
+const QUAL = [[1.75, true], [1.25, true], [1, true], [1, false], [.75, false]];   // [pixel ratio cap, bloom]
+const Q = { i: MOBILE ? 1 : 0, fps: MOBILE ? 30 : 60, n: 0, t: 0, wait: 3 };
 function resize() {
-  W = innerWidth; Hh = innerHeight; aspect = W / Hh; SAT = $('sat').offsetHeight; DPR = Math.min(1.75, devicePixelRatio || 1);
+  W = innerWidth; Hh = innerHeight; aspect = W / Hh; SAT = $('sat').offsetHeight; DPR = Math.min(QUAL[Q.i][0], devicePixelRatio || 1); bloom.enabled = QUAL[Q.i][1];
   renderer.setPixelRatio(DPR); renderer.setSize(W, Hh, false); composer.setPixelRatio(DPR); composer.setSize(W, Hh);
   bloom.resolution.set(W * DPR, Hh * DPR); hud.width = Math.round(W * DPR); hud.height = Math.round(Hh * DPR);
   camera.aspect = aspect; camera.updateProjectionMatrix();
@@ -737,7 +879,7 @@ addEventListener('resize', resize);
 function render3d(dt) {
   const t = now, P = live.px ?? D.price;
   // camera: follows him, closer for the punches; every so often it pulls back to show both magnets
-  const portrait = Math.max(.45, Math.min(1, aspect / 1.78)), base = nice(P * 0.0012) * 9 * portrait;
+  const portrait = Math.max(.3, Math.min(1, aspect / 1.78)), base = nice(P * 0.0012) * 9 * portrait;
   let tc = H.p + H.face * (H.mode === 'approach' ? 120 : 50) / (U * 100), ts = H.mode === 'combo' || H.mode === 'pose' || H.mode === 'knock' ? base * .82 : base * (1 + Math.min(.4, H.speed / 1000));
   const both = MAG.up.p != null && MAG.dn.p != null;
   if (both && t > overviewAt && t < overviewAt + 6 && H.mode === 'follow' && !queue.length) { tc = (MAG.up.p + MAG.dn.p) / 2; ts = (MAG.up.p - MAG.dn.p) * 1.35; }
@@ -763,9 +905,14 @@ function render3d(dt) {
       const u = o.mat.uniforms; u.uT.value = t; if (L.rip) { u.uRipT.value = L.rip.t0; u.uRipY.value = L.rip.y; u.uRipA.value = L.rip.a; }
       if (L.state === 'broken') { u.uA.value = (age < .3 ? 1 + 3 * (1 - age / .3) : .06) * f; u.uEdge.value = (age < .3 ? 1 - age / .3 : .03) * f; o.glow.material.opacity = .03 * f; }
       else { const hot = L.lastFx != null && t - L.lastFx < .5 ? 1 + (1 - (t - L.lastFx) / .5) * 2 : 1; u.uA.value = (.8 + L.rel * .5) * hot * f; u.uEdge.value = hot * f; o.glow.material.opacity = (.05 + L.rel * .06) * f; }
+      // stood 5 or 6 of the last 6 hours: steel; new this hour or the last: it flickers; being eaten: cracks
+      const ps = L.ps; u.uSteel.value = ps && ps[0] >= ps[1] - 1 ? 1 : 0; u.uFresh.value = ps && ps[0] <= 1 && L.state === 'live' ? 1 : 0;
+      if (L.crack) L.crack = Math.max(0, L.crack - dt * .004);
+      u.uCrack.value += ((L.crack || 0) - u.uCrack.value) * Math.min(1, dt * 3); u.uCrackY.value = PUNCH_Y / o.h;
     } else {
       const u = o.mat.uniforms; u.uT.value = t; u.uFade.value = f;
-      if (L.fx) { u.uT0.value = L.fx.t0; u.uY.value = L.fx.y; u.uSpent.value = Math.min(1, age / 1.4); } else u.uSpent.value = L.state === 'live' ? 0 : 1;
+      u.uT0.value = Math.max(L.fx?.t0 ?? -9, L.real ?? -9); u.uY.value = L.fx?.y ?? PUNCH_Y;      // a real liquidation there sends a shock through it too
+      u.uSpent.value = L.state === 'live' ? 0 : L.fx ? Math.min(1, age / 1.4) : 1;
       o.line.material.opacity = (L.state === 'live' ? (L.k === 'stop' ? .18 : .35) : .06) * f;
     }
   }
@@ -808,7 +955,7 @@ function render3d(dt) {
   const near = H.face > 0 ? -1 : 1, far = -near;
   const kn = H.mode === 'knock' ? Math.sin(Math.PI * Math.min(1, (t - H.t0) / KNOCK)) : 0;
   const pu = H.mode === 'pose' ? t - H.t0 : -1, ps = pu < 0 ? 0 : EASE.out(Math.min(1, pu / .35)) * Math.min(1, (POSE - pu) / .3);
-  body.rotation.set(.05 * walk + .14 * run + .1 * gd + .14 * cross + .06 * jab - .45 * kn - .08 * ps, -near * .5 * cross + far * .12 * jab, 0);
+  body.rotation.set(.05 * walk + .14 * run + .22 * H.dash + .1 * gd + .14 * cross + .06 * jab - .45 * kn - .08 * ps, -near * .5 * cross + far * .12 * jab, 0);
   for (const sx of [-1, 1]) {
     const L = limbs[sx], s = Math.sin(ph + (sx > 0 ? 0 : Math.PI)), lead = sx === far ? 1 : -1, stance = gd * (1 - walk * .7);
     L.hip.rotation.set(lerp(-s * (.42 + .38 * run) * walk, lead > 0 ? -.38 : .3, stance) + kn * .35 * lead, 0, sx * .03);
@@ -855,9 +1002,9 @@ function render3d(dt) {
 const project = p => { tmpV.set(WX(p), PUNCH_Y, 0).project(camera); return (tmpV.x * .5 + .5) * W; };
 function txt(s, x, y, font, color, align = 'left') { hg.font = font; hg.fillStyle = color; hg.textAlign = align; hg.textBaseline = 'alphabetic'; hg.fillText(s, x, y); }
 function drawHud() {
-  const k = Math.max(.62, Math.min(W / 960, Hh / 540)), LW = W / k, LH = Hh / k, t = now, P = live.px ?? D.price;
+  const k = Math.max(W < 600 ? .8 : .62, Math.min(W / 960, Hh / 540)), LW = W / k, LH = Hh / k, t = now, P = live.px ?? D.price;   // a phone: larger, so the small print stays readable
   hg.setTransform(DPR * k, 0, 0, DPR * k, 0, 0); hg.clearRect(0, 0, LW, LH);
-  const Pk = p => project(p) / k, gx = 24, top = 8 + SAT / k;
+  const Pk = p => project(p) / k, gx = 24, top = 8 + SAT / k, narrow = LW < 760, foot = LH - (Hh - toolsEl.getBoundingClientRect().top) / k - 10;
   const sh = hg.createLinearGradient(0, 0, 0, 140); sh.addColorStop(0, 'rgba(3,6,7,.92)'); sh.addColorStop(1, 'rgba(3,6,7,0)'); hg.fillStyle = sh; hg.fillRect(0, 0, LW, 140);
   // ticker
   const fresh = live.px && Date.now() - live.at < 10e3;
@@ -878,7 +1025,9 @@ function drawHud() {
     const hit = t - m.hit < 30;
     txt(hit ? 'GERAAKT' : pct(m.p, P), x, top + 22, `500 9.5px ${FM}`, hit ? CSS.txt : CSS.dim, 'right');
     txt(fmtP(m.p), x0, top + 44, `600 17px ${FM}`, CSS.txt);
-    txt(Math.round(m.prob * 100) + '%' + (m.p === TG?.first ? ' eerst' : ''), x, top + 44, `600 12px ${FM}`, c, 'right');
+    const first = m.p === TG?.first;      // narrow: a dot marks the target that comes first
+    txt(Math.round(m.prob * 100) + '%' + (first && tw >= 130 ? ' eerst' : ''), x, top + 44, `600 12px ${FM}`, c, 'right');
+    if (first && tw < 130) { hg.fillStyle = c; hg.beginPath(); hg.arc(x0 + 44, top + 18, 2.5, 0, 7); hg.fill(); }
     hg.fillStyle = 'rgba(255,255,255,.08)'; hg.fillRect(x0, top + 52, tw, 2); hg.fillStyle = c; hg.fillRect(x0, top + 52, tw * m.prob, 2);
     x -= tw + 22;
   }
@@ -902,11 +1051,22 @@ function drawHud() {
   hg.fillStyle = moodC; hg.fillRect(px - .5, ry - 16, 1, 26);
   hg.font = `600 9.5px ${FM}`; const lw = hg.measureText(fmtP(P)).width + 12;
   hg.beginPath(); hg.roundRect(px - lw / 2, ry + 10, lw, 15, 2); hg.fill(); txt(fmtP(P), px, ry + 21, `600 9.5px ${FM}`, '#05080a', 'center');
+  // what happened lately, with the time
+  const nLog = LH > 520 ? 8 : 4, ly = ry + 50, wide2 = LW > 760;
+  if (LOG.length) { const n = Math.min(nLog, LOG.length), lwid = wide2 ? Math.min(LW * .55, 470) : 180;
+    hg.fillStyle = 'rgba(5,8,10,.6)'; hg.fillRect(gx - 8, ly - 13, lwid, 22 + n * 15);
+    txt('LAATSTE GEBEURTENISSEN', gx, ly, `600 8.5px ${FM}`, CSS.faint); }
+  LOG.slice(0, nLog).forEach((e, i) => {
+    const tm = new Date(e.at).toLocaleTimeString('nl-NL', { hour12: false }), y = ly + 18 + i * 15;
+    hg.globalAlpha = 1 - i * .08; hg.fillStyle = CSS[e.col]; hg.fillRect(gx, y - 9, 2, 11);
+    txt(tm, gx + 8, y, `500 9px ${FM}`, CSS.dim);
+    txt(wide2 ? e.title + '  ' + e.sub : e.title, gx + 62, y, `500 9px ${FM}`, 'rgba(233,241,238,.85)'); hg.globalAlpha = 1;
+  });
   // lower thirds
   const bsh = hg.createLinearGradient(0, LH - 150, 0, LH); bsh.addColorStop(0, 'rgba(3,6,7,0)'); bsh.addColorStop(1, 'rgba(3,6,7,.85)'); hg.fillStyle = bsh; hg.fillRect(0, LH - 150, LW, 150);
   FX.calls.forEach((c, i) => {
     const age = t - c.t0, inK = EASE.out(Math.min(1, age / .28)), a = Math.max(0, inK - (age > 2 ? (age - 2) / .4 : 0));
-    const y = LH - 66 - i * 44, xo = gx - (1 - inK) * 24, col = CSS[c.col];
+    const y = foot - 22 - i * 44, xo = gx - (1 - inK) * 24, col = CSS[c.col];
     hg.globalAlpha = a * (i ? .6 : 1);
     hg.font = `800 15px ${FD}`; const w1 = hg.measureText(c.title).width + c.title.length * 1.2; hg.font = `500 10.5px ${FM}`; const w = Math.max(w1, hg.measureText(c.sub).width) + 34;
     hg.fillStyle = 'rgba(8,12,14,.78)'; hg.fillRect(xo, y - 22, w, 38); hg.fillStyle = col; hg.fillRect(xo, y - 22, 3, 38);
@@ -916,18 +1076,27 @@ function drawHud() {
   });
   // status, bottom right
   const ago = Math.max(0, Math.round((Date.now() - updAt) / 1000));
-  txt(mode === 'live' ? `${nBooks} orderboeken · ververst ${ago} s geleden` : `uurdata van GlassSphere · ${nBooks} orderboeken`, LW - gx, LH - 30, `500 9px ${FM}`, 'rgba(233,241,238,.45)', 'right');
-  txt(`sinds openen: ${stats.walls} muren · ${stats.stops} stops · ${fmtUsd(stats.liq)} liq. · ${stats.targets} doelen`, LW - gx, LH - 16, `500 9px ${FM}`, 'rgba(233,241,238,.3)', 'right');
+  const sy = narrow ? top + 136 : LH - 30;
+  txt(mode === 'live' ? `${nBooks} orderboeken · ververst ${ago} s geleden` : `uurdata van GlassSphere · ${nBooks} orderboeken`, LW - gx, sy, `500 9px ${FM}`, 'rgba(233,241,238,.45)', 'right');
+  txt(narrow ? `${stats.walls} muren · ${stats.stops} stops · ${fmtUsd(stats.real)} echte liq.` : `sinds openen: ${stats.walls} muren · ${stats.stops} stops · ${fmtUsd(stats.liq)} liq. geschat · ${fmtUsd(stats.real)} echt · ${stats.targets} doelen`,
+    LW - gx, sy + 14, `500 9px ${FM}`, 'rgba(233,241,238,.3)', 'right');
 }
 
-let last = 0;
+let last = 0, acc = 0;
 function frame(ts) {
-  const dt = Math.min(.05, last ? (ts - last) / 1000 : 0); last = ts; now += dt;
-  if (D) { think(dt); physics(dt); render3d(dt); drawHud(); }
   requestAnimationFrame(frame);
+  acc += last ? (ts - last) / 1000 : 0; last = ts;
+  if (acc < 1 / Q.fps - .004) return;                      // phones: at most 30 frames a second
+  const dt = Math.min(.05, acc); acc = 0; now += dt;
+  if (!D) return;
+  think(dt); physics(dt); render3d(dt); drawHud();
+  // too slow for its frame rate: a step down in resolution, at the end without bloom
+  Q.n++; Q.t += dt;
+  if (Q.t >= 3) { const fps = Q.n / Q.t; Q.n = Q.t = 0;
+    if (Q.wait > 0) Q.wait--; else if (fps < Q.fps * .8 && Q.i < QUAL.length - 1) { Q.i++; Q.wait = 2; resize(); } }
 }
 (async () => {
-  resize(); live.start();
+  resize(); live.start(); liqFeeds();
   site = await loadSite(); if (site) setData(site, 'site');
   if (await loadLive()) setInterval(loadLive, 15e3);
   else if (!site) { msg('GEEN DATA: BEURZEN EN ' + A.file.toUpperCase() + ' NIET BEREIKBAAR'); setInterval(async () => { if (await loadLive()) location.reload(); }, 30e3); }
@@ -939,8 +1108,8 @@ function frame(ts) {
   requestAnimationFrame(frame);
 })();
 // a hidden tab: the stream and the frames rest; back again, the hero catches up with the price
-document.addEventListener('visibilitychange', () => { last = 0; });
-window.HELD = { get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, H, queue, onPrice, live };
+document.addEventListener('visibilitychange', () => { last = 0; acc = 0; Q.n = Q.t = 0; Q.wait = 2; });
+window.HELD = { get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, H, queue, onPrice, live, realLiq, objs, onLevels, LOG, Q };
 })();
 </script>
 </body>

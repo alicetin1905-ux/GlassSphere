@@ -367,7 +367,7 @@ const SYx = x => Math.floor(x / TREAD + 1e-6) * RISE;          // top of the ste
 const SY = p => SYx(WX(p));
 const K = () => U * 100;                       // world scale against the old $100-per-unit floor (speeds and distances below)
 const PUNCH_Y = 1.0, MAG_Y = 2.55, HS = 1.4;
-const REACH = () => 52 / K();                  // in dollars: 0.52 units ahead of him
+const REACH = () => 62 / K();                  // in dollars: 0.62 units ahead of him, where a jab lands
 
 const glc = $('gl'), hud = $('hud'), hg = hud.getContext('2d');
 const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true, powerPreference: 'high-performance' });
@@ -658,77 +658,90 @@ for (const m of [MAG.up, MAG.dn]) { const c = col3(m.up ? 'up' : 'dn');
   m.band = new THREE.Mesh(new THREE.PlaneGeometry(TREAD * 2.2, SW), new THREE.MeshBasicMaterial({ color: c, opacity: .22, ...addBlend }));
   m.band.rotation.x = -Math.PI / 2; m.band.position.y = .008; m.root.add(m.band); }
 
-// BTC itself: a coin that rolls over the steps at the live price; he follows it, a little behind when he stops to fight
+// the live price: an orange pin on its step, a gem over a beam of light; he follows it, a little behind when he fights
 const coin = new THREE.Group(); scene.add(coin);
 {
-  const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d');
-  const g = x.createRadialGradient(110, 100, 10, 128, 128, 128); g.addColorStop(0, '#ffc36b'); g.addColorStop(.7, '#f7931a'); g.addColorStop(1, '#b8620a');
-  x.fillStyle = g; x.beginPath(); x.arc(128, 128, 126, 0, 7); x.fill(); x.strokeStyle = 'rgba(255,236,200,.8)'; x.lineWidth = 8; x.beginPath(); x.arc(128, 128, 104, 0, 7); x.stroke();
-  x.fillStyle = '#fff'; x.font = '700 150px Georgia,serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.save(); x.translate(128, 136); x.rotate(.24); x.fillText('₿', 0, 0); x.restore();
-  const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = 8;
-  const face = new THREE.MeshStandardMaterial({ map: tex, metalness: .55, roughness: .35, emissive: 0xf7931a, emissiveIntensity: .25 });
-  const rim = new THREE.MeshStandardMaterial({ color: 0xd9861c, metalness: .9, roughness: .3, emissive: 0x8a4a08, emissiveIntensity: .3 });
-  const disc = new THREE.Mesh(new THREE.CylinderGeometry(.24, .24, .05, 48), [rim, face, face]); disc.rotation.x = Math.PI / 2; coin.add(disc);
-  coin.add(new THREE.PointLight(0xf7931a, .9, 2.5, 2));
-  coin.userData.disc = disc; disc.castShadow = true;
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(.018, .018, 1.5, 12, 1, true), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xf7931a).multiplyScalar(1.6), opacity: .55, ...addBlend }));
+  beam.position.y = .75; coin.add(beam);
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(.11), new THREE.MeshStandardMaterial({ color: 0xf7931a, metalness: .6, roughness: .25, emissive: 0xf7931a, emissiveIntensity: .7 }));
+  gem.position.y = 1.62; gem.scale.y = 1.4; coin.add(gem);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(.14, .19, 40), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xf7931a).multiplyScalar(1.5), opacity: .7, ...addBlend }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = .01; coin.add(ring);
+  coin.add(new THREE.PointLight(0xf7931a, .7, 2.2, 2));
+  coin.userData.gem = gem;
 }
-const CZ = -.8;      // it rolls beside his path, on the far side, so it never hides him
+const CZ = -.9;      // beside his path, on the far side, so it never hides him
 
-// the hero: brushed gunmetal and chrome, a chest core that shows the direction
+// the hero: BTC itself, a fat orange coin with a face, rubber-hose arms in red boxing gloves and legs in sneakers.
+// He faces the camera and moves in its plane, like a cartoon: arms and legs swing sideways, a punch stretches to the wall
 const hero = new THREE.Group(), body = new THREE.Group(); hero.add(body); scene.add(hero);
-const armor = new THREE.MeshPhysicalMaterial({ color: 0x525d65, metalness: 1, roughness: .3, clearcoat: .6, clearcoatRoughness: .25, envMapIntensity: .75 });
-const dark = new THREE.MeshStandardMaterial({ color: 0x1a1f23, metalness: .85, roughness: .5, envMapIntensity: .6 });
 const glowMat = new THREE.MeshBasicMaterial({ color: 0xbfeaff, toneMapped: false });
 const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
-const seamMat = new THREE.MeshBasicMaterial({ color: 0x8fd6ff, toneMapped: false });      // the seams glow in his mood colour
+const seamMat = new THREE.MeshBasicMaterial({ color: 0x8fd6ff, toneMapped: false });      // the rim glows in his mood colour
+const dark = new THREE.MeshStandardMaterial({ color: 0x1a1f23, metalness: .85, roughness: .5, envMapIntensity: .6 });
+const rubber = new THREE.MeshStandardMaterial({ color: 0x15171a, metalness: .1, roughness: .55 });
 const cap = (r, l, m) => new THREE.Mesh(new THREE.CapsuleGeometry(r, l, 8, 16), m);
+const CR = .3, CY = .12;                      // the coin: radius and height of its centre
+const FACE = {};
 {
-  const torso = cap(.125, .17, armor); torso.scale.set(1.08, 1, .78); torso.position.y = .02; body.add(torso);
-  const abs = cap(.09, .08, dark); abs.position.set(0, -.08, .02); abs.scale.z = .8; body.add(abs);
-  const plate = new THREE.Mesh(new THREE.BoxGeometry(.25, .13, .07), armor); plate.position.set(0, .085, .055); body.add(plate);
-  const core = new THREE.Mesh(new THREE.CylinderGeometry(.034, .034, .02, 32), coreMat); core.rotation.x = Math.PI / 2; core.position.set(0, .09, .095); body.add(core);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(.042, .009, 8, 32), chrome); ring.position.set(0, .09, .1); body.add(ring);
-  const belt = new THREE.Mesh(new THREE.CylinderGeometry(.1, .095, .05, 24), dark); belt.position.y = -.15; belt.scale.z = .8; hero.add(belt);
-  const neck = cap(.04, .03, dark); neck.position.y = .19; body.add(neck);
-  const helm = new THREE.Mesh(new THREE.SphereGeometry(.088, 32, 24), armor); helm.scale.set(.92, 1.12, 1); helm.position.y = .28; body.add(helm);
-  const face = new THREE.Mesh(new THREE.SphereGeometry(.082, 32, 24, -.9, 1.8, .9, 1.25), dark); face.scale.set(.95, 1.12, 1.06); face.position.set(0, .275, .008); body.add(face);
-  const visor = new THREE.Mesh(new THREE.BoxGeometry(.085, .014, .02), glowMat); visor.position.set(0, .29, .083); body.add(visor);
-  const crest = new THREE.Mesh(new THREE.BoxGeometry(.016, .05, .13), armor); crest.position.set(0, .37, -.01); body.add(crest);
-  const jaw = new THREE.Mesh(new THREE.BoxGeometry(.07, .03, .03), armor); jaw.position.set(0, .225, .07); body.add(jaw);
-  for (const [y, w] of [[.155, .215], [-.035, .19]]) { const st = new THREE.Mesh(new THREE.BoxGeometry(w, .006, .004), seamMat); st.position.set(0, y, .092); body.add(st); }
-  const waist = new THREE.Mesh(new THREE.TorusGeometry(.098, .006, 6, 40), seamMat); waist.rotation.x = Math.PI / 2; waist.scale.y = .8; waist.position.y = -.125; hero.add(waist);
-  const pack = new THREE.Mesh(new THREE.BoxGeometry(.17, .17, .07), dark); pack.position.set(0, .06, -.1); body.add(pack);
-  for (const sx of [-1, 1]) { const vent = new THREE.Mesh(new THREE.CylinderGeometry(.022, .03, .05, 16), seamMat); vent.position.set(sx * .05, -.04, -.12); body.add(vent); }
+  const c = document.createElement('canvas'); c.width = c.height = 512; const x = c.getContext('2d');
+  const g = x.createRadialGradient(200, 190, 20, 256, 256, 256); g.addColorStop(0, '#ffcf7a'); g.addColorStop(.65, '#f7931a'); g.addColorStop(1, '#c0680c');
+  x.fillStyle = g; x.fillRect(0, 0, 512, 512);
+  x.strokeStyle = 'rgba(255,240,210,.75)'; x.lineWidth = 14; x.beginPath(); x.arc(256, 256, 214, 0, 7); x.stroke();
+  x.strokeStyle = 'rgba(150,70,0,.35)'; x.lineWidth = 6; x.beginPath(); x.arc(256, 256, 196, 0, 7); x.stroke();
+  x.fillStyle = 'rgba(255,248,235,.95)'; x.font = '700 190px Georgia,serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.save(); x.translate(256, 345); x.rotate(.22); x.fillText('₿', 0, 0); x.restore();          // the ₿ low on his belly, room for the eyes above
+  const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = 8;
+  const r = document.createElement('canvas'); r.width = 256; r.height = 16; const rx = r.getContext('2d');   // the reeded edge
+  for (let i = 0; i < 256; i += 4) { rx.fillStyle = i % 8 ? '#b9620c' : '#f2a03a'; rx.fillRect(i, 0, 4, 16); }
+  const rtex = new THREE.CanvasTexture(r); rtex.encoding = THREE.sRGBEncoding; rtex.wrapS = THREE.RepeatWrapping; rtex.repeat.x = 6;
+  const faceMat = new THREE.MeshPhysicalMaterial({ map: tex, metalness: .55, roughness: .3, clearcoat: .7, clearcoatRoughness: .2, emissive: 0x7a3d00, emissiveIntensity: .25 });
+  const rimMat = new THREE.MeshPhysicalMaterial({ map: rtex, metalness: .8, roughness: .3, clearcoat: .5 });
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(CR, CR, .13, 64), [rimMat, faceMat, faceMat]); disc.rotation.x = Math.PI / 2; disc.position.y = CY; body.add(disc);
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(CR + .012, .008, 8, 64), seamMat); halo.position.set(0, CY, 0); body.add(halo);
+  // the face: two eyes with pupils that look where he goes, brows, a mouth
+  const white = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .25 }), black = new THREE.MeshStandardMaterial({ color: 0x0a0b0c, roughness: .3 });
+  FACE.eyes = []; FACE.pupils = []; FACE.brows = [];
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(.062, 24, 16), white); eye.scale.set(.85, 1.15, .45); eye.position.set(sx * .085, CY + .11, .07); body.add(eye); FACE.eyes.push(eye);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(.03, 16, 12), black); pupil.scale.set(1, 1.15, .5); pupil.position.set(sx * .085, CY + .105, .097); body.add(pupil); FACE.pupils.push(pupil);
+    const hl = new THREE.Mesh(new THREE.SphereGeometry(.009, 8, 6), coreMat); hl.position.set(.012, .014, .014); pupil.add(hl);
+    const brow = new THREE.Mesh(new THREE.BoxGeometry(.075, .016, .02), black); brow.position.set(sx * .085, CY + .2, .085); body.add(brow); FACE.brows.push(brow);
+  }
+  FACE.mouth = new THREE.Mesh(new THREE.TorusGeometry(.045, .01, 8, 24, Math.PI), black); FACE.mouth.rotation.z = Math.PI; FACE.mouth.position.set(0, CY + .035, .075); body.add(FACE.mouth);
+  FACE.disc = disc;
 }
-const coreLight = new THREE.PointLight(0x35ffb4, .9, 2.4, 2); coreLight.position.set(0, .09, .3); body.add(coreLight);
+const coreLight = new THREE.PointLight(0x35ffb4, .9, 2.4, 2); coreLight.position.set(0, CY, -.25); body.add(coreLight);   // an aura behind him in his mood colour
 const limbs = {};
 for (const sx of [-1, 1]) {
-  const sh = new THREE.Mesh(new THREE.SphereGeometry(.07, 24, 16), armor); sh.position.set(sx * .165, .135, 0); sh.scale.set(1, .9, .95); body.add(sh);
-  const paul = new THREE.Mesh(new THREE.SphereGeometry(.085, 24, 12, 0, Math.PI * 2, 0, Math.PI * .45), armor); paul.position.set(sx * .17, .15, 0); paul.rotation.z = -sx * .35; paul.scale.set(1.05, .9, 1); body.add(paul);
-  const pstrip = new THREE.Mesh(new THREE.TorusGeometry(.075, .004, 6, 32, Math.PI), seamMat); pstrip.position.set(sx * .17, .175, 0); pstrip.rotation.set(0, Math.PI / 2, -sx * .35); body.add(pstrip);
-  const arm = new THREE.Group(); arm.position.set(sx * .17, .13, 0); body.add(arm);
-  const up = cap(.043, .11, dark); up.position.y = -.09; arm.add(up);
+  // arms from the rim of the coin: upper arm, elbow, forearm, a red boxing glove with a white cuff
+  const arm = new THREE.Group(); arm.position.set(sx * (CR - .02), CY - .02, sx > 0 ? .03 : -.03); body.add(arm);
+  const up = cap(.022, .13, rubber); up.position.y = -.085; arm.add(up);
   const fore = new THREE.Group(); fore.position.y = -.17; arm.add(fore);
-  const fa = cap(.05, .1, armor); fa.position.y = -.07; fore.add(fa);
-  const fseam = new THREE.Mesh(new THREE.BoxGeometry(.004, .09, .004), seamMat); fseam.position.set(0, -.07, .051); fore.add(fseam);
-  const cuff = new THREE.Mesh(new THREE.TorusGeometry(.052, .007, 6, 24), chrome); cuff.rotation.x = Math.PI / 2; cuff.position.y = -.135; fore.add(cuff);
-  const fist = new THREE.Mesh(new THREE.BoxGeometry(.085, .085, .085), armor); fist.position.y = -.175; fore.add(fist);
-  const knuckle = new THREE.Mesh(new THREE.BoxGeometry(.088, .03, .088), chrome); knuckle.position.y = -.21; fore.add(knuckle);
-  const palm = new THREE.Mesh(new THREE.CircleGeometry(.022, 20), glowMat); palm.position.set(0, -.176, .044); fore.add(palm);
-  // legs hang from the pelvis, not the torso, so he can lean into a punch while his feet stay planted
-  const hip = new THREE.Group(); hip.position.set(sx * .065, -.15, 0); hero.add(hip);
-  const th = cap(.058, .14, armor); th.position.y = -.1; hip.add(th);
-  const tseam = new THREE.Mesh(new THREE.BoxGeometry(.004, .12, .004), seamMat); tseam.position.set(sx * .02, -.1, .058); hip.add(tseam);
+  const fa = cap(.021, .12, rubber); fa.position.y = -.075; fore.add(fa);
+  const glove = new THREE.Group(); glove.position.y = -.17; fore.add(glove);
+  const red = new THREE.MeshPhysicalMaterial({ color: 0xd2232a, roughness: .35, clearcoat: .8, clearcoatRoughness: .15 });
+  const gl = new THREE.Mesh(new THREE.SphereGeometry(.068, 24, 16), red); gl.scale.set(1, 1.1, 1); glove.add(gl);
+  const thumb = new THREE.Mesh(new THREE.SphereGeometry(.03, 12, 10), red); thumb.position.set(-sx * .05, .02, .03); glove.add(thumb);
+  const cuff = new THREE.Mesh(new THREE.CylinderGeometry(.045, .05, .04, 16), new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: .5 })); cuff.position.y = .07; glove.add(cuff);
+  // legs from under the coin: thigh, knee, shin, a sneaker
+  const hip = new THREE.Group(); hip.position.set(sx * .1, CY - CR + .06, 0); hero.add(hip);
+  const th = cap(.026, .16, rubber); th.position.y = -.1; hip.add(th);
   const knee = new THREE.Group(); knee.position.y = -.2; hip.add(knee);
-  knee.add(new THREE.Mesh(new THREE.SphereGeometry(.05, 16, 12), dark));
-  const kl = new THREE.Mesh(new THREE.CircleGeometry(.014, 16), seamMat); kl.position.set(0, 0, .051); knee.add(kl);
-  const sn = cap(.052, .14, armor); sn.position.y = -.1; knee.add(sn);
-  const boot = new THREE.Mesh(new THREE.BoxGeometry(.085, .07, .13), dark); boot.position.set(0, -.2, .02); knee.add(boot);
-  const sole = new THREE.Mesh(new THREE.BoxGeometry(.08, .008, .12), glowMat); sole.position.set(0, -.236, .02); knee.add(sole);
-  limbs[sx] = { arm, fore, hip, knee };
+  const sn = cap(.024, .14, rubber); sn.position.y = -.09; knee.add(sn);
+  const shoe = new THREE.Group(); shoe.position.y = -.2; knee.add(shoe);
+  const upper = new THREE.Mesh(new THREE.SphereGeometry(.06, 20, 14), new THREE.MeshStandardMaterial({ color: 0xf4f4f0, roughness: .45 })); upper.scale.set(1.5, .75, 1); upper.position.set(.03, .0, 0); shoe.add(upper);
+  const sole = new THREE.Mesh(new THREE.BoxGeometry(.19, .022, .1), new THREE.MeshStandardMaterial({ color: 0xf7931a, roughness: .5 })); sole.position.set(.03, -.04, 0); shoe.add(sole);
+  const lace = new THREE.Mesh(new THREE.BoxGeometry(.05, .01, .06), seamMat); lace.position.set(.05, .042, 0); shoe.add(lace);
+  limbs[sx] = { arm, up, fore, fa, glove, hip, knee, shoe };
 }
 hero.scale.setScalar(HS);
 hero.traverse(n => { if (n.isMesh && n.material !== seamMat && n.material !== glowMat && n.material !== coreMat) n.castShadow = true; });
+// behind a wall his silhouette glows through it: drawn after the world, before him, only where something is in front
+const ghostMat = new THREE.MeshBasicMaterial({ color: 0x35ffb4, blending: THREE.AdditiveBlending, depthWrite: false, depthFunc: THREE.GreaterDepth, toneMapped: false, fog: false });
+{ const ms = []; hero.traverse(n => { if (n.isMesh) ms.push(n); });
+  for (const m of ms) { m.renderOrder = 2; const g = new THREE.Mesh(m.geometry, ghostMat); g.renderOrder = 1; m.add(g); } }
+let blinkAt = 3;
 
 // particles, glass shards, rings and impact stars
 const PMAX = 4000, pg = new THREE.BufferGeometry();
@@ -1035,7 +1048,7 @@ function think(dt) {
   const closing = H.mode === 'approach' && Math.abs(target - H.p) * U < .9;
   const gw = H.mode === 'combo' || H.mode === 'shadow' || H.mode === 'knock' || closing ? 1 : 0;
   H.guard += (gw - H.guard) * Math.min(1, dt * (gw > H.guard ? 12 : 5));
-  H.yaw += ((H.mode === 'pose' ? .35 : 1) * H.face * Math.PI / 2 - H.yaw) * Math.min(1, dt * 7);
+  H.yaw += ((H.mode === 'pose' ? 0 : .32) * H.face - H.yaw) * Math.min(1, dt * 7);
   const drift = P - (D?.candles?.[Math.max(0, D.candles.length - 25)]?.[4] ?? P);
   H.mood += ((H.mode === 'approach' || H.mode === 'combo' ? H.face : Math.sign(drift) * .6) - H.mood) * dt * 1.5;
   // the magnets pull: motes stream from him toward each target, more for the stronger one
@@ -1080,7 +1093,7 @@ addEventListener('resize', resize);
 function render3d(dt, dtReal = dt) {
   const t = now, P = live.px ?? D.price;
   // camera: follows him, closer for the punches; every so often it pulls back to show both magnets
-  const portrait = Math.max(.45, Math.min(1, aspect / 1.78)), base = 11 / U * portrait;      // about 11 units wide
+  const portrait = Math.max(.45, Math.min(1, aspect / 1.78)), base = 9 / U * portrait;      // about 9 units wide
   let tc = H.p + H.face * (H.mode === 'approach' ? 120 : 50) / K(), ts = H.mode === 'combo' || H.mode === 'pose' || H.mode === 'knock' ? base * .82 : base * (1 + Math.min(.4, H.speed / 1000));
   const both = MAG.up.p != null && MAG.dn.p != null;
   if (both && t > overviewAt && t < overviewAt + 6 && H.mode === 'follow' && !queue.length) { tc = (MAG.up.p + MAG.dn.p) / 2; ts = (MAG.up.p - MAG.dn.p) * 1.35; }
@@ -1089,15 +1102,15 @@ function render3d(dt, dtReal = dt) {
   camC += (tc - camC) * (1 - Math.exp(-dt * 2.4)); camS += (ts - camS) * (1 - Math.exp(-dt * 1.5));
   const lo = camC - camS * .33, hi = camC + camS * .33; if (H.p < lo) camC -= lo - H.p; else if (H.p > hi) camC += H.p - hi;
   const span = camS * U, dist = span / (2 * Math.tan(THREE.MathUtils.degToRad(17)) * aspect) * (1 - .05 * FX.kick);
-  const cx = WX(camC), sh = FX.shake;                // straight on: the stairs climb left to right, up with the price
+  const cx = WX(camC), sh = FX.shake;                // the stairs climb left to right, up with the price
   const cyT = (cx - WX(H.p)) / TREAD * RISE + H.y; camY = camY == null ? cyT : camY + (cyT - camY) * (1 - Math.exp(-dt * 3));
-  // half the slope, and from a little higher, so the stairs still climb and the treads keep their depth
-  const sa = Math.sin(SLOPE * .5), ca = Math.cos(SLOPE * .5), o1 = .9 + dist * .2, o2 = .95 + dist * .03;
+  // low, in front and a little down the stairs, looking up them: the steps rise into the picture
+  const sa = Math.sin(SLOPE * .35), ca = Math.cos(SLOPE * .35), o1 = .6 + dist * .12, o2 = 1.05 + dist * .04, CYAW = -.3;
   camera.up.set(-sa, ca, 0);
   // at a target the camera swings round him and back
-  FX.orbit = Math.max(0, FX.orbit - dtReal * .55); const yaw = FX.orbit > 0 ? Math.sin(Math.PI * (1 - FX.orbit)) * .6 : 0;
+  FX.orbit = Math.max(0, FX.orbit - dtReal * .55); const yaw = CYAW + (FX.orbit > 0 ? Math.sin(Math.PI * (1 - FX.orbit)) * .6 : 0);
   camera.position.set(cx - sa * o1 + Math.sin(yaw) * dist + (Math.sin(t * 91) + Math.sin(t * 57)) * sh * .5, camY + ca * o1 + (Math.cos(t * 83) + Math.sin(t * 41)) * sh * .5, Math.cos(yaw) * dist);
-  camera.lookAt(cx - sa * o2, camY + ca * o2, 0);
+  const ahead = span * .06; camera.lookAt(cx - sa * o2 + ahead, camY + ca * o2 + ahead / TREAD * RISE, 0);
   // the shadow box, the sky, the skyline and the dust follow
   key.target.position.set(WX(H.p), H.y, 0); key.position.copy(key.target.position).add(KEYOFF);
   sky.position.copy(camera.position); placeTowers(cx - 330);
@@ -1164,10 +1177,10 @@ function render3d(dt, dtReal = dt) {
     if (m.label) { m.label.material.opacity = Math.min(1, Math.max(0, (dist - 13) / 6)) * m.shown; m.label.visible = m.label.material.opacity > .01;
       const k = Math.max(1, dist / 9); m.label.scale.set(m.label.userData.w0 * k, m.label.userData.h0 * k, 1); m.label.position.y = MAG_Y + .62 + (k - 1) * .3; }
   }
-  // the coin: at the live price on its step, rolling as it goes, a hop up or down a step
-  { const tx = WX(P); if (coinX == null) coinX = tx; const dx = (tx - coinX) * Math.min(1, dt * 9); coinX += dx; coinRot -= dx / .24;
-    coinY += (SYx(coinX) - coinY) * Math.min(1, dt * 14); const hop = Math.abs(SYx(coinX) - coinY) * 1.5;
-    coin.position.set(coinX, coinY + .245 + hop + Math.sin(t * 3) * .015, CZ); coin.userData.disc.rotation.y = coinRot; }
+  // the price pin: at the live price, on its step
+  { const tx = WX(P); if (coinX == null) coinX = tx; coinX += (tx - coinX) * Math.min(1, dt * 9);
+    coinY += (SYx(coinX) - coinY) * Math.min(1, dt * 14);
+    coin.position.set(coinX, coinY, CZ); coin.userData.gem.rotation.y = t * 1.6; coin.userData.gem.position.y = 1.62 + Math.sin(t * 2.5) * .04; }
   // hero: walking, guard, jab and cross, the stagger off a wall that holds, the fist raised at a target
   const lock = t - H.lockAt < 1.2 ? 1 - (t - H.lockAt) / 1.2 : 0;
   const run = Math.min(1, H.speed / 430), walk = Math.min(1, H.speed / 140), gd = H.guard, ph = H.phase;
@@ -1176,23 +1189,39 @@ function render3d(dt, dtReal = dt) {
   const u = H.mode === 'combo' || H.mode === 'shadow' ? (t - H.t0) * (queue.length > 2 ? 1.6 : 1) : -1;
   const jab = u < .03 ? 0 : u < JAB ? EASE.out((u - .03) / (JAB - .03)) : u < .28 ? 1 - EASE.io((u - JAB) / (.28 - JAB)) : 0;
   const cross = u < .25 ? 0 : u < CROSS ? EASE.out((u - .25) / (CROSS - .25)) : u < .47 ? 1 : u < .68 ? 1 - EASE.io((u - .47) / .21) : 0;
-  const near = H.face > 0 ? -1 : 1, far = -near;
-  const kn = H.mode === 'knock' ? Math.sin(Math.PI * Math.min(1, (t - H.t0) / KNOCK)) : 0;
+  const F = H.face, kn = H.mode === 'knock' ? Math.sin(Math.PI * Math.min(1, (t - H.t0) / KNOCK)) : 0;
   const pu = H.mode === 'pose' ? t - H.t0 : -1, ps = pu < 0 ? 0 : EASE.out(Math.min(1, pu / .35)) * Math.min(1, (POSE - pu) / .3);
-  body.rotation.set(.05 * walk + .14 * run + .22 * H.dash + .1 * gd + .14 * cross + .06 * jab - .45 * kn - .08 * ps, -near * .5 * cross + far * .12 * jab, 0);
+  if (ps > 0) hero.position.y += Math.abs(Math.sin(pu * 7)) * .22 * ps;             // a target: he jumps for joy
+  // the body leans where he goes, twists into the cross, rocks back off a wall that holds
+  body.rotation.set(0, F * .45 * cross, -F * (.06 * walk + .12 * run + .2 * H.dash + .08 * gd + .12 * cross) + F * .4 * kn);
+  body.position.y = Math.sin(ph * 2) * .012 * walk;
+  const lead = F, rear = -F;      // the arm on the side he faces jabs; the other one throws the cross across his front
   for (const sx of [-1, 1]) {
-    const L = limbs[sx], s = Math.sin(ph + (sx > 0 ? 0 : Math.PI)), lead = sx === far ? 1 : -1, stance = gd * (1 - walk * .7);
-    L.hip.rotation.set(lerp(-s * (.42 + .38 * run) * walk, lead > 0 ? -.38 : .3, stance) + kn * .35 * lead, 0, sx * .03);
-    L.knee.rotation.x = lerp(Math.max(0, Math.sin(ph + (sx > 0 ? 0 : Math.PI) + 1.3)) * (.6 + .7 * run) * walk + .06, .32, stance) + kn * .2;
-    let ax = lerp(s * (.35 + .5 * run) * walk + .05, -.85, gd), az = lerp(0, -sx * .18, gd), fxr = lerp(-(.25 + .95 * run), -1.95, gd);
-    const e = sx === far ? jab : cross;
-    ax = lerp(ax, -1.52, e); az = lerp(az, -sx * .05, e); fxr = lerp(fxr, -.04, e);
-    if (sx === near && ps > 0) { ax = lerp(ax, -2.85, ps); fxr = lerp(fxr, -.15, ps); az = lerp(az, sx * .12, ps); }
-    if (kn > 0) { ax = lerp(ax, .55, kn * .7); fxr = lerp(fxr, -.5, kn * .7); }
-    L.arm.rotation.set(ax, 0, az); L.fore.rotation.x = fxr;
+    const Lm = limbs[sx], s = Math.sin(ph + (sx > 0 ? 0 : Math.PI)), stance = gd * (1 - walk * .7);
+    // legs: a stride in the plane, the knee bending back; a fighting stance with the lead foot forward
+    Lm.hip.rotation.z = lerp(F * s * (.5 + .3 * run) * walk, (sx === lead ? .38 : -.3) * F, stance) - F * .3 * kn * (sx === lead ? 1 : .4);
+    Lm.knee.rotation.z = lerp(-F * Math.max(0, Math.sin(ph + (sx > 0 ? 0 : Math.PI) + 1.3)) * (.8 + .6 * run) * walk, -F * .3, stance);
+    Lm.shoe.rotation.z = -Lm.hip.rotation.z - Lm.knee.rotation.z; Lm.shoe.scale.x = F;            // the sole stays level, the toe points ahead
+    // arms: hanging and swinging, the guard with gloves up, the jab and the stretched cross, both up at a target, flailing off a wall
+    const e = sx === lead ? jab : cross, swing = -F * s * (.45 + .4 * run) * walk;
+    let ua = lerp(sx * .25 + swing, F * .8, gd), fa = lerp(sx * -.25, F * 1.5, gd), stretch = 1;
+    ua = lerp(ua, F * Math.PI / 2, e); fa = lerp(fa, 0, e); stretch = 1 + e * (sx === lead ? .25 : 1.5);
+    if (ps > 0) { ua = lerp(ua, sx * 2.6, ps); fa = lerp(fa, sx * .3, ps); }
+    if (kn > 0) { ua = lerp(ua, sx * 1.9 + Math.sin(t * 30 + sx) * .4, kn); fa = lerp(fa, sx * .8, kn); }
+    Lm.arm.rotation.z = ua; Lm.fore.rotation.z = fa; Lm.arm.position.z = sx === rear && cross > .05 ? .09 : sx > 0 ? .03 : -.03;
+    Lm.up.scale.y = stretch; Lm.up.position.y = -.085 * stretch; Lm.fore.position.y = -.17 * stretch;
+    Lm.fa.scale.y = stretch; Lm.fa.position.y = -.075 * stretch; Lm.glove.position.y = -.17 * stretch;
+    Lm.glove.scale.setScalar(1 + e * .25);
   }
+  // the face: eyes that look ahead and blink, angry brows in a fight, a grin at a target, an 'o' off a wall
+  if (t > blinkAt + .13) blinkAt = t + 2.5 + Math.random() * 3;
+  const blink = t > blinkAt ? .12 : 1, fight = Math.max(gd, jab, cross);
+  FACE.eyes.forEach((eye, i) => { const sx = i ? 1 : -1; eye.scale.y = 1.15 * (ps > .3 ? .35 : blink) * (1 + kn * .3);
+    FACE.pupils[i].position.x = sx * .085 + F * .02 * (1 - ps); FACE.pupils[i].scale.y = 1.15 * (ps > .3 ? .2 : blink);
+    FACE.brows[i].rotation.z = -sx * F * 0 + sx * (fight * .45 - ps * .3); FACE.brows[i].position.y = CY + .2 - fight * .02 + ps * .02; });
+  FACE.mouth.scale.set(1 + ps * .5 - fight * .3, (1 + ps) * (1 - fight * .6) + kn * 1.5, 1); FACE.mouth.rotation.z = kn > .3 ? 0 : Math.PI;
   const moodC = lerpHex(CSS.dn, CSS.up, (H.mood + 1) / 2);
-  coreMat.color.set(moodC).multiplyScalar(2.2 + lock * 2 + ps); coreLight.color.set(moodC); coreLight.intensity = .8 + lock * 1.5 + ps;
+  ghostMat.color.set(moodC).multiplyScalar(.28); coreMat.color.set(0xffffff); coreLight.color.set(moodC); coreLight.intensity = .9 + lock * 1.5 + ps;
   glowMat.color.set(0xbfeaff).multiplyScalar(1.5 + Math.max(jab, cross) * 1.5); seamMat.color.set(moodC).multiplyScalar(1.3 + lock * 2 + Math.max(jab, cross));
   // particles, shards, rings, stars
   let n = 0;
@@ -1289,7 +1318,7 @@ function drawHud() {
     txt(fmtP(q), sx, sy, `500 8.5px ${FM}`, Math.round(q / STEP) % 10 === 0 ? 'rgba(143,214,255,.6)' : 'rgba(143,214,255,.32)', 'center');
   }
   // the coin's price over the coin
-  { tmpV.set(coin.position.x, coin.position.y + .42, CZ).project(camera);
+  { tmpV.set(coin.position.x, coin.position.y + 1.85, CZ).project(camera);
     const cxp = (tmpV.x * .5 + .5) * W / k, cyp = (-tmpV.y * .5 + .5) * Hh / k;
     if (cxp > gx && cxp < LW - gx && cyp > ry + 30 && cyp < foot) {
       hg.font = `700 10px ${FM}`; const w2 = hg.measureText('₿ ' + fmtP(P)).width + 14;
@@ -1303,7 +1332,7 @@ function drawHud() {
   for (const m of [MAG.up, MAG.dn]) { if (m.p == null || m.y == null) continue;
     tmpV.set(m.x, m.y + 1, 0).project(camera); const ex = (tmpV.x * .5 + .5) * W / k, ey = (-tmpV.y * .5 + .5) * Hh / k;
     if (ex > gx && ex < LW - gx && tmpV.z < 1) continue;
-    const right = tmpV.z < 1 ? ex >= LW - gx : m.up, c = m.up ? CSS.up : CSS.dn, yy = Math.max(ry + (narrow ? 110 : 60), Math.min(foot - 190, ey));
+    const right = tmpV.z < 1 ? ex >= LW - gx : m.up, c = m.up ? CSS.up : CSS.dn, yy = Math.max(ry + (narrow || !right ? 110 : 60), Math.min(foot - 190, ey));      // on the left: under the log
     const lab = (right ? '' : '◀ ') + `DOEL ${m.up ? '▲' : '▼'} ${fmtP(m.p)} · ${pct(m.p, P)}` + (right ? ' ▶' : '');
     hg.font = `600 10px ${FM}`; const w3 = hg.measureText(lab).width + 16, x3 = right ? LW - gx - w3 : gx;
     hg.fillStyle = 'rgba(5,8,10,.8)'; hg.beginPath(); hg.roundRect(x3, yy - 12, w3, 20, 10); hg.fill(); hg.strokeStyle = c; hg.lineWidth = 1; hg.stroke();

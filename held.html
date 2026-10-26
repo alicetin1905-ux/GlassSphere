@@ -602,31 +602,47 @@ function buildLevel(L) {
 
 // the vehicles, in the spirit of an old real-time strategy game: every one is two instanced meshes (hull and turret)
 // built from merged boxes and cylinders; white parts take the team colour, the rest stays dark metal
+const PI2 = Math.PI / 2, TIP = [1.8, .35, .2];
+const tubes = (x, y, z, up, n, r, l, gy, gz) => { const out = [];       // a pack of launch tubes, n x n, pointing forward and up
+  for (let a = 0; a < n; a++) for (let b = 0; b < n; b++) { const dy = (a - (n - 1) / 2) * gy, dz = (b - (n - 1) / 2) * gz;
+    out.push([CYL(r, r, l, 10), DARK, x, y + dy, z + dz, 0, 0, -PI2 + up], [CYL(r * .7, r * .7, .006, 8), TIP, x + Math.cos(up) * l / 2, y + dy + Math.sin(up) * l / 2, z + dz, 0, 0, -PI2 + up]); }
+  return out; };
 const UT = {
-  ifv: { cap: 150, gap: .46, rank: .72, files: 5, ty: .245, flag: [-.18, .44, .11], fire: 3.9, size: .3,
-    hull: merged([[BX(.48, .11, .3), PAINT, 0, .15, 0], [BX(.17, .09, .3), PAINT, .25, .165, 0, 0, 0, -.55], [BX(.26, .04, .24), MID, -.06, .225, 0],
-      ...[-.16, 0, .16].flatMap(x => [-.16, .16].map(z => [CYL(.062, .062, .05, 14), DARK, x, .062, z, Math.PI / 2, 0, 0])),
-      [BX(.01, .025, .05), LAMP, .335, .17, .1], [BX(.01, .025, .05), LAMP, .335, .17, -.1], [CYL(.004, .004, .24, 4), DARK, -.18, .34, .11]]),
-    tur: merged([[BX(.15, .07, .15), PAINT, 0, .035, 0], [BX(.17, .055, .04), MID, .05, .07, .1], [BX(.17, .055, .04), MID, .05, .07, -.1],
-      [BX(.012, .04, .03), [1.8, .35, .2], .14, .07, .1], [BX(.012, .04, .03), [1.8, .35, .2], .14, .07, -.1]]),
-    muzzle: [[.15, .07, .1], [.15, .07, -.1]] },
-  griz: { cap: 60, gap: .64, rank: .95, files: 4, ty: .26, flag: [-.28, .5, .15], fire: 4.6, size: .45,
-    hull: merged([[BX(.7, .13, .4), PAINT, 0, .17, 0], [BX(.2, .1, .4), PAINT, .38, .17, 0, 0, 0, -.5], [BX(.82, .13, .1), DARK, 0, .075, .235], [BX(.82, .13, .1), DARK, 0, .075, -.235],
-      ...[-.3, -.15, 0, .15, .3].flatMap(x => [.235, -.235].map(z => [CYL(.05, .05, .105, 10), MID, x, .06, z, Math.PI / 2, 0, 0])),
-      [BX(.5, .03, .3), MID, -.05, .245, 0], [BX(.012, .03, .05), LAMP, .47, .19, .13], [BX(.012, .03, .05), LAMP, .47, .19, -.13], [CYL(.004, .004, .3, 4), DARK, -.28, .4, .15]]),
-    tur: merged([[CYL(.17, .19, .1, 8), PAINT, 0, .05, 0], [BX(.1, .08, .14), PAINT, .16, .05, 0], [CYL(.022, .026, .5, 10), MID, .42, .06, 0, 0, 0, -Math.PI / 2],
-      [CYL(.032, .032, .06, 10), DARK, .67, .06, 0, 0, 0, Math.PI / 2], [CYL(.05, .05, .03, 10), MID, -.05, .115, .05]]),
-    muzzle: [[.7, .06, 0]] },
-  apoc: { cap: 40, gap: .86, rank: 1.3, files: 3, ty: .39, flag: [-.45, .62, .2], fire: 5.2, size: .7,
-    hull: merged([[BX(1, .2, .6), PAINT, 0, .25, 0], [BX(.24, .15, .6), PAINT, .55, .24, 0, 0, 0, -.55], [BX(1.16, .22, .17), DARK, 0, .12, .375], [BX(1.16, .22, .17), DARK, 0, .12, -.375],
-      ...[-.42, -.21, 0, .21, .42].flatMap(x => [.375, -.375].map(z => [CYL(.08, .08, .175, 12), MID, x, .1, z, Math.PI / 2, 0, 0])),
-      [BX(1.1, .03, .19), PAINT, 0, .245, .375], [BX(1.1, .03, .19), PAINT, 0, .245, -.375], [BX(.6, .04, .44), MID, -.1, .37, 0],
-      [BX(.015, .04, .07), LAMP, .7, .27, .2], [BX(.015, .04, .07), LAMP, .7, .27, -.2], [CYL(.03, .03, .12), DARK, -.48, .42, .18], [CYL(.03, .03, .12), DARK, -.48, .42, -.18]]),
-    tur: merged([[BX(.5, .17, .46), PAINT, 0, .085, 0], [BX(.16, .13, .46), PAINT, .27, .08, 0, 0, 0, -.5],
-      [CYL(.034, .04, .64, 10), MID, .58, .1, .085, 0, 0, -Math.PI / 2], [CYL(.034, .04, .64, 10), MID, .58, .1, -.085, 0, 0, -Math.PI / 2],
-      [BX(.07, .07, .07), DARK, .9, .1, .085], [BX(.07, .07, .07), DARK, .9, .1, -.085], [BX(.22, .13, .11), DARK, -.02, .12, .29], [BX(.22, .13, .11), DARK, -.02, .12, -.29],
-      ...[.03, -.03].flatMap(dy => [.265, .315, -.265, -.315].map(z => [CYL(.018, .018, .02, 8), [1.8, .35, .2], .1, .12 + dy, z, 0, 0, Math.PI / 2]))]),
-    muzzle: [[.94, .1, .085], [.94, .1, -.085]] },
+  // an infantry fighting vehicle: six big wheels, a sloped hull, a turret with two packs of four launch tubes
+  ifv: { cap: 150, gap: .48, rank: .78, files: 5, ty: .265, flag: [-.2, .46, .12], fire: 3.9, size: .32,
+    hull: merged([[BX(.5, .1, .3), PAINT, 0, .16, 0], [BX(.2, .08, .3), PAINT, .28, .15, 0, 0, 0, -.6], [BX(.4, .06, .25), PAINT, -.03, .235, 0], [BX(.12, .05, .22), PAINT, .2, .225, 0, 0, 0, -.3],
+      [BX(.46, .06, .012), MID, 0, .15, .156], [BX(.46, .06, .012), MID, 0, .15, -.156], [BX(.08, .04, .06), MID, -.15, .27, .06], [BX(.06, .03, .1), DARK, -.24, .2, 0],
+      ...[-.19, -.02, .15].flatMap(x => [-.17, .17].flatMap(z => [[CYL(.077, .077, .065, 18), DARK, x, .077, z, PI2, 0, 0], [CYL(.036, .036, .07, 10), MID, x, .077, z, PI2, 0, 0]])),
+      [BX(.01, .022, .05), LAMP, .37, .17, .1], [BX(.01, .022, .05), LAMP, .37, .17, -.1], [CYL(.004, .004, .26, 4), DARK, -.2, .36, .12]]),
+    tur: merged([[BX(.16, .06, .16), PAINT, -.01, .03, 0], [BX(.06, .08, .07), MID, 0, .09, 0], [BX(.05, .05, .3), MID, 0, .13, 0],
+      [BX(.17, .1, .09), PAINT, .03, .14, .12, 0, 0, .3], [BX(.17, .1, .09), PAINT, .03, .14, -.12, 0, 0, .3],
+      ...tubes(.06, .145, .12, .3, 2, .021, .2, .045, .042), ...tubes(.06, .145, -.12, .3, 2, .021, .2, .045, .042)]),
+    muzzle: [[.16, .175, .12], [.16, .175, -.12]] },
+  // a medium tank: an angular hull with lamp bars on the fenders, a low eight-sided turret, a long gun, a launcher at the back
+  griz: { cap: 60, gap: .64, rank: 1, files: 4, ty: .26, flag: [-.3, .52, .16], fire: 4.6, size: .45,
+    hull: merged([[BX(.66, .12, .42), PAINT, 0, .17, 0], [BX(.24, .06, .42), PAINT, .37, .2, 0, 0, 0, -.35], [BX(.13, .1, .42), PAINT, .37, .12, 0, 0, 0, .5],
+      [BX(.22, .045, .11), MID, .3, .25, .2], [BX(.22, .045, .11), MID, .3, .25, -.2], [BX(.012, .025, .08), LAMP, .415, .262, .2], [BX(.012, .025, .08), LAMP, .415, .262, -.2],
+      [BX(.84, .12, .1), DARK, 0, .07, .235], [BX(.84, .12, .1), DARK, 0, .07, -.235],
+      ...[-.27, -.13, .01, .15].flatMap(x => [.287, -.287].map(z => [BX(.1, .07, .012), MID, x, .14, z])),
+      [BX(.4, .03, .3), MID, -.08, .245, 0], [BX(.16, .08, .15), DARK, -.27, .29, 0], [CYL(.032, .032, .1, 10), MID, -.2, .29, .04, 0, 0, PI2], [CYL(.032, .032, .1, 10), MID, -.2, .29, -.04, 0, 0, PI2],
+      [CYL(.004, .004, .32, 4), DARK, -.3, .42, .16], [CYL(.004, .004, .22, 4), DARK, -.33, .37, .1]]),
+    tur: merged([[CYL(.16, .18, .09, 8), PAINT, 0, .045, 0], [CYL(.12, .15, .03, 8), MID, 0, .105, 0], [BX(.09, .07, .12), PAINT, .17, .05, 0], [CYL(.04, .04, .025, 10), MID, -.06, .13, .06],
+      [CYL(.032, .032, .1, 12), MID, .26, .055, 0, 0, 0, -PI2], [CYL(.023, .023, .34, 12), MID, .42, .055, 0, 0, 0, -PI2], [CYL(.031, .031, .05, 12), MID, .5, .055, 0, 0, 0, -PI2],
+      [CYL(.03, .036, .06, 12), DARK, .6, .055, 0, 0, 0, -PI2]]),
+    muzzle: [[.63, .055, 0]] },
+  // a heavy tank: a dozer blade at the front, two long guns, missile pods on the turret, fuel drums at the back
+  apoc: { cap: 40, gap: .86, rank: 1.5, files: 3, ty: .39, flag: [-.42, .66, .2], fire: 5.4, size: .72,
+    hull: merged([[BX(1, .2, .58), PAINT, 0, .25, 0], [BX(.27, .14, .58), PAINT, .56, .25, 0, 0, 0, -.5], [BX(.06, .22, .76), MID, .76, .13, 0, 0, 0, .35],
+      [BX(.22, .03, .03), DARK, .64, .18, .3], [BX(.22, .03, .03), DARK, .64, .18, -.3], [BX(1.12, .22, .17), DARK, 0, .12, .37], [BX(1.12, .22, .17), DARK, 0, .12, -.37],
+      ...[-.42, -.21, 0, .21, .42].flatMap(x => [.37, -.37].map(z => [CYL(.08, .08, .175, 12), MID, x, .1, z, PI2, 0, 0])),
+      [BX(1.05, .07, .02), PAINT, 0, .2, .465], [BX(1.05, .07, .02), PAINT, 0, .2, -.465], [BX(.56, .04, .44), MID, -.12, .37, 0],
+      [CYL(.055, .055, .42, 12), MID, -.53, .35, 0, PI2, 0, 0], [CYL(.055, .055, .42, 12), MID, -.53, .46, 0, PI2, 0, 0], [BX(.015, .04, .07), LAMP, .7, .3, .2], [BX(.015, .04, .07), LAMP, .7, .3, -.2],
+      [CYL(.03, .03, .12), DARK, -.42, .43, .2], [CYL(.03, .03, .12), DARK, -.42, .43, -.2]]),
+    tur: merged([[BX(.48, .17, .42), PAINT, 0, .085, 0], [BX(.15, .13, .42), PAINT, .27, .08, 0, 0, 0, -.5], [CYL(.06, .07, .05, 10), MID, -.06, .19, .08],
+      ...[.085, -.085].flatMap(z => [[CYL(.034, .04, .95, 12), MID, .72, .1, z, 0, 0, -PI2], [CYL(.05, .05, .1, 12), DARK, .55, .1, z, 0, 0, -PI2], [CYL(.046, .046, .07, 12), DARK, 1.18, .1, z, 0, 0, -PI2]]),
+      [BX(.2, .13, .11), DARK, -.06, .13, .27], [BX(.2, .13, .11), DARK, -.06, .13, -.27], ...tubes(.03, .13, .27, 0, 2, .021, .02, .05, .046), ...tubes(.03, .13, -.27, 0, 2, .021, .02, .05, .046),
+      [BX(.02, .12, .04), DARK, -.22, .2, .15, 0, 0, .5], [BX(.02, .12, .04), DARK, -.22, .2, -.15, 0, 0, .5]]),
+    muzzle: [[1.22, .1, .085], [1.22, .1, -.085]] },
 };
 const vehMat = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: .5, roughness: .5, envMapIntensity: .45 });
 const VM = {};
@@ -1218,6 +1234,7 @@ function render3d(dt, dtReal = dt) {
   const both = MAG.up.p != null && MAG.dn.p != null;
   const ov = both && t > overviewAt && t < overviewAt + 6 && H.mode === 'follow' && !queue.length;
   if (ov) { tc = (MAG.up.p + MAG.dn.p) / 2; ts = (MAG.up.p - MAG.dn.p) * 1.35; }
+  if (FX.look) [tc, ts] = FX.look;                 // a test can point the camera
   else if (t >= overviewAt + 6) overviewAt = t + 45;
   if (camC == null) { camC = tc; camS = ts * 4; }
   camOv += ((ov ? 1 : 0) - camOv) * (1 - Math.exp(-dt * 1.5));      // the overview is seen straight on, both magnets in the picture
@@ -1607,7 +1624,7 @@ function frame(ts) {
 })();
 // a hidden tab: the stream and the frames rest; back again, the hero catches up with the price
 document.addEventListener('visibilitychange', () => { last = 0; acc = 0; Q.n = Q.t = 0; Q.wait = 2; });
-window.HELD = { scene, overview() { overviewAt = now - .01; }, get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, H, queue, onPrice, live, realLiq, objs, onLevels, LOG, Q, FEEL, PH, MAG, labels, get now() { return now; } };
+window.HELD = { scene, UT, vehMat, WX, SYx, look(p, s) { FX.look = p == null ? null : [p, s]; }, overview() { overviewAt = now - .01; }, get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, H, queue, onPrice, live, realLiq, objs, onLevels, LOG, Q, FEEL, PH, MAG, labels, get now() { return now; } };
 })();
 </script>
 </body>

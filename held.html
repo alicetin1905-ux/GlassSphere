@@ -769,46 +769,78 @@ const glowMat = new THREE.MeshBasicMaterial({ color: 0xbfeaff, toneMapped: false
 const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
 const seamMat = new THREE.MeshBasicMaterial({ color: 0x8fd6ff, toneMapped: false });
 const dark = new THREE.MeshStandardMaterial({ color: 0x1a1f23, metalness: .85, roughness: .5, envMapIntensity: .6 });
-const bronze = new THREE.MeshPhysicalMaterial({ color: 0xa8742e, metalness: 1, roughness: .3, clearcoat: .5, clearcoatRoughness: .25, envMapIntensity: .45 });
-const steel = new THREE.MeshPhysicalMaterial({ color: 0x6d757d, metalness: 1, roughness: .34, clearcoat: .4, clearcoatRoughness: .3, envMapIntensity: .4 });
+const bronze = new THREE.MeshPhysicalMaterial({ color: 0xd6a23e, metalness: 1, roughness: .3, clearcoat: .5, clearcoatRoughness: .25, envMapIntensity: .55 });      // gold
+const steel = new THREE.MeshPhysicalMaterial({ color: 0xc4c9cf, metalness: 1, roughness: .38, clearcoat: .3, clearcoatRoughness: .35, envMapIntensity: .5 });      // silver
 const hoofMat = new THREE.MeshStandardMaterial({ color: 0x15120f, metalness: .6, roughness: .45 });
 const eyeMat = new THREE.MeshBasicMaterial({ color: 0x35ffb4, toneMapped: false });
 const sph = (r, m, sx = 1, sy = 1, sz = 1) => { const s = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), m); s.scale.set(sx, sy, sz); return s; };
 const at3 = (o, x, y, z) => { o.position.set(x, y, z); return o; };
 const tube = (pts, r, m) => new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(...p))), 20, r, 8), m);
-function beast(bear) {
-  const M = bear ? steel : bronze, g = new THREE.Group(), body = new THREE.Group(), head = new THREE.Group(); g.add(body); hero.add(g);
+// the bull: the charging bull, head low, the back arched, the tail whipped up in a curl, horns forward and up
+function buildBull() {
+  const M = bronze, g = new THREE.Group(), body = new THREE.Group(), head = new THREE.Group(); g.add(body); hero.add(g);
   body.position.set(-.3, .52, 0);                // the body turns round the hind legs: it can rear up
-  body.add(at3(sph(bear ? .32 : .3, M, bear ? 1.5 : 1.65, bear ? 1.05 : 1, bear ? 1 : .88), .3, .12, 0));
-  body.add(at3(sph(bear ? .3 : .27, M, 1, 1.05, .95), .58, bear ? .3 : .27, 0));
-  body.add(at3(sph(bear ? .29 : .25, M, 1, .95, .92), .02, .13, 0));
-  head.position.set(.84, .24, 0); body.add(head);
-  const eyes = [];
-  if (bear) {
-    head.add(at3(sph(.19, M), .12, -.04, 0)); head.add(at3(sph(.1, M, 1.35, .8, .85), .3, -.1, 0)); head.add(at3(sph(.035, hoofMat), .43, -.08, 0));
-    for (const z of [-.13, .13]) head.add(at3(sph(.065, M, 1, 1, .5), .04, .14, z));
-    body.add(at3(sph(.06, M), -.27, .16, 0));
-  } else {
-    head.add(at3(sph(.16, M, 1.3, .95, .85), .14, -.08, 0));
-    const snout = new THREE.Mesh(new THREE.CylinderGeometry(.085, .1, .14, 18), M); snout.rotation.z = Math.PI / 2; head.add(at3(snout, .3, -.16, 0));
-    for (const z of [-.04, .04]) head.add(at3(sph(.018, hoofMat), .37, -.16, z));
-    for (const z of [-1, 1]) { head.add(tube([[.08, .03, .09 * z], [.06, .1, .25 * z], [.16, .2, .35 * z], [.3, .25, .33 * z]], .026, M)); head.add(at3(sph(.042, M, 1.6, .5, .8), .03, .04, .15 * z)); }
-    body.add(tube([[-.24, .14, 0], [-.38, .06, 0], [-.43, -.14, 0], [-.36, -.3, .04]], .016, M)); body.add(at3(sph(.04, M), -.36, -.31, .04));
+  body.add(at3(sph(.3, M, 1.6, .98, .88), .3, .12, 0));                 // barrel
+  body.add(at3(sph(.29, M, 1.05, 1.1, 1), .6, .26, 0));                 // the mighty shoulders, high
+  body.add(at3(sph(.25, M, 1.05, 1, .95), .02, .16, 0));                // rump
+  for (const z of [-.14, .14]) { body.add(at3(sph(.16, M, 1.2, 1.3, .7), .02, .05, z)); body.add(at3(sph(.15, M, 1.1, 1.3, .7), .62, .04, z)); }      // thighs and forearms
+  body.add(at3(sph(.17, M, 1.5, 1, .9), .82, .14, 0));                  // the neck, low
+  head.position.set(.92, .08, 0); head.rotation.z = -.2; body.add(head);
+  head.add(at3(sph(.15, M, 1.35, .95, .85), .1, -.04, 0));
+  const snout = new THREE.Mesh(new THREE.CylinderGeometry(.08, .1, .15, 18), M); snout.rotation.z = Math.PI / 2; head.add(at3(snout, .27, -.11, 0));
+  head.add(at3(sph(.085, M, .7, .85, 1.05), .34, -.11, 0));
+  for (const z of [-.035, .035]) head.add(at3(sph(.018, hoofMat), .41, -.1, z));
+  for (const z of [-1, 1]) {
+    head.add(tube([[.04, .06, .09 * z], [.05, .14, .2 * z], [.13, .24, .22 * z], [.22, .3, .16 * z]], .024, M));
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(.024, .08, 10), M); tip.position.set(.25, .32, .145 * z); tip.rotation.z = -.9; head.add(tip);
+    head.add(at3(sph(.05, M, 1.7, .5, .9), -.01, .04, .16 * z));      // ears, out to the side
   }
-  for (const z of [-.1, .1]) { const e = at3(sph(.022, eyeMat), bear ? .24 : .21, bear ? .01 : -.03, z); head.add(e); eyes.push(e); }
+  body.add(tube([[-.22, .2, 0], [-.3, .36, 0], [-.18, .55, .02], [.02, .55, .04], [.12, .46, .05]], .02, M));      // the tail, whipped up
+  body.add(at3(sph(.045, M, 1.4, .7, .8), .14, .44, .05));
+  const eyes = []; for (const z of [-.1, .1]) { const e = at3(sph(.02, eyeMat), .17, .0, z); head.add(e); eyes.push(e); }
   const legs = {};
-  for (const [k, front, z] of [['fl', 1, .14], ['fr', 1, -.14], ['bl', 0, .14], ['br', 0, -.14]]) {
-    const hip = new THREE.Group(); if (front) { hip.position.set(.6, 0, z); body.add(hip); } else { hip.position.set(-.32, .52, z); g.add(hip); }
-    const up = new THREE.Mesh(new THREE.CapsuleGeometry(bear ? .085 : .07, bear ? .16 : .18, 6, 12), M); up.position.y = -.14; hip.add(up);
+  for (const [k, front, z] of [['fl', 1, .15], ['fr', 1, -.15], ['bl', 0, .15], ['br', 0, -.15]]) {
+    const hip = new THREE.Group(); if (front) { hip.position.set(.62, 0, z); body.add(hip); } else { hip.position.set(-.3, .52, z); g.add(hip); }
+    const up = new THREE.Mesh(new THREE.CapsuleGeometry(.075, .16, 6, 12), M); up.position.y = -.13; hip.add(up);
     const knee = new THREE.Group(); knee.position.y = -.27; hip.add(knee);
-    const lo = new THREE.Mesh(new THREE.CapsuleGeometry(bear ? .07 : .045, bear ? .14 : .16, 6, 12), M); lo.position.y = -.11; knee.add(lo);
-    const foot = bear ? sph(.085, hoofMat, 1.35, .6, 1.1) : new THREE.Mesh(new THREE.CylinderGeometry(.05, .058, .06, 14), hoofMat); foot.position.set(bear ? .03 : 0, -.23, 0); knee.add(foot);
+    const lo = new THREE.Mesh(new THREE.CapsuleGeometry(.047, .16, 6, 12), M); lo.position.y = -.11; knee.add(lo);
+    const foot = new THREE.Mesh(new THREE.CylinderGeometry(.05, .062, .065, 14), M); foot.position.y = -.225; knee.add(foot);      // gold hooves, cloven
+    const cleft = new THREE.Mesh(new THREE.BoxGeometry(.13, .055, .008), hoofMat); cleft.position.set(.01, -.23, 0); knee.add(cleft);
     legs[k] = { hip, knee };
   }
   g.traverse(n => { if (n.isMesh && n.material !== eyeMat) n.castShadow = true; });
-  return { g, body, head, legs, eyes, bear };
+  return { g, body, head, legs, eyes, bear: false };
 }
-const BEAST = { bull: beast(false), bear: beast(true) };
+// the bear: a silver grizzly that stands and walks upright, a big belly, a heavy chest, arms that hang with claws out
+function buildBear() {
+  const M = steel, g = new THREE.Group(), body = new THREE.Group(), head = new THREE.Group(); g.add(body); hero.add(g);
+  body.position.set(0, .46, 0);                  // the body turns round the hips: it leans into a swipe, back off a wall
+  body.add(at3(sph(.26, M, .95, 1.05, 1.08), .02, .18, 0));             // belly
+  body.add(at3(sph(.27, M, .9, 1, 1.15), .0, .45, 0));                  // chest
+  body.add(at3(sph(.22, M, .9, .8, 1.25), -.03, .62, 0));               // shoulders, a hump behind
+  body.add(at3(sph(.12, M, .9, .8, 1.1), -.1, .7, 0));
+  body.add(at3(sph(.15, M, 1, .9, 1.2), .03, .72, 0));                  // the ruff of the neck
+  head.position.set(.06, .84, 0); body.add(head);
+  head.add(at3(sph(.15, M, 1, .95, 1.05), 0, 0, 0));
+  head.add(at3(sph(.08, M, 1.35, .8, .9), .15, -.04, 0)); head.add(at3(sph(.032, hoofMat, 1, .8, 1.2), .25, -.02, 0));      // muzzle, nose
+  for (const z of [-.11, .11]) head.add(at3(sph(.05, M, .6, 1, 1), -.01, .13, z));      // round ears
+  body.add(at3(sph(.05, M), -.24, .05, 0));                              // a stub of a tail
+  const eyes = []; for (const z of [-.065, .065]) { const e = at3(sph(.017, eyeMat), .12, .045, z); head.add(e); eyes.push(e); }
+  const legs = {};
+  // arms (fl, fr) from the shoulders, legs (bl, br) from the hips
+  for (const [k, arm, z] of [['fl', 1, .25], ['fr', 1, -.25], ['bl', 0, .12], ['br', 0, -.12]]) {
+    const hip = new THREE.Group(); if (arm) { hip.position.set(.02, .55, z); body.add(hip); } else { hip.position.set(0, .46, z); g.add(hip); }
+    const up = new THREE.Mesh(new THREE.CapsuleGeometry(arm ? .075 : .1, arm ? .14 : .1, 6, 12), M); up.position.y = arm ? -.1 : -.08; hip.add(up);
+    const knee = new THREE.Group(); knee.position.y = arm ? -.22 : -.2; hip.add(knee);
+    const lo = new THREE.Mesh(new THREE.CapsuleGeometry(arm ? .065 : .085, arm ? .12 : .1, 6, 12), M); lo.position.y = -.1; knee.add(lo);
+    const paw = sph(arm ? .07 : .085, M, arm ? 1 : 1.4, arm ? 1.1 : .55, 1.1); paw.position.set(arm ? .02 : .04, arm ? -.22 : -.23, 0); knee.add(paw);
+    for (const dz of [-.035, 0, .035]) { const c = new THREE.Mesh(new THREE.ConeGeometry(.01, .05, 6), hoofMat); c.position.set(arm ? .07 : .13, arm ? -.27 : -.245, dz); c.rotation.z = arm ? -.4 : -1.4; knee.add(c); }      // claws
+    legs[k] = { hip, knee };
+  }
+  g.traverse(n => { if (n.isMesh && n.material !== eyeMat) n.castShadow = true; });
+  return { g, body, head, legs, eyes, bear: true };
+}
+const BEAST = { bull: buildBull(), bear: buildBear() };
 BEAST.bear.g.visible = false;
 const coreLight = new THREE.PointLight(0x35ffb4, .9, 2.4, 2); coreLight.position.set(0, .7, -.5); hero.add(coreLight);   // an aura behind him in his mood colour
 // sweat, when he is worn down or liquidations are close
@@ -1181,7 +1213,7 @@ function think(dt) {
   const closing = H.mode === 'approach' && Math.abs(target - H.p) * U < .9;
   const gw = H.mode === 'combo' || H.mode === 'shadow' || H.mode === 'knock' || closing || now - (H.hitAt ?? -9) < .5 ? 1 : 0;      // under fire: gloves up
   H.guard += (gw - H.guard) * Math.min(1, dt * (gw > H.guard ? 12 : 5));
-  { const tw = H.mode === 'pose' ? .75 : .35, ty = H.face > 0 ? -tw : Math.PI + tw; H.yaw += wrapA(ty - H.yaw) * Math.min(1, dt * 5); }      // side on, a little toward the camera
+  { const tw = H.mode === 'pose' ? .75 : H.form === 'bear' ? .8 : .35, ty = H.face > 0 ? -tw : Math.PI + tw; H.yaw += wrapA(ty - H.yaw) * Math.min(1, dt * 5); }      // side on, a little toward the camera
   // bull while the market climbs, bear while it falls: he changes when the mood turns clearly
   H.ema = H.ema == null ? P : H.ema + (P - H.ema) * Math.min(1, dt / 45);      // the price of the last minute or so
   const form = P > H.ema + STEP * .5 ? 'bull' : P < H.ema - STEP * .5 ? 'bear' : H.form;
@@ -1389,30 +1421,35 @@ function render3d(dt, dtReal = dt) {
   const hitK = Math.max(0, 1 - (t - (H.hitAt ?? -9)) / .2), duck = Math.sin(Math.PI * Math.min(1, Math.max(0, (t - (H.dodgeAt ?? -9)) / .4)));
   const swat = Math.sin(Math.PI * Math.min(1, Math.max(0, (t - (H.parryAt ?? -9)) / .28)));
   const bob = Math.abs(Math.sin(ph * 2)) * .03 * walk * (1 + run) + (1 - walk) * Math.sin(t * 2.2) * .006;
-  const lunge = F * (.16 * jab + .34 * cross);
+  const lunge = F * (.16 * jab + .34 * cross) * (H.form === 'bear' ? 1.7 : 1);      // the bear steps in further: his reach is his arms
   hero.position.set(WX(H.p) + lunge + Math.sin(t * 70) * .015 * hitK, H.y + bob - .1 * duck, 0); hero.rotation.set(0, H.yaw, SLOPE * Math.cos(H.yaw));
   // the change between bull and bear: the old one shrinks away, the new one grows out of a flash
   const mk = Math.min(1, (t - (H.morphAt ?? -9)) / .5);
   for (const k of ['bull', 'bear']) { const B = BEAST[k], on = k === H.form, sc = on ? EASE.out(Math.max(0, (mk - .35) / .65)) : 1 - EASE.out(Math.min(1, mk / .35));
     B.g.visible = sc > .01; B.g.scale.setScalar(Math.max(1e-4, sc)); B.g.rotation.y = (1 - sc) * 3 * (on ? -1 : 1); if (!B.g.visible) continue;
     const bear = B.bear, Lg = B.legs;
-    // the gait: a trot while walking (diagonal pairs), a gallop when running (front pair, then back pair)
+    // the gait: the bull trots (diagonal pairs) and gallops (front pair, then back pair); the bear walks upright, his arms swinging against his legs
     for (const [key, off0, off1] of [['fl', 0, 0], ['br', 0, Math.PI], ['fr', Math.PI, .4], ['bl', Math.PI, Math.PI + .4]]) {
-      const off = lerp(off0, off1, run), sw = Math.sin(ph + off);
-      Lg[key].hip.rotation.z = sw * (.42 + .3 * run) * walk; Lg[key].knee.rotation.z = -Math.max(0, Math.sin(ph + off + 1.2)) * (.55 + .4 * run) * walk; }
+      const off = bear ? off0 : lerp(off0, off1, run), sw = Math.sin(ph + off), arm = bear && (key === 'fl' || key === 'fr');
+      Lg[key].hip.rotation.z = sw * (arm ? .35 : .42 + .3 * run) * walk + (arm ? -.1 : 0);
+      Lg[key].knee.rotation.z = arm ? .25 + .2 * walk : -Math.max(0, Math.sin(ph + off + 1.2)) * (.55 + .4 * run) * walk; }
     let rear = 0, headZ = 0, headY = 0;
     if (!bear) {          // the bull: head down in a fight, a thrust of the horns, then a toss; pawing the ground on guard; rearing at a target
       headZ = -.38 * gd - .3 * jab + .55 * cross - .2 * kn; rear = .12 * cross + .6 * ps + .25 * kn;
       if (gd > .3 && walk < .3) Lg.fl.hip.rotation.z += Math.max(0, Math.sin(t * 9)) * .5 * gd, Lg.fl.knee.rotation.z -= Math.max(0, Math.sin(t * 9)) * .6 * gd;
       if (ps > 0) { Lg.fl.hip.rotation.z = .9 + Math.sin(pu * 14) * .5; Lg.fr.hip.rotation.z = .9 - Math.sin(pu * 14) * .5; headZ += .4 * ps; }
       headY = Math.sin(t * 22) * .5 * swat;
-    } else {              // the bear: rears up and swipes, the right paw then the left; stands up and roars at a target
-      rear = .5 * jab + .85 * cross + 1.1 * ps + .3 * kn + .15 * gd; headZ = -.2 * gd + .3 * ps + .2 * cross;
-      Lg.fl.hip.rotation.z += 1.7 * jab + 2 * ps + 1.8 * swat; Lg.fl.knee.rotation.z += -.5 * jab;
-      Lg.fr.hip.rotation.z += 2 * cross + 2.2 * ps; Lg.fr.knee.rotation.z += -.6 * cross;
+    } else {              // the bear: arms up like a boxer on guard, a swipe with the right paw, then the left, leaning into it; arms high and a roar at a target
+      rear = -.1 * walk - .12 * run - .1 * jab - .22 * cross + .1 * ps + .35 * kn; headZ = -.15 * gd + .45 * ps;
+      for (const [k, e, sgn] of [['fl', jab, 1], ['fr', cross, -1]]) { const L = Lg[k];
+        L.hip.rotation.z = lerp(lerp(L.hip.rotation.z, .9, gd), 2.1, e); L.knee.rotation.z = lerp(lerp(L.knee.rotation.z, 1.3, gd), .2, e);
+        if (ps > 0) { L.hip.rotation.z = lerp(L.hip.rotation.z, 2.7, ps); L.knee.rotation.z = lerp(L.knee.rotation.z, .3, ps); }
+        if (kn > 0) L.hip.rotation.z += Math.sin(t * 25 + sgn) * .4 * kn; }
+      if (swat > 0) Lg.fl.hip.rotation.z = lerp(Lg.fl.hip.rotation.z, 2, swat);
+      B.body.rotation.y = .45 * jab - .55 * cross;
     }
-    B.body.rotation.z = rear - .12 * duck; B.body.position.y = .52 - .05 * gd * (bear ? 1 : 0);
-    B.head.rotation.set(0, headY, headZ + Math.sin(ph * 2) * .04 * walk);
+    B.body.rotation.z = rear - .12 * duck; B.body.position.y = (bear ? .46 : .52) - (bear ? .06 * gd : 0);
+    B.head.rotation.set(0, headY, (bear ? 0 : -.2) + headZ + Math.sin(ph * 2) * .04 * walk);
     // his eyes: his mood colour, bright in a fight, white with shock, dim when calm; a blink now and then
     if (t > blinkAt + .13) blinkAt = t + 2.5 + Math.random() * 3;
     B.eyes.forEach(e => e.scale.set(1, t > blinkAt ? .15 : 1 - FEEL.calm * .5, 1));
@@ -1432,10 +1469,10 @@ function render3d(dt, dtReal = dt) {
   eyeMat.color.set(shock > .4 ? '#ffffff' : moodC).multiplyScalar(1.4 + fight * 2.2 + shock * 1.5 + lock * 2 - calm * .7);
   B.head.updateWorldMatrix(true, false);
   drops.forEach((d, i) => { const q = (t * .9 + i * .5) % 1; d.visible = sweat > .08 && B.g.visible;
-    tmpV2.set(.15, .12 - q * .25, d.userData.sx * .16); B.head.localToWorld(tmpV2); d.position.copy(tmpV2); d.scale.set(.8, 1.3, .8).multiplyScalar(Math.max(1e-4, sweat * (1 - q * .4))); d.material.opacity = 1 - q; });
-  if ((fight > .5 || joy > .5) && R() < dt * 10) { tmpV2.set(B.bear ? .42 : .38, B.bear ? -.08 : -.16, 0); B.head.localToWorld(tmpV2); puff(tmpV2.x, tmpV2.y, tmpV2.z, .25, .8, F * .6); }      // steam from the nose
+    tmpV2.set(.08, .1 - q * .22, d.userData.sx * (B.bear ? .13 : .14)); B.head.localToWorld(tmpV2); d.position.copy(tmpV2); d.scale.set(.8, 1.3, .8).multiplyScalar(Math.max(1e-4, sweat * (1 - q * .4))); d.material.opacity = 1 - q; });
+  if ((fight > .5 || joy > .5) && R() < dt * 10) { tmpV2.set(B.bear ? .27 : .42, B.bear ? -.03 : -.11, 0); B.head.localToWorld(tmpV2); puff(tmpV2.x, tmpV2.y, tmpV2.z, .25, .8, F * .6); }      // steam from the nose
   if (calm > .6 && t > FEEL.note) { FEEL.note = t + 1.1 + Math.random() * .6;
-    const n = notes.find(n => t - n.t0 > 2.2); if (n) { tmpV2.set(.35, -.05, 0); B.head.localToWorld(tmpV2); n.t0 = t; n.x = tmpV2.x; n.y = tmpV2.y; } }
+    const n = notes.find(n => t - n.t0 > 2.2); if (n) { tmpV2.set(B.bear ? .22 : .4, -.06, 0); B.head.localToWorld(tmpV2); n.t0 = t; n.x = tmpV2.x; n.y = tmpV2.y; } }
   for (const n of notes) { const a = t - n.t0; n.sp.visible = a < 2.2; if (!n.sp.visible) continue;
     n.sp.position.set(n.x + a * .18 * F + Math.sin(a * 4) * .05, n.y + a * .35, .3); n.sp.scale.setScalar(.13 + a * .03); n.sp.material.opacity = Math.min(1, a * 4) * (1 - a / 2.2) * .9; }
   ghostMat.color.set(moodC).multiplyScalar(.28); coreLight.color.set(moodC); coreLight.intensity = .9 + lock * 1.5 + ps;
@@ -1535,7 +1572,7 @@ function drawHud() {
   }
   // his energy: a bar over his head while he is worn down
   { const a = H.hp < .985 ? 1 : Math.max(0, 1 - (now - H.hpAt) / 2);
-    if (a > .01) { tmpV.set(WX(H.p), H.y + 1.35, 0).project(camera); const hx = (tmpV.x * .5 + .5) * W / k, hy = (-tmpV.y * .5 + .5) * Hh / k;
+    if (a > .01) { tmpV.set(WX(H.p), H.y + (H.form === 'bear' ? 1.55 : 1.25), 0).project(camera); const hx = (tmpV.x * .5 + .5) * W / k, hy = (-tmpV.y * .5 + .5) * Hh / k;
       if (hx > gx && hx < LW - gx && hy > ry + 20) { const bw = 46; hg.globalAlpha = a;
         hg.fillStyle = 'rgba(5,8,10,.75)'; hg.beginPath(); hg.roundRect(hx - bw / 2 - 2, hy - 3, bw + 4, 8, 4); hg.fill();
         hg.fillStyle = lerpHex(CSS.dn, CSS.up, Math.min(1, Math.max(0, (H.hp - .2) / .7))); hg.beginPath(); hg.roundRect(hx - bw / 2, hy - 1, bw * H.hp, 4, 2); hg.fill(); hg.globalAlpha = 1; } } }

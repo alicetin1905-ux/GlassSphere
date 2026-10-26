@@ -384,7 +384,7 @@ Object.assign(key.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9, near:
 const KEYOFF = new THREE.Vector3(-4, 9, 6);
 const rim = new THREE.DirectionalLight(0x6fb7ff, 1.6); rim.position.set(3, 3, -8); scene.add(rim);
 const col3 = name => new THREE.Color(HEX[name]);
-const dummy = new THREE.Object3D();
+const dummy = new THREE.Object3D(), tmpC = new THREE.Color();
 const addBlend = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false };
 
 // the sky: dark above, a horizon that glows with the market's mood
@@ -448,6 +448,11 @@ let stepsFrom = null;
 const treadPool = Array.from({ length: 14 }, () => { const m = new THREE.Mesh(new THREE.PlaneGeometry(TREAD * .96, SW * .96), new THREE.MeshBasicMaterial({ color: 0x8fd6ff, opacity: 0, ...addBlend }));
   m.rotation.x = -Math.PI / 2; m.visible = false; scene.add(m); return m; });
 const treadLit = [];                           // { x, y, t0 }
+// the trail: every tread the price touched in the last five minutes keeps a glow that fades
+const TRAILN = 240, TRAILS = 300, trail = new Map(); let trailLast = null;
+const trailMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(TREAD * .94, SW * .9), new THREE.MeshBasicMaterial({ color: 0xffffff, ...addBlend }), TRAILN);
+trailMesh.frustumCulled = false; trailMesh.count = 0; scene.add(trailMesh);
+{ const c = new THREE.Color(0); for (let i = 0; i < TRAILN; i++) trailMesh.setColorAt(i, c); }
 const coinTread = new THREE.Mesh(new THREE.PlaneGeometry(TREAD * .96, SW * .96), new THREE.MeshBasicMaterial({ color: 0xf7931a, opacity: .28, ...addBlend }));
 coinTread.rotation.x = -Math.PI / 2; scene.add(coinTread);
 function placeSteps(x0) {                      // steps from world x0 on
@@ -536,7 +541,7 @@ const bundleVS = `uniform float uT, uRipT, uRipY, uRipA; attribute float aSeed; 
   void main(){ vec3 p = (instanceMatrix * vec4(position, 1.)).xyz; vN = normalize(mat3(instanceMatrix) * normal); float age = uT - uRipT; vWave = 0.;
     if (age > 0. && age < 2.) { float d = length(vec2(p.z, p.y - uRipY)); float w = sin(d * 9. - age * 18.) * exp(-age * 2.4) * exp(-d * .9); p.x += w * .16 * uRipA; vWave = max(w, 0.) * uRipA; }
     vP = p; vUv = uv; vSeed = aSeed; gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.); }`;
-const bundleFS = `uniform sampler2D uMap; uniform vec3 uCol; uniform float uA, uT, uHot, uSteel, uFresh, uCrack, uCrackY, uH; varying vec3 vP, vN; varying vec2 vUv; varying float vWave, vSeed;
+const bundleFS = `uniform sampler2D uMap; uniform vec3 uCol; uniform float uA, uT, uHot, uSteel, uFresh, uCrack, uCrackY, uH, uSee; varying vec3 vP, vN; varying vec2 vUv; varying float vWave, vSeed;
   void main(){ vec3 n = normalize(vN); vec3 tint = uCol * (.82 + .32 * vSeed), c;
     if (abs(n.x) > .5) { c = texture2D(uMap, vUv).rgb * tint; c = mix(c, vec3(.93, .9, .82), smoothstep(.07, .05, abs(vUv.x - .5)) * .9); }   // a bill, and the paper band round the bundle
     else { c = vec3(.86, .88, .83) * tint * (.72 + .28 * sin(vUv.y * 150.)); }                                                               // the edges of the stack
@@ -547,7 +552,7 @@ const bundleFS = `uniform sampler2D uMap; uniform vec3 uCol; uniform float uA, u
     vec2 d = vec2(abs(n.x) > .5 ? vP.z : vP.x, vP.y - uCrackY * uH); float r = length(d), an = atan(d.y, d.x);
     float crack = (smoothstep(.93, 1., abs(sin(an * 5.5 + sin(an * 13.) * .6))) * step(r, uCrack * 1.1) + smoothstep(.02, 0., abs(r - uCrack * .45)) * step(.3, uCrack)) * min(1., uCrack * 2.);
     c += tint * (vWave * 1.4 + uHot * .6) + vec3(1.) * crack * .6;
-    gl_FragColor = vec4(c, 1.);
+    gl_FragColor = vec4(c, uSee);
     #include <tonemapping_fragment>
     #include <encodings_fragment>
   }`;
@@ -586,7 +591,7 @@ function buildLevel(L) {
     const h = 1.9;
     o.mat = new THREE.ShaderMaterial({ vertexShader: bundleVS, fragmentShader: bundleFS,
       uniforms: { uMap: { value: billTex }, uCol: { value: L.k === 'bid' ? new THREE.Color(.42, 1, .58) : new THREE.Color(1, .42, .5) }, uA: { value: 1 }, uT: { value: 0 }, uHot: { value: 0 },
-        uRipT: { value: -9 }, uRipY: { value: 0 }, uRipA: { value: 1 }, uH: { value: h }, uSteel: { value: 0 }, uFresh: { value: 0 }, uCrack: { value: 0 }, uCrackY: { value: .5 } } });
+        uRipT: { value: -9 }, uRipY: { value: 0 }, uRipA: { value: 1 }, uH: { value: h }, uSteel: { value: 0 }, uFresh: { value: 0 }, uCrack: { value: 0 }, uCrackY: { value: .5 }, uSee: { value: 1 } } });
     // bundles of bills laid like bricks, each a little off, the top row ragged
     const BH = .155, BL = .36, rows = Math.round(h / BH), cols = Math.ceil(SW / BL) + 1, rnd = n => hash(L.p * .013 + n), mats = [];
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
@@ -710,7 +715,16 @@ const FACE = {};
   }
   FACE.mouth = new THREE.Mesh(new THREE.TorusGeometry(.045, .01, 8, 24, Math.PI), black); FACE.mouth.rotation.z = Math.PI; FACE.mouth.position.set(0, CY + .035, .075); body.add(FACE.mouth);
   FACE.disc = disc;
+  // a round mouth for a whistle or a shock, and two drops of sweat
+  FACE.o = new THREE.Mesh(new THREE.TorusGeometry(.03, .011, 8, 24), black); FACE.o.position.set(0, CY + .03, .075); FACE.o.visible = false; body.add(FACE.o);
+  const sweatMat = new THREE.MeshPhysicalMaterial({ color: 0xbfe6ff, roughness: .05, metalness: 0, clearcoat: 1, emissive: 0x3a9ad0, emissiveIntensity: .6, transparent: true });
+  FACE.drops = [-1, 1].map(sx => { const d = new THREE.Mesh(new THREE.SphereGeometry(.034, 14, 10), sweatMat.clone()); d.scale.set(.8, 1.3, .8); d.userData.sx = sx; d.visible = false; body.add(d); return d; });
 }
+// musical notes when he whistles
+const noteTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'); x.fillStyle = '#fff'; x.font = '700 48px Georgia,serif';
+  x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('♪', 32, 34); const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t; })();
+const notes = [0, 1, 2].map(() => { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: noteTex, color: 0xffd9a0, transparent: true, depthWrite: false, opacity: 0 })); sp.visible = false; scene.add(sp); return { sp, t0: -9, x: 0, y: 0 }; });
+const FEEL = { sweat: 0, shock: 0, joy: 0, calm: 0, note: 0, force: null }, PH = [];      // PH: the price over the last seconds
 const coreLight = new THREE.PointLight(0x35ffb4, .9, 2.4, 2); coreLight.position.set(0, CY, -.25); body.add(coreLight);   // an aura behind him in his mood colour
 const limbs = {};
 for (const sx of [-1, 1]) {
@@ -868,12 +882,12 @@ function onLevels() {
     // written in the level itself, horizontally: what it is, its size, its price
     const title = ls.map(l => nameOf(l.k, l.above)).join(' + ').toUpperCase(), sub = ls.map(l => l.v + (l.ps ? ` · ${l.ps[0]}/${l.ps[1]} u` : '')).join(' · '), lines = [title, sub, fmtP(p)];
     const old = labels.get(p); if (old && old.userData.txt === lines.join('|')) continue;
-    if (old) { scene.remove(old); dispose(old); }
+    const op = old ? old.material.opacity : 0; if (old) { scene.remove(old); dispose(old); }      // a new text takes over the old one's opacity, no flash
     // on the front of the level (the face toward the camera), the text running up: kind, then size and price
     const top = ls.slice().sort((a, b) => b.rel - a.rel)[0], h = Math.max(...ls.map(l => objs.get(l.key)?.h ?? 1.9));
     const front = SW / 2 + .05;
     const sp = frontLabel([title, sub + '  ·  ' + fmtP(p)], CSS[colOf(top)], h * .86);
-    sp.userData.txt = lines.join('|'); sp.userData.y = h * .5; sp.userData.z = front; sp.position.set(WX(p), h * .5, front); scene.add(sp); labels.set(p, sp);
+    sp.userData.txt = lines.join('|'); sp.userData.y = h * .5; sp.userData.z = front; sp.position.set(WX(p), h * .5, front); sp.material.opacity = op; scene.add(sp); labels.set(p, sp);
   }
   // the magnets glide to the new targets
   for (const [k, up] of [['up', true], ['dn', false]]) {
@@ -1052,7 +1066,7 @@ function think(dt) {
   const drift = P - (D?.candles?.[Math.max(0, D.candles.length - 25)]?.[4] ?? P);
   H.mood += ((H.mode === 'approach' || H.mode === 'combo' ? H.face : Math.sign(drift) * .6) - H.mood) * dt * 1.5;
   // the magnets pull: motes stream from him toward each target, more for the stronger one
-  for (const m of [MAG.up, MAG.dn]) if (m.p != null && R() < (m.prob ?? .5) * .9 * dt * 60) {
+  for (const m of [MAG.up, MAG.dn]) if (m.p != null && R() < Math.pow(m.prob ?? .5, 2) * 1.8 * dt * 60) {
     const hx = WX(H.p), mx = m.x, k = .6 + R() * .5, my = (m.y ?? 0) + MAG_Y;
     spark(hx + (R() - .5) * .4, H.y + 1.2 + (R() - .5) * .4, (R() - .5) * .6, (mx - hx) * .32 * k, (my - H.y - 1.2) * .32 * k, 0, m.up ? 'up' : 'dn', 2.6, .022);
   }
@@ -1093,7 +1107,7 @@ addEventListener('resize', resize);
 function render3d(dt, dtReal = dt) {
   const t = now, P = live.px ?? D.price;
   // camera: follows him, closer for the punches; every so often it pulls back to show both magnets
-  const portrait = Math.max(.45, Math.min(1, aspect / 1.78)), base = 9 / U * portrait;      // about 9 units wide
+  const portrait = Math.max(.6, Math.min(1, aspect / 1.78)), base = 9 / U * portrait;      // about 9 units wide, 5.4 on a phone
   let tc = H.p + H.face * (H.mode === 'approach' ? 120 : 50) / K(), ts = H.mode === 'combo' || H.mode === 'pose' || H.mode === 'knock' ? base * .82 : base * (1 + Math.min(.4, H.speed / 1000));
   const both = MAG.up.p != null && MAG.dn.p != null;
   const ov = both && t > overviewAt && t < overviewAt + 6 && H.mode === 'follow' && !queue.length;
@@ -1107,7 +1121,8 @@ function render3d(dt, dtReal = dt) {
   const cx = WX(camC), sh = FX.shake;                // the stairs climb left to right, up with the price
   const cyT = (cx - WX(H.p)) / TREAD * RISE + H.y; camY = camY == null ? cyT : camY + (cyT - camY) * (1 - Math.exp(-dt * 3));
   // low, in front and a little down the stairs, looking up them: the steps rise into the picture
-  const sa = Math.sin(SLOPE * .35), ca = Math.cos(SLOPE * .35), o1 = .6 + dist * .12, o2 = 1.05 + dist * .04, CYAW = -.3 * (1 - camOv);
+  // on a phone it looks lower, so he stands higher in the tall picture, and less from the side, so the walls stand apart
+  const pr = (portrait - .6) / .4, sa = Math.sin(SLOPE * .35), ca = Math.cos(SLOPE * .35), o1 = .6 + dist * .12, o2 = lerp(.45, 1.05, pr) + dist * .04, CYAW = -.3 * (.55 + .45 * pr) * (1 - camOv);
   camera.up.set(-sa, ca, 0);
   // at a target the camera swings round him and back
   FX.orbit = Math.max(0, FX.orbit - dtReal * .55); const yaw = CYAW + (FX.orbit > 0 ? Math.sin(Math.PI * (1 - FX.orbit)) * .6 : 0);
@@ -1122,10 +1137,25 @@ function render3d(dt, dtReal = dt) {
   // the treads light up under his feet; the coin's tread glows orange
   treadPool.forEach((m, i) => { const q = treadLit[treadLit.length - 1 - i], a = q ? Math.max(0, 1 - (t - q.t0) / .8) : 0;
     m.visible = a > .01; if (m.visible) { m.position.set(q.x, q.y, 0); m.material.opacity = a * .35; } });
+  { const ti = Math.floor(WX(P) / TREAD + 1e-6), tc = tmpC;
+    if (trailLast != null && ti !== trailLast) for (let i = Math.min(ti, trailLast) + 1; i < Math.max(ti, trailLast); i++) trail.set(i, t);   // a jump: the steps in between too
+    trailLast = ti; trail.set(ti, t); let n = 0;
+    for (const [i, t0] of trail) { const age = t - t0; if (age > TRAILS) { trail.delete(i); continue; } if (n >= TRAILN) break;
+      const a = Math.pow(1 - age / TRAILS, 1.6) * .2; dummy.position.set((i + .5) * TREAD, i * RISE + .004, 0); dummy.rotation.set(-Math.PI / 2, 0, 0); dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix(); trailMesh.setMatrixAt(n, dummy.matrix); trailMesh.setColorAt(n, tc.setRGB(.97 * a, .55 * a, .12 * a)); n++; }
+    trailMesh.count = n; trailMesh.instanceMatrix.needsUpdate = trailMesh.instanceColor.needsUpdate = true; }
   if (coinX != null) { const ci = Math.floor(coinX / TREAD + 1e-6); coinTread.position.set((ci + .5) * TREAD, ci * RISE + .007, 0); coinTread.material.opacity = .22 + .08 * Math.sin(t * 4); }
   scene.fog.near = dist * .7; scene.fog.far = dist * 2.6;
   placeSteps(cx - span * 1.2 - 4);
-  const wide = Math.min(1, Math.max(0, (dist - 14) / 14));
+  const zd = span / (2 * Math.tan(THREE.MathUtils.degToRad(17)) * 1.78);        // how far out, as on a 16:9 screen, so a tall phone counts as close
+  const wide = Math.min(1, Math.max(0, (zd - 14) / 14));
+  // a wall between the camera and him: is any of his feet, belly or head behind it?
+  const camP = camera.position, hx = WX(H.p);
+  const blocks = (x, y0, h, th) => {               // his edges, belly, feet and head, against both faces of the wall
+    for (const ox of [-.4, 0, .4]) { const dx = hx + ox - camP.x; if (Math.abs(dx) < 1e-4) continue;
+      for (const hy of [.15, .75, 1.3]) for (const xw of [x - th / 2 - .14, x + th / 2 + .14]) { const s = (xw - camP.x) / dx; if (s <= 0 || s >= 1) continue;
+        const z = camP.z * (1 - s), y = camP.y + s * (H.y + hy - camP.y); if (Math.abs(z) < SW / 2 + .1 && y > y0 && y < y0 + h) return true; } }
+    return false; };
   // levels: fade in, fade out, react
   for (const [k, o] of objs) {
     o.fade = Math.max(0, Math.min(1, o.fade + (o.gone ? -dt * 1.6 : dt * 1.4)));
@@ -1140,6 +1170,8 @@ function render3d(dt, dtReal = dt) {
       const ps = L.ps; u.uSteel.value = ps && ps[0] >= ps[1] - 1 ? 1 : 0; u.uFresh.value = ps && ps[0] <= 1 && !gone ? 1 : 0;
       if (L.crack) L.crack = Math.max(0, L.crack - dt * .004);
       u.uCrack.value += ((L.crack || 0) - u.uCrack.value) * Math.min(1, dt * 3); u.uCrackY.value = PUNCH_Y / o.h;
+      const occ = !gone && blocks(o.group.position.x, o.group.position.y, o.h, THICK(L));          // in front of him: see-through, so his face stays in view
+      o.see = (o.see ?? 1) + ((occ ? .16 : 1) - (o.see ?? 1)) * Math.min(1, dt * 6); u.uSee.value = o.see; o.mat.transparent = o.see < .985;
     } else if (L.k === 'stop') {                    // lasers: they hum; once hit they cut out one by one
       for (const b of o.beams) { const cut = b.userData.cut && t >= b.userData.cut;
         b.material.opacity = (cut ? Math.max(.03, .9 - (t - b.userData.cut) * 3) : gone ? .03 : (.75 + .25 * Math.sin(t * 40 + b.position.y * 9)) * (1 + hot)) * f; }
@@ -1155,7 +1187,8 @@ function render3d(dt, dtReal = dt) {
   for (const [p, sp] of labels) {
     const ls = [...objs.values()].filter(o => o.L.p === p), dead = ls.every(o => o.L.state !== 'live'), f = Math.max(0, ...ls.map(o => o.fade));
     const near = Math.max(0, 1 - Math.abs(p - H.p) / (camS * .55));
-    cand.push({ p, sp, f, a: (.65 + .35 * near) * (1 - wide) * (dead ? .35 : 1) * f, w: Math.max(...ls.map(o => o.L.rel)) * (dead ? .3 : 1) + near });
+    const see = Math.min(1, ...ls.map(o => o.see ?? 1));
+    cand.push({ p, sp, f, a: (.65 + .35 * near) * (1 - wide) * (dead ? .35 : 1) * f * see, w: Math.max(...ls.map(o => o.L.rel)) * (dead ? .3 : 1) + near });
   }
   cand.sort((a, b) => b.w - a.w);
   for (const c of cand) {
@@ -1173,11 +1206,13 @@ function render3d(dt, dtReal = dt) {
     if (m.p != null) m.y = m.y == null ? SY(m.p) : m.y + (SY(m.p) - m.y) * Math.min(1, dt * 2);
     m.root.position.set(m.x, m.y ?? 0, 0); m.root.scale.setScalar(.01 + .99 * m.shown);
     m.grp.position.y = MAG_Y + Math.sin(t * 1.3 + (m.up ? 0 : 2)) * .04; m.grp.rotation.y = -.25 + Math.sin(t * .5 + (m.up ? 0 : 1)) * .1;
-    m.paint.emissiveIntensity = hit ? .5 + .2 * pulse : .1 + m.prob * .25 * pulse + closeness * .2;
-    m.beamMat.uniforms.uT.value = t; m.beamMat.uniforms.uA.value = hit ? (age < 1.2 ? 1.2 - age * .5 : .4) : .05 + m.prob * .15 + closeness * .25;
+    const pw = m.prob * m.prob;      // the likelier one hums: brighter, a stronger beam, and it shivers with the pull
+    if (!hit && m.prob > .55) { m.grp.position.x = Math.sin(t * 47) * .012 * (m.prob - .55) * 6; m.grp.scale.setScalar(1 + (m.prob - .55) * .4); } else { m.grp.position.x = 0; m.grp.scale.setScalar(1); }
+    m.paint.emissiveIntensity = hit ? .5 + .2 * pulse : .08 + pw * .6 * pulse + closeness * .2;
+    m.beamMat.uniforms.uT.value = t; m.beamMat.uniforms.uA.value = hit ? (age < 1.2 ? 1.2 - age * .5 : .4) : .03 + pw * .45 + closeness * .25;
     m.light.intensity = hit ? 1.6 : .4 + closeness; m.gate.material.opacity = (hit ? .7 : .35 + closeness * .3) * m.shown; m.pad.material.opacity = (hit ? .8 : .35 + closeness * .4) * m.shown;
-    if (m.label) { m.label.material.opacity = Math.min(1, Math.max(0, (dist - 13) / 6)) * m.shown; m.label.visible = m.label.material.opacity > .01;
-      const k = Math.max(1, dist / 9); m.label.scale.set(m.label.userData.w0 * k, m.label.userData.h0 * k, 1); m.label.position.y = MAG_Y + .62 + (k - 1) * .3; }
+    if (m.label) { m.label.material.opacity = Math.min(1, Math.max(0, (zd - 13) / 6)) * m.shown; m.label.visible = m.label.material.opacity > .01;
+      const k = Math.max(1, zd / 9); m.label.scale.set(m.label.userData.w0 * k, m.label.userData.h0 * k, 1); m.label.position.y = MAG_Y + .62 + (k - 1) * .3; }
   }
   // the price pin: at the live price, on its step
   { const tx = WX(P); if (coinX == null) coinX = tx; coinX += (tx - coinX) * Math.min(1, dt * 9);
@@ -1195,7 +1230,8 @@ function render3d(dt, dtReal = dt) {
   const pu = H.mode === 'pose' ? t - H.t0 : -1, ps = pu < 0 ? 0 : EASE.out(Math.min(1, pu / .35)) * Math.min(1, (POSE - pu) / .3);
   if (ps > 0) hero.position.y += Math.abs(Math.sin(pu * 7)) * .22 * ps;             // a target: he jumps for joy
   // the body leans where he goes, twists into the cross, rocks back off a wall that holds
-  body.rotation.set(0, F * .45 * cross, -F * (.06 * walk + .12 * run + .2 * H.dash + .08 * gd + .12 * cross) + F * .4 * kn);
+  const tug = MAG.up.p != null && MAG.dn.p != null ? (MAG.up.prob - MAG.dn.prob) * (1 - Math.max(gd, cross)) : 0;      // the likelier target tugs at him
+  body.rotation.set(0, F * .45 * cross, -F * (.06 * walk + .12 * run + .2 * H.dash + .08 * gd + .12 * cross) + F * .4 * kn - tug * .22);
   body.position.y = Math.sin(ph * 2) * .012 * walk;
   const lead = F, rear = -F;      // the arm on the side he faces jabs; the other one throws the cross across his front
   for (const sx of [-1, 1]) {
@@ -1216,12 +1252,34 @@ function render3d(dt, dtReal = dt) {
     Lm.glove.scale.setScalar(1 + e * .25);
   }
   // the face: eyes that look ahead and blink, angry brows in a fight, a grin at a target, an 'o' off a wall
+  // what the market does to him: sweat near a big liquidation, wide eyes on a fast drop, a grin on a fast rise, a whistle when nothing happens
+  if (!PH.length || t - PH[PH.length - 1][0] > .5) { PH.push([t, P]); while (PH.length > 2 && t - PH[1][0] > 8) PH.shift(); }
+  const dv = (P - PH[0][1]) / STEP, cl = v => Math.max(0, Math.min(1, v));         // steps moved in the last eight seconds
+  let liqNear = 0, lvNear = false;
+  for (const L of LV) { if (L.state && L.state !== 'live') continue; const d = Math.abs(L.p - P) / STEP;
+    if (L.k === 'liq') liqNear = Math.max(liqNear, Math.min(1, L.rel) * cl(1 - d / 6)); if (d < 5) lvNear = true; }
+  const fight = Math.max(gd, jab, cross), busy = fight > .1 || kn > 0 || ps > 0;
+  const want = { sweat: cl((liqNear - .2) / .4), shock: cl((-dv - 2) / 2), joy: cl((dv - 2) / 2), calm: !busy && H.mode === 'follow' && H.speed < 200 && !lvNear && Math.abs(dv) < 1.2 ? 1 : 0 };
+  Object.assign(want, FEEL.force);                // a test can hold a feeling
+  for (const k in want) FEEL[k] += (want[k] - FEEL[k]) * Math.min(1, dt * (k === 'calm' ? .8 : 3));
+  const { sweat, shock, joy, calm } = FEEL, pull = MAG.up.p != null && MAG.dn.p != null ? MAG.up.prob - MAG.dn.prob : 0;
   if (t > blinkAt + .13) blinkAt = t + 2.5 + Math.random() * 3;
-  const blink = t > blinkAt ? .12 : 1, fight = Math.max(gd, jab, cross);
-  FACE.eyes.forEach((eye, i) => { const sx = i ? 1 : -1; eye.scale.y = 1.15 * (ps > .3 ? .35 : blink) * (1 + kn * .3);
-    FACE.pupils[i].position.x = sx * .085 + F * .02 * (1 - ps); FACE.pupils[i].scale.y = 1.15 * (ps > .3 ? .2 : blink);
-    FACE.brows[i].rotation.z = -sx * F * 0 + sx * (fight * .45 - ps * .3); FACE.brows[i].position.y = CY + .2 - fight * .02 + ps * .02; });
-  FACE.mouth.scale.set(1 + ps * .5 - fight * .3, (1 + ps) * (1 - fight * .6) + kn * 1.5, 1); FACE.mouth.rotation.z = kn > .3 ? 0 : Math.PI;
+  const blink = t > blinkAt ? .12 : 1, look = busy ? F * .02 * (1 - ps) : lerp(F * .02, pull * .03, .7);   // idle, he eyes the stronger magnet
+  FACE.eyes.forEach((eye, i) => { const sx = i ? 1 : -1, lid = ps > .3 ? .35 : blink * (1 - calm * .45);
+    eye.scale.set(.85 * (1 + shock * .25), 1.15 * lid * (1 + kn * .3 + shock * .35), .45);
+    FACE.pupils[i].position.set(sx * .085 + look, CY + .105 - calm * .012 + shock * .01, .097); FACE.pupils[i].scale.set(1 - shock * .45, 1.15 * (ps > .3 ? .2 : lid) * (1 - shock * .4), .5);
+    FACE.brows[i].rotation.z = sx * (fight * .45 - ps * .3 - sweat * .35 - shock * .25); FACE.brows[i].position.y = CY + .2 - fight * .02 + ps * .02 + shock * .035 + sweat * .012; });
+  const round = Math.max(shock, calm) * (1 - fight);
+  FACE.o.visible = round > .35 && kn < .3; FACE.mouth.visible = !FACE.o.visible;
+  FACE.o.scale.setScalar(.45 + shock * .8); FACE.o.position.x = calm > shock ? .02 : 0;
+  FACE.mouth.scale.set(1 + ps * .5 + joy * .5 - fight * .3, ((1 + ps + joy * .6) * (1 - fight * .6) + kn * 1.5) * (1 - sweat * .5), 1);
+  FACE.mouth.rotation.z = kn > .3 || (sweat > .5 && !ps && !joy) ? 0 : Math.PI;                 // a frown off a wall or with liquidations close
+  FACE.drops.forEach((d, i) => { const u = (t * .9 + i * .5) % 1, sx = d.userData.sx; d.visible = sweat > .08;
+    d.position.set(sx * (.2 + u * .05), CY + .25 - u * .32, .075); d.scale.set(.8, 1.3, .8).multiplyScalar(sweat * (1 - u * .4)); d.material.opacity = 1 - u; });
+  if (calm > .6 && t > FEEL.note) { FEEL.note = t + 1.1 + Math.random() * .6;            // a whistled note rises from his mouth
+    const n = notes.find(n => t - n.t0 > 2.2); if (n) { tmpV.set(.05, CY + .03, .1); FACE.o.parent.localToWorld(tmpV); n.t0 = t; n.x = tmpV.x; n.y = tmpV.y; } }
+  for (const n of notes) { const a = t - n.t0; n.sp.visible = a < 2.2; if (!n.sp.visible) continue;
+    n.sp.position.set(n.x + a * .18 * F + Math.sin(a * 4) * .05, n.y + a * .35, .3); n.sp.scale.setScalar(.13 + a * .03); n.sp.material.opacity = Math.min(1, a * 4) * (1 - a / 2.2) * .9; }
   const moodC = lerpHex(CSS.dn, CSS.up, (H.mood + 1) / 2);
   ghostMat.color.set(moodC).multiplyScalar(.28); coreMat.color.set(0xffffff); coreLight.color.set(moodC); coreLight.intensity = .9 + lock * 1.5 + ps;
   glowMat.color.set(0xbfeaff).multiplyScalar(1.5 + Math.max(jab, cross) * 1.5); seamMat.color.set(moodC).multiplyScalar(1.3 + lock * 2 + Math.max(jab, cross));
@@ -1403,7 +1461,7 @@ function frame(ts) {
 })();
 // a hidden tab: the stream and the frames rest; back again, the hero catches up with the price
 document.addEventListener('visibilitychange', () => { last = 0; acc = 0; Q.n = Q.t = 0; Q.wait = 2; });
-window.HELD = { overview() { overviewAt = now - .01; }, get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, H, queue, onPrice, live, realLiq, objs, onLevels, LOG, Q };
+window.HELD = { overview() { overviewAt = now - .01; }, get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, H, queue, onPrice, live, realLiq, objs, onLevels, LOG, Q, FEEL, PH, MAG, labels };
 })();
 </script>
 </body>

@@ -581,7 +581,7 @@ const coin = new THREE.Group(); scene.add(coin);
   coin.add(new THREE.PointLight(0xf7931a, .9, 2.5, 2));
   coin.userData.disc = disc;
 }
-const CZ = .75;      // it rolls a little in front of his path
+const CZ = -.8;      // it rolls beside his path, on the far side, so it never hides him
 
 // the hero: brushed gunmetal and chrome, a chest core that shows the direction
 const hero = new THREE.Group(), body = new THREE.Group(); hero.add(body); scene.add(hero);
@@ -980,8 +980,8 @@ function render3d(dt) {
   const span = camS * U, dist = span / (2 * Math.tan(THREE.MathUtils.degToRad(17)) * aspect) * (1 - .05 * FX.kick);
   const cx = WX(camC), sh = FX.shake;                // straight on: the stairs climb left to right, up with the price
   const cyT = (cx - WX(H.p)) / TREAD * RISE + H.y; camY = camY == null ? cyT : camY + (cyT - camY) * (1 - Math.exp(-dt * 3));
-  // rolled with the slope, so the stairs run across the screen instead of up its diagonal
-  const sa = Math.sin(SLOPE), ca = Math.cos(SLOPE), o1 = .9 + dist * .07, o2 = .95 + dist * .03;
+  // half the slope, and from a little higher, so the stairs still climb and the treads keep their depth
+  const sa = Math.sin(SLOPE * .5), ca = Math.cos(SLOPE * .5), o1 = .9 + dist * .2, o2 = .95 + dist * .03;
   camera.up.set(-sa, ca, 0);
   camera.position.set(cx - sa * o1 + (Math.sin(t * 91) + Math.sin(t * 57)) * sh * .5, camY + ca * o1 + (Math.cos(t * 83) + Math.sin(t * 41)) * sh * .5, dist);
   camera.lookAt(cx - sa * o2, camY + ca * o2, 0);
@@ -1172,14 +1172,14 @@ function drawHud() {
       hg.fillStyle = 'rgba(247,147,26,.92)'; hg.beginPath(); hg.roundRect(cxp - w2 / 2, cyp - 16, w2, 17, 3); hg.fill();
       txt('₿ ' + fmtP(P), cxp, cyp - 4, `700 10px ${FM}`, '#1a0e02', 'center'); }
     else if (tmpV.z < 1) {                           // the coin ran out of view while he fights: an arrow to it
-      const right = cxp >= LW - gx, lab = right ? `₿ ${fmtP(P)} ▶` : `◀ ₿ ${fmtP(P)}`, yy = Math.max(ry + 90, Math.min(foot - 40, cyp));
+      const right = cxp >= LW - gx, lab = right ? `₿ ${fmtP(P)} ▶` : `◀ ₿ ${fmtP(P)}`, yy = foot - 150;      // low, under the target arrows
       hg.font = `700 10px ${FM}`; const w4 = hg.measureText(lab).width + 16, x4 = right ? LW - gx - w4 : gx;
       hg.fillStyle = 'rgba(247,147,26,.92)'; hg.beginPath(); hg.roundRect(x4, yy - 12, w4, 20, 10); hg.fill(); txt(lab, x4 + 8, yy + 2, `700 10px ${FM}`, '#1a0e02'); } }
   // a target off screen: an arrow at the edge, with how far it is
   for (const m of [MAG.up, MAG.dn]) { if (m.p == null || m.y == null) continue;
     tmpV.set(m.x, m.y + 1, 0).project(camera); const ex = (tmpV.x * .5 + .5) * W / k, ey = (-tmpV.y * .5 + .5) * Hh / k;
     if (ex > gx && ex < LW - gx && tmpV.z < 1) continue;
-    const right = tmpV.z < 1 ? ex >= LW - gx : m.up, c = m.up ? CSS.up : CSS.dn, yy = Math.max(ry + 60, Math.min(foot - 70, ey));
+    const right = tmpV.z < 1 ? ex >= LW - gx : m.up, c = m.up ? CSS.up : CSS.dn, yy = Math.max(ry + 60, Math.min(foot - 190, ey));
     const lab = (right ? '' : '◀ ') + `DOEL ${m.up ? '▲' : '▼'} ${fmtP(m.p)} · ${pct(m.p, P)}` + (right ? ' ▶' : '');
     hg.font = `600 10px ${FM}`; const w3 = hg.measureText(lab).width + 16, x3 = right ? LW - gx - w3 : gx;
     hg.fillStyle = 'rgba(5,8,10,.8)'; hg.beginPath(); hg.roundRect(x3, yy - 12, w3, 20, 10); hg.fill(); hg.strokeStyle = c; hg.lineWidth = 1; hg.stroke();

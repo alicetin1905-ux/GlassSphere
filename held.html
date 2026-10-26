@@ -349,16 +349,23 @@ const CSS = { up: '#35ffb4', dn: '#ff4f6d', stop: '#ffc35a', liq: '#ad8bff', cya
 const FD = "'Inter',system-ui,sans-serif", FM = "'JetBrains Mono','SF Mono',Consolas,monospace";
 const nameOf = (k, above) => ({ ask: 'Verkoopmuur', bid: 'Koopmuur', stop: above ? 'Koopstops' : 'Verkoopstops', liq: above ? 'Short-liq.' : 'Long-liq.' })[k];
 const kindCol = k => ({ ask: 'dn', bid: 'up', stop: 'stop', liq: 'liq' })[k];
+const colOf = L => L.k === 'stop' ? (L.above ? 'up' : 'dn') : kindCol(L.k);      // buy stops a green laser, sell stops a red one
 const isWall = L => L.k === 'ask' || L.k === 'bid';
 const rgba = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${n >> 8 & 255},${n & 255},${Math.max(0, Math.min(1, a))})`; };
 const lerpHex = (a, b, k) => { const f = (x, y) => Math.round(x + (y - x) * k), P = parseInt(a.slice(1), 16), Q = parseInt(b.slice(1), 16);
   return '#' + [f(P >> 16, Q >> 16), f(P >> 8 & 255, Q >> 8 & 255), f(P & 255, Q & 255)].map(v => v.toString(16).padStart(2, '0')).join(''); };
 const EASE = { out: u => 1 - Math.pow(1 - u, 3), io: u => u < .5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2 };
 const lerp = THREE.MathUtils.lerp;
-let U = 0.01, ORIGIN = 0;                     // world units per dollar ($100 = 1 unit for BTC) and the price at x = 0
+// the price is a staircase: one step per STEP dollars ($10 for BTC), up to the right. A step's tread is TREAD long and
+// RISE high; the stair is SW wide, twice his height. U: world units per dollar, ORIGIN: the price at x = 0
+const TREAD = .4, RISE = .12, SW = 2.7;
+let STEP = 10, U = TREAD / 10, ORIGIN = 0;
 const WX = p => (p - ORIGIN) * U;
+const SYx = x => Math.floor(x / TREAD + 1e-6) * RISE;          // top of the step under world x
+const SY = p => SYx(WX(p));
+const K = () => U * 100;                       // world scale against the old $100-per-unit floor (speeds and distances below)
 const PUNCH_Y = 1.0, MAG_Y = 2.55, HS = 1.4;
-const REACH = () => 52 / (U * 100);            // in dollars: 0.52 units ahead of him
+const REACH = () => 52 / K();                  // in dollars: 0.52 units ahead of him
 
 const glc = $('gl'), hud = $('hud'), hg = hud.getContext('2d');
 const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true, powerPreference: 'high-performance' });
@@ -370,22 +377,31 @@ scene.add(new THREE.HemisphereLight(0x9fc8ff, 0x0a0f10, .35));
 const key = new THREE.DirectionalLight(0xffffff, 1.4); key.position.set(-4, 8, 6); scene.add(key);
 const rim = new THREE.DirectionalLight(0x6fb7ff, 1.6); rim.position.set(3, 3, -8); scene.add(rim);
 const col3 = name => new THREE.Color(HEX[name]);
+const dummy = new THREE.Object3D();
 const addBlend = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false };
 
-// floor: a fine grid fading into the dark, a lit lane along his path
-const floorMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, fog: false,
-  uniforms: { uFocus: { value: new THREE.Vector2() }, uFar: { value: 30 } },
-  vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position,1.); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
-  fragmentShader: `varying vec3 vW; uniform vec2 uFocus; uniform float uFar;
-    float grid(vec2 p, float s, float w){ vec2 g = abs(fract(p / s - .5) - .5) * s / fwidth(p); return 1. - min(min(g.x, g.y) / w, 1.); }
-    void main(){ float d = length(vW.xz - uFocus) / uFar; float fade = exp(-d * d * 3.);
-      float minor = grid(vW.xz, 1., 1.), major = grid(vW.xz, 5., 1.4), lane = exp(-vW.z * vW.z * 6.) * .5;
-      vec3 c = vec3(.11, .2, .19) * minor * .5 + vec3(.2, .34, .32) * major * .7 + vec3(.05, .12, .12) * lane;
-      gl_FragColor = vec4(c * fade, fade * (.25 + minor * .4 + major * .5 + lane * .4)); }` });
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(2000, 60), floorMat); floor.rotation.x = -Math.PI / 2; scene.add(floor);
-const floorBase = new THREE.Mesh(new THREE.PlaneGeometry(2000, 60), new THREE.MeshStandardMaterial({ color: 0x06090a, metalness: .3, roughness: .8, envMapIntensity: .15 }));
-floorBase.rotation.x = -Math.PI / 2; floorBase.position.y = -.005; scene.add(floorBase);
-
+// the stairs: a pool of steps that follows the camera, each with a lit nosing (brighter every 5 and 10 steps)
+const NS = 700, stepGeo = new THREE.BoxGeometry(TREAD, 8, SW), stepMat = new THREE.MeshStandardMaterial({ color: 0x0a1012, metalness: .2, roughness: .85, envMapIntensity: .12 });
+const steps = new THREE.InstancedMesh(stepGeo, stepMat, NS); steps.frustumCulled = false; scene.add(steps);
+const noseMat = new THREE.MeshBasicMaterial({ toneMapped: false });
+const noses = new THREE.InstancedMesh(new THREE.BoxGeometry(.035, .02, SW + .002), noseMat, NS); noses.frustumCulled = false;
+noses.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(NS * 3), 3); scene.add(noses);
+const edgeMat = new THREE.MeshBasicMaterial({ toneMapped: false, color: 0x1d3a3a });
+const edges = new THREE.InstancedMesh(new THREE.BoxGeometry(TREAD, .012, .012), edgeMat, NS); edges.frustumCulled = false; scene.add(edges);
+let stepsFrom = null;
+function placeSteps(x0) {                      // steps from world x0 on
+  const i0 = Math.floor(x0 / TREAD); if (i0 === stepsFrom) return; stepsFrom = i0;
+  const nc = new THREE.Color();
+  for (let k = 0; k < NS; k++) {
+    const i = i0 + k, top = i * RISE, p = ORIGIN + i * STEP;
+    dummy.position.set((i + .5) * TREAD, top - 4, 0); dummy.rotation.set(0, 0, 0); dummy.scale.set(1, 1, 1); dummy.updateMatrix(); steps.setMatrixAt(k, dummy.matrix);
+    dummy.position.set(i * TREAD + .0175, top - .009, 0); dummy.updateMatrix(); noses.setMatrixAt(k, dummy.matrix);
+    dummy.position.set((i + .5) * TREAD, top - .006, SW / 2 + .006); dummy.updateMatrix(); edges.setMatrixAt(k, dummy.matrix);
+    const m = Math.round(p / STEP) % 10 === 0 ? 1 : Math.round(p / STEP) % 5 === 0 ? .55 : .22;
+    noses.setColorAt(k, nc.setRGB(.25 * m + .05, .75 * m + .1, .8 * m + .1));
+  }
+  steps.instanceMatrix.needsUpdate = noses.instanceMatrix.needsUpdate = edges.instanceMatrix.needsUpdate = noses.instanceColor.needsUpdate = true;
+}
 function textSprite(lines, color, h, mid) {
   const c = document.createElement('canvas'), x = c.getContext('2d'), fs = 44, pad = 10;
   const font = i => i ? `500 ${fs * .8}px ${FM}` : `700 ${fs}px ${FD}`;
@@ -402,6 +418,8 @@ function frontLabel(lines, color, len) {
   const font = i => i ? `600 ${fs * .78}px ${FM}` : `800 ${fs}px ${FD}`;
   const w = Math.max(...lines.map((l, i) => { x.font = font(i); return x.measureText(l).width; })) + pad * 2;
   c.width = Math.ceil(w); c.height = Math.ceil(fs * 1.2 * lines.length + pad * 2);
+  x.fillStyle = 'rgba(5,8,10,.72)'; x.beginPath(); x.roundRect(2, 2, c.width - 4, c.height - 4, 14); x.fill();
+  x.strokeStyle = color; x.globalAlpha = .5; x.lineWidth = 2; x.stroke(); x.globalAlpha = 1;
   lines.forEach((l, i) => { x.font = font(i); x.fillStyle = i ? 'rgba(240,246,243,.95)' : color; x.textBaseline = 'top'; x.textAlign = 'center';
     x.shadowColor = 'rgba(0,0,0,.6)'; x.shadowBlur = 6; x.fillText(l, c.width / 2, pad + i * fs * 1.2); });
   const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = 8;
@@ -440,40 +458,83 @@ const liqFS = `uniform vec3 uCol; uniform float uT, uT0, uY, uSpent, uS, uH, uFa
     float age = uT - uT0, shock = 0.;
     if (age > 0. && age < 1.2) { float f = age * 4.; float d = abs(abs(y - uY) - f); shock = exp(-d * d * 18.) * (1. - age / 1.2) * 1.3 + exp(-age * 6.) * .35 * fade; }
     gl_FragColor = vec4(uCol * (a + shock * fade * .9 + shock * .15) * uFade, 1.); }`;
+// a banknote, in grey: the walls tint it green or red
+const billTex = (() => {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 218; const x = c.getContext('2d');
+  x.fillStyle = '#dfe2da'; x.fillRect(0, 0, 512, 218);
+  x.lineWidth = 1; for (let i = 0; i < 46; i++) { x.strokeStyle = `rgba(40,52,44,${.08 + (i % 3) * .05})`; x.beginPath();
+    for (let t = 0; t <= 512; t += 6) { const yy = 109 + Math.sin(t * .025 + i * .45) * (88 - i * 1.6); t ? x.lineTo(t, yy) : x.moveTo(t, yy); } x.stroke(); }
+  x.strokeStyle = '#38443c'; x.lineWidth = 7; x.strokeRect(9, 9, 494, 200); x.lineWidth = 2; x.strokeRect(22, 22, 468, 174);
+  x.fillStyle = '#c4c9be'; x.beginPath(); x.ellipse(256, 109, 64, 80, 0, 0, 7); x.fill(); x.lineWidth = 3; x.stroke();
+  x.fillStyle = '#2b352e'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.font = '700 104px Georgia,serif'; x.fillText('$', 256, 114);
+  x.font = '700 38px Georgia,serif'; for (const [cx, cy] of [[66, 50], [446, 50], [66, 170], [446, 170]]) x.fillText('100', cx, cy);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+})();
+// a wall of bundled bills: the bills tile every face, a bundle per brick, offset row by row
+const billVS = `uniform float uT, uRipT, uRipY, uRipA, uH; varying vec3 vP, vN; varying float vWave;
+  void main(){ vec3 p = position; float age = uT - uRipT; vWave = 0.;
+    if (age > 0. && age < 2.) { float d = length(vec2(p.z, p.y + uH * .5 - uRipY)); float w = sin(d * 9. - age * 18.) * exp(-age * 2.4) * exp(-d * .9);
+      p.x += w * .16 * uRipA; vWave = max(w, 0.) * uRipA; }
+    vP = p + vec3(0., uH * .5, 0.); vN = normal; gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.); }`;
+const billFS = `uniform sampler2D uMap; uniform vec3 uCol; uniform float uA, uT, uHot, uSteel, uFresh, uCrack, uCrackY, uH; varying vec3 vP, vN; varying float vWave;
+  void main(){ vec3 n = normalize(vN); vec2 q = abs(n.x) > .5 ? vP.zy : abs(n.z) > .5 ? vP.xy : vP.zx;
+    vec2 bill = vec2(.36, .155); float row = floor(q.y / bill.y); vec2 uv = vec2(q.x / bill.x + row * .5, q.y / bill.y);
+    vec3 tex = texture2D(uMap, fract(uv)).rgb; float seam = smoothstep(0., .07, fract(uv.y)) * smoothstep(1., .93, fract(uv.y));
+    float light = .5 + .5 * max(dot(n, normalize(vec3(-.35, .8, .55))), 0.);
+    vec3 c = tex * uCol * (.45 + .55 * seam) * light * uA;
+    float band = uSteel * (smoothstep(.03, 0., abs(vP.y - uH * .28)) + smoothstep(.03, 0., abs(vP.y - uH * .72)));   // banded: it stood for hours
+    c = mix(c, vec3(.75, .8, .82) * light, band * .85);
+    c *= 1. - uFresh * .45 * step(.55, fract(sin(floor(uT * 13.) * 91.7 + uH) * 437.58));                            // fresh: it flickers
+    vec2 d = vec2(q.x, vP.y - uCrackY * uH); float r = length(d), an = atan(d.y, d.x);
+    float crack = (smoothstep(.93, 1., abs(sin(an * 5.5 + sin(an * 13.) * .6))) * step(r, uCrack * 1.1) + smoothstep(.02, 0., abs(r - uCrack * .45)) * step(.3, uCrack)) * min(1., uCrack * 2.);
+    c += uCol * (vWave * 1.4 + uHot * .6) + vec3(1.) * crack * .6;
+    gl_FragColor = vec4(c, 1.);
+    #include <tonemapping_fragment>
+    #include <encodings_fragment>
+  }`;
 const uvVS = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }`;
 let PX = 500;
 // one height for every level; its size shows as thickness (world units)
-const THICK = L => { const r = Math.min(1, L.rel), room = (D?.B ?? 100) * U * .62;     // never thicker than the room between two buckets
-  return Math.min(room, isWall(L) ? .03 + .4 * r : L.k === 'stop' ? .01 + .16 * r : .03 + .44 * r); };
-// one level in the scene: built when it appears in the table, faded out when it leaves
+const THICK = L => { const r = Math.min(1, L.rel), room = (D?.B ?? 100) * U * .5;     // never thicker than half the room between two buckets
+  return Math.min(room, isWall(L) ? .08 + .55 * r : L.k === 'stop' ? .08 : .05 + .45 * r); };
+// one level in the scene: built when it appears in the table, faded out when it leaves. Every level spans the stair
+// (SW deep) and is taller than him; its size shows as thickness
 function buildLevel(L) {
-  const o = { L, group: new THREE.Group(), fade: 0, gone: false }; o.group.position.x = WX(L.p); scene.add(o.group);
-  if (isWall(L)) {
-    const h = 1.9, depth = 2.6, th = THICK(L);      // taller than him; the bigger the wall, the thicker the glass
+  const o = { L, group: new THREE.Group(), fade: 0, gone: false }; o.group.position.set(WX(L.p), SY(L.p), 0); scene.add(o.group);
+  const th = THICK(L), cl = col3(colOf(L));
+  if (isWall(L)) {                                  // a wall of dollar bills, green to buy, red to sell
+    const h = 1.9;
+    o.mat = new THREE.ShaderMaterial({ vertexShader: billVS, fragmentShader: billFS,
+      uniforms: { uMap: { value: billTex }, uCol: { value: L.k === 'bid' ? new THREE.Color(.42, 1, .58) : new THREE.Color(1, .42, .5) }, uA: { value: 1 }, uT: { value: 0 }, uHot: { value: 0 },
+        uRipT: { value: -9 }, uRipY: { value: 0 }, uRipA: { value: 1 }, uH: { value: h }, uSteel: { value: 0 }, uFresh: { value: 0 }, uCrack: { value: 0 }, uCrackY: { value: .5 } } });
+    o.panel = new THREE.Mesh(new THREE.BoxGeometry(th, h, SW, 1, 30, 30), o.mat); o.panel.position.y = h / 2; o.group.add(o.panel);
+    o.glow = new THREE.Mesh(new THREE.PlaneGeometry(th + .5, SW), new THREE.MeshBasicMaterial({ color: cl, opacity: .1, ...addBlend }));
+    o.glow.rotation.x = -Math.PI / 2; o.glow.position.y = .012; o.group.add(o.glow); o.h = h;
+  } else if (L.k === 'stop') {                      // a laser wall between two posts: the higher the score, the more and thicker beams
+    const h = 2.1, nb = 3 + Math.round(Math.min(1, L.rel) * 7), bt = .012 + .04 * Math.min(1, L.rel);
+    o.beams = [];
+    for (let i = 0; i < nb; i++) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(bt, bt, SW), new THREE.MeshBasicMaterial({ color: cl.clone().multiplyScalar(2.4), opacity: .9, ...addBlend }));
+      b.position.y = .18 + i * (h - .3) / (nb - 1); o.group.add(b); o.beams.push(b);
+    }
+    o.haze = new THREE.Mesh(new THREE.PlaneGeometry(SW, h), new THREE.MeshBasicMaterial({ color: cl, opacity: .06, side: THREE.DoubleSide, ...addBlend }));
+    o.haze.rotation.y = Math.PI / 2; o.haze.position.y = h / 2; o.group.add(o.haze);
+    for (const z of [-SW / 2, SW / 2]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(.06, .07, h + .1, 16), dark); post.position.set(0, (h + .1) / 2, z); o.group.add(post);
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(.03, h - .2, .03), new THREE.MeshBasicMaterial({ color: cl.clone().multiplyScalar(1.6), toneMapped: false }));
+      strip.position.set(0, h / 2, z - Math.sign(z) * .06); o.group.add(strip);
+    }
+    o.line = o.haze; o.h = h;
+  } else {                                          // purple glass: where liquidations would set in
+    const h = 2.0;
     o.mat = new THREE.ShaderMaterial({ vertexShader: wallVS, fragmentShader: wallFS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-      uniforms: { uCol: { value: col3(kindCol(L.k)) }, uA: { value: 1 }, uEdge: { value: 1 }, uT: { value: 0 }, uRipT: { value: -9 }, uRipY: { value: 0 }, uRipA: { value: 1 }, uH: { value: h }, uSteel: { value: 0 }, uFresh: { value: 0 }, uCrack: { value: 0 }, uCrackY: { value: .5 } } });
-    o.panel = new THREE.Mesh(new THREE.BoxGeometry(depth, h, th, 26, 44, 1), o.mat); o.panel.rotation.y = Math.PI / 2; o.panel.position.y = h / 2; o.group.add(o.panel);
-    o.glow = new THREE.Mesh(new THREE.PlaneGeometry(th + .4, depth), new THREE.MeshBasicMaterial({ color: col3(kindCol(L.k)), opacity: .08, ...addBlend }));
-    o.glow.rotation.x = -Math.PI / 2; o.glow.position.y = .01; o.group.add(o.glow); o.h = h;
-  } else if (L.k === 'stop') {
-    const n = 12, h = 2.1, g = new THREE.BufferGeometry(), pos = new Float32Array(n * 3);
-    for (let j = 0; j < n; j++) pos[j * 3 + 1] = .12 + j * (h - .12) / (n - 1);
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    o.mat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, vertexShader: stopVS, fragmentShader: stopFS,
-      uniforms: { uCol: { value: col3('stop') }, uT: { value: 0 }, uT0: { value: -9 }, uY: { value: 0 }, uSpent: { value: 0 }, uPx: { value: PX }, uSize: { value: .1 + .4 * Math.min(1, L.rel) }, uFade: { value: 0 } } });
-    o.pts = new THREE.Points(o.geo = g, o.mat); o.group.add(o.pts);
-    const th = THICK(L);                                 // the higher the score, the thicker the column
-    o.line = new THREE.Mesh(new THREE.BoxGeometry(th, h, th), new THREE.MeshBasicMaterial({ color: col3('stop'), opacity: .18, ...addBlend }));
-    o.line.position.y = h / 2; o.group.add(o.line); o.h = h;
-  } else {
-    const h = 2.0, depth = 3.0, th = THICK(L);      // the more is liquidated there, the thicker the curtain
-    o.mat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, vertexShader: uvVS, fragmentShader: liqFS,
-      uniforms: { uCol: { value: col3('liq') }, uT: { value: 0 }, uT0: { value: -9 }, uY: { value: 0 }, uSpent: { value: 0 }, uS: { value: Math.min(1, L.rel) }, uH: { value: h }, uFade: { value: 0 } } });
-    o.panel = new THREE.Mesh(new THREE.BoxGeometry(depth, h, th), o.mat); o.panel.rotation.y = Math.PI / 2; o.panel.position.y = h / 2; o.group.add(o.panel);
-    o.line = new THREE.Mesh(new THREE.BoxGeometry(.01 + th * .3, h * .75, .01 + th * .3), new THREE.MeshBasicMaterial({ color: col3('liq'), opacity: .35, ...addBlend }));
-    o.line.position.y = h * .375; o.group.add(o.line); o.h = h;
+      uniforms: { uCol: { value: cl }, uA: { value: 1 }, uEdge: { value: 1 }, uT: { value: 0 }, uRipT: { value: -9 }, uRipY: { value: 0 }, uRipA: { value: 1 }, uH: { value: h },
+        uSteel: { value: 0 }, uFresh: { value: 0 }, uCrack: { value: 0 }, uCrackY: { value: .5 } } });
+    o.panel = new THREE.Mesh(new THREE.BoxGeometry(SW, h, th, 26, 40, 1), o.mat); o.panel.rotation.y = Math.PI / 2; o.panel.position.y = h / 2; o.group.add(o.panel);
+    o.glow = new THREE.Mesh(new THREE.PlaneGeometry(th + .5, SW), new THREE.MeshBasicMaterial({ color: cl, opacity: .1, ...addBlend }));
+    o.glow.rotation.x = -Math.PI / 2; o.glow.position.y = .012; o.group.add(o.glow); o.h = h;
   }
-  o.th0 = THICK(L); return o;
+  o.th0 = th; return o;
 }
 
 // the magnets: horseshoes over the target gates, poles down, with a beam of pull underneath
@@ -498,7 +559,7 @@ function buildMagnet(up) {
   const pad = new THREE.Mesh(new THREE.RingGeometry(.35, .5, 64), new THREE.MeshBasicMaterial({ color: c, opacity: .5, ...addBlend }));
   pad.rotation.x = -Math.PI / 2; pad.position.y = .012; root.add(pad);
   const light = new THREE.PointLight(c, .6, 5, 2); light.position.set(0, MAG_Y - .5, .4); root.add(light);
-  return { up, root, grp, beamMat, gate, pad, paint, light, p: null, shown: 0, hit: -1e9, prob: .5, label: null, labelTxt: '' };
+  return { up, root, grp, beamMat, gate, pad, paint, light, p: null, shown: 0, hit: -1e9, prob: .5, label: null, labelTxt: '', y: null };
 }
 const MAG = { up: buildMagnet(true), dn: buildMagnet(false) };
 
@@ -556,7 +617,8 @@ const PCOL = Object.fromEntries(Object.entries(HEX).map(([k, v]) => [k, new THRE
 const SMAX = 400, shardMat = new THREE.MeshBasicMaterial({ opacity: .85, ...addBlend });
 const shardMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(.02, .22, .14), shardMat, SMAX);
 shardMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(SMAX * 3), 3); shardMesh.frustumCulled = false; scene.add(shardMesh);
-const dummy = new THREE.Object3D();
+const BMAX = 500, billMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(.29, .124), new THREE.MeshBasicMaterial({ map: billTex, side: THREE.DoubleSide }), BMAX);
+billMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(BMAX * 3), 3); billMesh.frustumCulled = false; scene.add(billMesh);
 const ringPool = Array.from({ length: 28 }, () => { const m = new THREE.Mesh(new THREE.RingGeometry(.96, 1, 96), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, ...addBlend })); m.visible = false; scene.add(m); return m; });
 const starTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d'), g = x.createRadialGradient(128, 128, 0, 128, 128, 128);
   g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(.12, 'rgba(255,255,255,.8)'); g.addColorStop(.4, 'rgba(255,255,255,.08)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 256, 256);
@@ -587,10 +649,10 @@ const objs = new Map();          // level key -> scene object
 const spent = new Map();         // level key -> time it was settled (kept while the table still lists it)
 const labels = new Map();        // price -> label sprite
 const queue = [];                // { p, dir, type: 'cross' | 'hold' | 'target', levels, T }
-const FX = { sparks: [], shards: [], rings: [], stars: [], calls: [], shake: 0, flash: 0, ab: 0, kick: 0 };
-const H = { p: null, v: 0, face: 1, yaw: Math.PI / 2, mode: 'follow', t0: 0, job: null, speed: 0, dist: 0, phase: 0, guard: 0, idleAt: 0, mood: 0, lockAt: -9, dash: 0 };
+const FX = { sparks: [], shards: [], bills: [], rings: [], stars: [], calls: [], shake: 0, flash: 0, ab: 0, kick: 0 };
+const H = { p: null, y: 0, v: 0, face: 1, yaw: Math.PI / 2, mode: 'follow', t0: 0, job: null, speed: 0, dist: 0, phase: 0, guard: 0, idleAt: 0, mood: 0, lockAt: -9, dash: 0 };
 const stats = { walls: 0, liq: 0, stops: 0, targets: 0, real: 0 };
-let now = 0, camC = null, camS = 1200, overviewAt = 20, evAt = null;
+let now = 0, camC = null, camS = 1200, camY = null, overviewAt = 20, evAt = null;
 // "the wall holds": the price came within tol x bucket of it and went back away x tol. Tested on 23 h of 1-minute candles
 // against the walls of the moment: about 30 holds a day over 8 walls, one every 6 h per wall
 const HOLD = { tol: .25, away: 2, cooldown: 90 };
@@ -638,8 +700,8 @@ try { if (localStorage.getItem('held-sound') === '1') {      // on last time: th
 
 function onLevels() {
   const P = live.px || D.price;
-  if (ORIGIN === 0) { ORIGIN = Math.round(P / 1000) * 1000; U = 1 / nice(P * 0.0012); }
-  if (H.p == null) H.p = P;
+  if (ORIGIN === 0) { STEP = nice(P * 0.000125); U = TREAD / STEP; ORIGIN = Math.round(P / (STEP * 100)) * STEP * 100; }
+  if (H.p == null) { H.p = P; H.y = SY(P); }
   const keep = new Set(LV.map(L => L.key));
   for (const [k, o] of objs) if (!keep.has(k)) o.gone = true;
   for (const L of LV) {
@@ -650,7 +712,7 @@ function onLevels() {
       Object.assign(o.L, L, { state: st, fx: fxL, rip, lastFx: last, crack }); o.gone = false;
       if (isWall(o.L) && st === 'live' && oldS > 0) {
         const sameBooks = exKey === exKeyPrev && mode === 'live';      // a book that did not answer this time is no eaten wall
-        if (sameBooks && L.s < oldS * .75 && Math.abs(P - o.L.p) <= D.B * 2 && Date.now() - (o.L.crackAt ?? 0) > 60e3) {
+        if (sameBooks && L.s < oldS * .7 && Math.abs(P - o.L.p) <= D.B * 1.5 && Date.now() - (o.L.crackAt ?? 0) > 60e3) {
           o.L.crackAt = Date.now(); o.L.crack = Math.min(1, crack + (1 - L.s / oldS) * 2); crackFx(o, oldS, L.s); }
         else if (L.s > oldS * 1.15) o.L.crack = Math.max(0, crack - .35);
       }
@@ -667,8 +729,8 @@ function onLevels() {
     if (old) { scene.remove(old); dispose(old); }
     // on the front of the level (the face toward the camera), the text running up: kind, then size and price
     const top = ls.slice().sort((a, b) => b.rel - a.rel)[0], h = Math.max(...ls.map(l => objs.get(l.key)?.h ?? 1.9));
-    const front = Math.max(...ls.map(l => isWall(l) ? 1.3 : l.k === 'liq' ? 1.5 : .12)) + .012;
-    const sp = frontLabel([title, sub + '  ·  ' + fmtP(p)], CSS[kindCol(top.k)], h * .86);
+    const front = SW / 2 + .02;
+    const sp = frontLabel([title, sub + '  ·  ' + fmtP(p)], CSS[colOf(top)], h * .86);
     sp.userData.txt = lines.join('|'); sp.userData.y = h * .5; sp.userData.z = front; sp.position.set(WX(p), h * .5, front); scene.add(sp); labels.set(p, sp);
   }
   // the magnets glide to the new targets
@@ -721,46 +783,50 @@ function callout(title, sub, col, at) {
 const R = Math.random;
 function settle(L, type, dir, quiet) {
   const o = objs.get(L.key); if (!o) return;
-  const y = PUNCH_Y, x = WX(L.p), col = kindCol(L.k), sub = `${nameOf(L.k, L.above)} · ${L.v} · ${fmtP(L.p)}`;
+  const base = SY(L.p), y = PUNCH_Y, x = WX(L.p), col = colOf(L), sub = `${nameOf(L.k, L.above)} · ${L.v} · ${fmtP(L.p)}`;
   L.queued = false; L.lastFx = now;
   if (type === 'hold') {
-    L.rip = { t0: now, y, a: 1 }; FX.rings.push({ x, y, t0: now, col, kind: 'wall' }); FX.shake = Math.max(FX.shake, .07); FX.ab = 1.2;
-    for (let i = 0; i < 26; i++) spark(x - dir * .02, y, (R() - .5) * .2, -dir * (.5 + R() * 2.2), (R() - .5) * 2.4, (R() - .5) * 2.4, R() < .4 ? 'txt' : col, .35 + R() * .4, .05);
+    L.rip = { t0: now, y, a: 1 }; FX.rings.push({ x, y: base + y, t0: now, col, kind: 'wall' }); FX.shake = Math.max(FX.shake, .07); FX.ab = 1.2;
+    for (let i = 0; i < 26; i++) spark(x - dir * .02, base + y, (R() - .5) * .2, -dir * (.5 + R() * 2.2), (R() - .5) * 2.4, (R() - .5) * 2.4, R() < .4 ? 'txt' : col, .35 + R() * .4, .05);
+    for (let i = 0; i < 6; i++) bill(x - dir * .1, base + y + (R() - .5) * .8, (R() - .5) * 2, -dir * (.3 + R()), R() * .8, (R() - .5), col);
     callout('MUUR HOUDT', sub, col); if (!quiet) sfx('hold'); return;
   }
   spent.set(L.key, now);
-  if (isWall(L)) {
+  if (isWall(L)) {                                  // the bills fly
     L.state = 'broken'; L.fx = { t0: now, y }; FX.flash = Math.max(FX.flash, .2); FX.shake = Math.max(FX.shake, .08); FX.ab = 1; stats.walls++;
-    for (let i = 0; i < 46; i++) {
-      const sy = Math.max(.05, Math.min(o.h, y + (R() - .5) * o.h * 1.1)), sz = (R() - .5) * 2.4, d = Math.hypot(sy - y, sz);
-      FX.shards.push({ x, y: sy, z: sz, vx: dir * (1.2 + R() * 3.5) / (1 + d * .5), vy: (R() - .3) * 2.5, vz: (R() - .5) * 2.5 + sz * .6,
-        rx: R() * 6, ry: R() * 6, rz: R() * 6, wx: (R() - .5) * 14, wy: (R() - .5) * 14, wz: (R() - .5) * 14, s: .5 + R() * .9, col, age: 0, life: 1.4 + R() * .8 });
-    }
-    for (let i = 0; i < 30; i++) spark(x, y, (R() - .5) * .3, dir * (1 + R() * 3), (R() - .5) * 2.5, (R() - .5) * 2.5, R() < .5 ? 'txt' : col, .4 + R() * .5, .05);
+    for (let i = 0; i < 90; i++) { const sy = base + R() * o.h, sz = (R() - .5) * SW, d = Math.hypot(sy - base - y, sz);
+      bill(x, sy, sz, dir * (1 + R() * 3.2) / (1 + d * .4), .5 + R() * 2.6, (R() - .5) * 2.4 + sz * .5, col); }
+    for (let i = 0; i < 24; i++) spark(x, base + y, (R() - .5) * .3, dir * (1 + R() * 3), (R() - .5) * 2.5, (R() - .5) * 2.5, R() < .5 ? 'txt' : col, .4 + R() * .5, .05);
     callout('MUUR DOORBROKEN', sub, col); if (!quiet) sfx('glass');
-  } else if (L.k === 'stop') {
-    L.state = 'spent'; L.fx = { t0: now, y }; stats.stops++; callout('STOPS GERAAKT', sub, col); if (!quiet) sfx('stop');
-  } else {
-    L.state = 'spent'; L.fx = { t0: now, y }; FX.shake = Math.max(FX.shake, .12); FX.ab = 1; stats.liq += L.s;
-    FX.rings.push({ x, y: .02, t0: now, col, kind: 'floor' });
-    for (let i = 0; i < 70; i++) spark(x, .2 + R() * 3, (R() - .5) * 2.2, dir * (1 + R() * 4.5), (R() - .2) * 1.5, (R() - .5) * 1.5, R() < .3 ? 'txt' : col, .6 + R() * .8, .045);
-    callout('LIQUIDATIES', sub, col); if (!quiet) sfx('liq');
+  } else if (L.k === 'stop') {                      // the beams cut out, one by one from where he hit
+    L.state = 'spent'; L.fx = { t0: now, y }; stats.stops++;
+    for (const b of o.beams) b.userData.cut = now + Math.abs(b.position.y - y) * .22;
+    callout('STOPS GERAAKT', sub, col); if (!quiet) sfx('stop');
+  } else {                                          // the purple glass shatters
+    L.state = 'spent'; L.fx = { t0: now, y }; FX.shake = Math.max(FX.shake, .12); FX.ab = 1; stats.liq += L.s; FX.flash = Math.max(FX.flash, .15);
+    FX.rings.push({ x, y: base + .02, t0: now, col, kind: 'floor' });
+    for (let i = 0; i < 50; i++) { const sy = base + Math.max(.05, Math.min(o.h, y + (R() - .5) * o.h * 1.1)), sz = (R() - .5) * SW, d = Math.hypot(sy - base - y, sz);
+      FX.shards.push({ x, y: sy, z: sz, vx: dir * (1.2 + R() * 3.5) / (1 + d * .5), vy: (R() - .3) * 2.5, vz: (R() - .5) * 2.5 + sz * .6,
+        rx: R() * 6, ry: R() * 6, rz: R() * 6, wx: (R() - .5) * 14, wy: (R() - .5) * 14, wz: (R() - .5) * 14, s: .5 + R() * .9, col, age: 0, life: 1.4 + R() * .8 }); }
+    for (let i = 0; i < 50; i++) spark(x, base + .2 + R() * 2, (R() - .5) * 2.2, dir * (1 + R() * 4.5), (R() - .2) * 1.5, (R() - .5) * 1.5, R() < .3 ? 'txt' : col, .6 + R() * .8, .045);
+    callout('LIQUIDATIES', sub, col); if (!quiet) sfx('glass'); if (!quiet) sfx('liq');
   }
 }
+// one bill, fluttering
+function bill(x, y, z, vx, vy, vz, col) { if (FX.bills.length < BMAX) FX.bills.push({ x, y, z, vx, vy, vz, rx: R() * 6, ry: R() * 6, rz: R() * 6, wx: (R() - .5) * 9, wy: (R() - .5) * 9, wz: (R() - .5) * 9, col, age: 0, life: 2.6 + R() * 1.4 }); }
 function hitTarget(m, quiet) {
-  const x = WX(m.p), y = 1.25, col = m.up ? 'up' : 'dn';
+  const x = WX(m.p), y = SY(m.p) + 1.25, col = m.up ? 'up' : 'dn';
   m.hit = now; H.lockAt = now; FX.flash = .5; FX.shake = Math.max(FX.shake, .14); FX.ab = 1.4; FX.kick = 1.2; stats.targets++;
   for (let i = 0; i < 3; i++) FX.rings.push({ x, y, t0: now + i * .16, col, kind: 'big' });
-  FX.rings.push({ x, y: .02, t0: now, col, kind: 'floor' });
+  FX.rings.push({ x, y: SY(m.p) + .02, t0: now, col, kind: 'floor' });
   for (let i = 0; i < 80; i++) { const a = R() * Math.PI * 2, b = R() * Math.PI - Math.PI / 2, v = 1.5 + R() * 3.5;
     spark(x, y, 0, Math.cos(a) * Math.cos(b) * v, Math.sin(b) * v, Math.sin(a) * Math.cos(b) * v, R() < .4 ? 'txt' : col, .7 + R() * .9, .05); }
   callout('DOEL GERAAKT', `Doel ${m.up ? '▲' : '▼'} · ${fmtP(m.p)} · kans was ${Math.round(m.prob * 100)}%`, col); if (!quiet) sfx('target');
 }
 // a wall eaten while the price stands against it: it cracks, a few pieces drop
 function crackFx(o, from, to) {
-  const L = o.L, x = WX(L.p), col = kindCol(L.k);
-  for (let i = 0; i < 8; i++) FX.shards.push({ x: x + (R() - .5) * .05, y: PUNCH_Y + (R() - .5) * .6, z: (R() - .5) * 2, vx: (R() - .5) * .4, vy: R() * .5, vz: (R() - .5) * .4,
-    rx: R() * 6, ry: R() * 6, rz: R() * 6, wx: (R() - .5) * 8, wy: (R() - .5) * 8, wz: (R() - .5) * 8, s: .25 + R() * .3, col, age: 0, life: 1.2 });
+  const L = o.L, x = WX(L.p), col = colOf(L), base = SY(L.p);
+  for (let i = 0; i < 14; i++) bill(x + (R() - .5) * .1, base + PUNCH_Y + (R() - .5) * .8, (R() - .5) * 2, (R() - .5) * .5, R() * .4, (R() - .5) * .5, col);
   L.lastFx = now; callout('MUUR SCHEURT', `${nameOf(L.k, L.above)} · ${fmtUsd(from)} → ${fmtUsd(to)} · ${fmtP(L.p)}`, col, Date.now()); sfx('crack');
 }
 // a real liquidation: gathered over 1.5 s per side, then shown where it happened
@@ -775,11 +841,11 @@ function showRealLiq(long, p, usd, ex, at) {
   stats.real += usd;
   const x = WX(p), big = Math.min(1, Math.log10(Math.max(1, usd / 1e4)) / 2.5);      // $10K: 0 .. $3M: 1
   if (!document.hidden) {
-    FX.rings.push({ x, y: .02, t0: now, col: 'liq', kind: big > .45 ? 'floor' : 'step' });
-    for (let i = 0; i < 10 + big * 70; i++) spark(x + (R() - .5) * .3, .05, (R() - .5) * 1.5, (R() - .5) * 1.2, 1 + R() * (2 + big * 3), (R() - .5) * 1.2, R() < .3 ? 'txt' : 'liq', .6 + R() * .8, .04);
+    FX.rings.push({ x, y: SY(p) + .02, t0: now, col: 'liq', kind: big > .45 ? 'floor' : 'step' });
+    for (let i = 0; i < 10 + big * 70; i++) spark(x + (R() - .5) * .3, SY(p) + .05, (R() - .5) * 1.5, (R() - .5) * 1.2, 1 + R() * (2 + big * 3), (R() - .5) * 1.2, R() < .3 ? 'txt' : 'liq', .6 + R() * .8, .04);
     FX.shake = Math.max(FX.shake, .02 + big * .1);
     // the estimated liquidation level close by lights up: here it actually happens
-    for (const o of objs.values()) if (o.L.k === 'liq' && !o.gone && Math.abs(o.L.p - p) <= D.B && o.L.above === !long) { o.L.real = now; o.L.lastFx = now; }
+    for (const o of objs.values()) if (o.L.k === 'liq' && !o.gone && Math.abs(o.L.p - p) <= D.B && o.L.above === !long) { o.L.real = now; o.L.lastFx = now; o.L.rip = { t0: now, y: PUNCH_Y, a: .6 }; }
   }
   const sub = `${long ? 'Longs' : 'Shorts'} · ${fmtUsd(usd)} · ${ex.join(' + ')} · ${fmtP(p)}`;
   if (usd >= 250e3) callout('ECHTE LIQUIDATIE', sub, 'liq', at); else if (usd >= 50e3) logEvent('Echte liquidatie', sub, 'liq', at);
@@ -787,12 +853,12 @@ function showRealLiq(long, p, usd, ex, at) {
 }
 const COMBO = .8, JAB = .15, CROSS = .38, POSE = 1.5, KNOCK = .6;
 function punch(j, big) {
-  const x = WX(j.p), col = j.levels[0] ? kindCol(j.levels[0].k) : 'txt';
-  FX.stars.push({ x, y: PUNCH_Y, t0: now, col, big }); FX.kick = big ? 1 : .35; FX.shake = Math.max(FX.shake, big ? .05 : .025); FX.ab = Math.max(FX.ab, big ? 1 : .4);
+  const x = WX(j.p), col = j.levels[0] ? colOf(j.levels[0]) : 'txt', y = SY(j.p) + PUNCH_Y;
+  FX.stars.push({ x, y, t0: now, col, big }); FX.kick = big ? 1 : .35; FX.shake = Math.max(FX.shake, big ? .05 : .025); FX.ab = Math.max(FX.ab, big ? 1 : .4);
   if (!j.quiet) sfx(big ? 'cross' : 'jab');
   if (big) { for (const L of j.levels) settle(L, j.type === 'hold' ? 'hold' : 'cross', j.dir, j.quiet); return; }
-  for (const L of j.levels) { L.lastFx = now; if (isWall(L)) L.rip = { t0: now, y: PUNCH_Y, a: .35 }; }
-  for (let i = 0; i < 12; i++) spark(x - j.dir * .03, PUNCH_Y, (R() - .5) * .1, -j.dir * (.3 + R() * 1.3), (R() - .3) * 1.6, (R() - .5) * 1.6, R() < .5 ? 'txt' : col, .25 + R() * .25, .04);
+  for (const L of j.levels) { L.lastFx = now; if (L.k !== 'stop') L.rip = { t0: now, y: PUNCH_Y, a: .35 }; }
+  for (let i = 0; i < 12; i++) spark(x - j.dir * .03, y, (R() - .5) * .1, -j.dir * (.3 + R() * 1.3), (R() - .3) * 1.6, (R() - .5) * 1.6, R() < .5 ? 'txt' : col, .25 + R() * .25, .04);
 }
 
 // his behaviour, each frame
@@ -805,13 +871,13 @@ function think(dt) {
   if (H.mode === 'approach' || H.mode === 'follow') {
     // far behind the price (many levels at once, or back from another tab): he dashes
     const lag = Math.abs(target - H.p) * U; H.dash += (Math.max(0, Math.min(1, (lag - 3) / 3)) - H.dash) * Math.min(1, dt * 4);
-    const d = target - H.p, ad = Math.abs(d), vmax = (ad > 300 ? 430 : ad > 120 ? 240 : 165) * spd * (U * 100) * (1 + 2.2 * H.dash);
-    const want = ad < (H.mode === 'follow' ? 3 : .5) / (U * 100) ? 0 : Math.sign(d) * Math.min(vmax, Math.sqrt(2 * 1100 * (U * 100) * ad) * .9);
-    const acc = 1100 * (U * 100) * spd * (1 + 2 * H.dash) * dt; H.v += Math.max(-acc, Math.min(acc, want - H.v));
+    const d = target - H.p, ad = Math.abs(d), vmax = (ad * K() > 300 ? 430 : ad * K() > 120 ? 240 : 165) * spd / K() * (1 + 2.2 * H.dash);
+    const want = ad < (H.mode === 'follow' ? 3 : .5) / K() ? 0 : Math.sign(d) * Math.min(vmax, Math.sqrt(2 * 1100 / K() * ad) * .9);
+    const acc = 1100 / K() * spd * (1 + 2 * H.dash) * dt; H.v += Math.max(-acc, Math.min(acc, want - H.v));
     let step = H.v * dt; if (Math.abs(step) > ad) { step = d; H.v = 0; } H.p += step;
     if (H.mode === 'approach') { H.face = H.job.dir;
-      if (Math.abs(target - H.p) < 1.5 / (U * 100) && Math.abs(H.v) < 60 * (U * 100)) { H.mode = H.job.type === 'target' ? 'pose' : 'combo'; H.t0 = now; H.v = 0; H.hits = 0; } }
-    else if (Math.abs(H.v) > 15 * (U * 100)) H.face = Math.sign(H.v);
+      if (Math.abs(target - H.p) < 1.5 / K() && Math.abs(H.v) < 60 / K()) { H.mode = H.job.type === 'target' ? 'pose' : 'combo'; H.t0 = now; H.v = 0; H.hits = 0; } }
+    else if (Math.abs(H.v) > 15 / K()) H.face = Math.sign(H.v);
   } else {
     H.v = 0; H.dash *= .9; const u = (now - H.t0) * spd; evAt = H.job?.at ?? null;
     if (H.mode === 'combo' || H.mode === 'shadow') {
@@ -819,21 +885,22 @@ function think(dt) {
       if (H.mode === 'combo' && H.hits === 1 && u >= CROSS) { H.hits = 2; punch(H.job, true);
         if (H.job.type === 'hold') { H.mode = 'knock'; H.t0 = now; H.kFrom = H.p; } }
       if ((H.mode === 'combo' || H.mode === 'shadow') && u >= COMBO) { H.mode = 'follow'; H.idleAt = now; }
-    } else if (H.mode === 'knock') { const k = Math.min(1, (now - H.t0) / KNOCK); H.p = H.kFrom - H.face * 32 / (U * 100) * EASE.out(k); if (k >= 1) { H.mode = 'follow'; H.idleAt = now; } }
+    } else if (H.mode === 'knock') { const k = Math.min(1, (now - H.t0) / KNOCK); H.p = H.kFrom - H.face * 32 / K() * EASE.out(k); if (k >= 1) { H.mode = 'follow'; H.idleAt = now; } }
     else if (H.mode === 'pose') { if (H.hits === 0 && now - H.t0 > .15) { H.hits = 1; hitTarget(H.job.T, H.job.quiet); } if (now - H.t0 >= POSE) { H.mode = 'follow'; H.idleAt = now; } }
     evAt = null;
   }
   if (H.dash > .2) for (let i = 0; i < 3 * dt * 60; i++)       // speed lines behind him
-    spark(WX(H.p) - H.face * (.15 + R() * .4), .25 + R() * 1.2, (R() - .5) * .5, -H.face * (3 + R() * 4) * H.dash, 0, 0, 'cyan', .16, .024);
+    spark(WX(H.p) - H.face * (.15 + R() * .4), H.y + .25 + R() * 1.2, (R() - .5) * .5, -H.face * (3 + R() * 4) * H.dash, 0, 0, 'cyan', .16, .024);
   // standing still a while: a little shadow-boxing
   if (H.mode === 'follow' && Math.abs(H.v) < 1e-6 && now - H.idleAt > 14) { H.mode = 'shadow'; H.t0 = now; H.idleAt = now; }
   // body state for the animation
-  H.speed += (Math.abs(H.v) / (U * 100) - H.speed) * Math.min(1, dt * 12);
+  H.speed += (Math.abs(H.v) * K() - H.speed) * Math.min(1, dt * 12);
+  H.y += (SY(H.p) - H.y) * Math.min(1, dt * 16);          // up and down the steps
   const ph0 = H.phase; H.dist += Math.abs(H.v * dt) * U; H.phase = H.dist / .95 * Math.PI * 2;
   if (Math.floor(H.phase / Math.PI) !== Math.floor(ph0 / Math.PI) && H.speed > 40) {        // a foot lands
     const fxp = WX(H.p) + H.face * .1, run = Math.min(1, H.speed / 430);
-    for (let i = 0; i < 4 + run * 8; i++) spark(fxp + (R() - .5) * .12, .02, (R() - .5) * .25, -H.face * R() * .7 * (.3 + run), .2 + R() * .5 * (.4 + run), (R() - .5) * .5, 'cyan', .3 + R() * .3, .026);
-    if (run > .45) FX.rings.push({ x: fxp, y: .015, t0: now, col: 'cyan', kind: 'step' });
+    for (let i = 0; i < 4 + run * 8; i++) spark(fxp + (R() - .5) * .12, H.y + .02, (R() - .5) * .25, -H.face * R() * .7 * (.3 + run), .2 + R() * .5 * (.4 + run), (R() - .5) * .5, 'cyan', .3 + R() * .3, .026);
+    if (run > .45) FX.rings.push({ x: fxp, y: H.y + .015, t0: now, col: 'cyan', kind: 'step' });
   }
   const closing = H.mode === 'approach' && Math.abs(target - H.p) * U < .9;
   const gw = H.mode === 'combo' || H.mode === 'shadow' || H.mode === 'knock' || closing ? 1 : 0;
@@ -843,18 +910,21 @@ function think(dt) {
   H.mood += ((H.mode === 'approach' || H.mode === 'combo' ? H.face : Math.sign(drift) * .6) - H.mood) * dt * 1.5;
   // the magnets pull: motes stream from him toward each target, more for the stronger one
   for (const m of [MAG.up, MAG.dn]) if (m.p != null && R() < (m.prob ?? .5) * .9 * dt * 60) {
-    const hx = WX(H.p), mx = m.x, k = .6 + R() * .5;
-    spark(hx + (R() - .5) * .4, 1.2 + (R() - .5) * .4, (R() - .5) * .6, (mx - hx) * .32 * k, (MAG_Y - 1.2) * .32 * k, 0, m.up ? 'up' : 'dn', 2.6, .022);
+    const hx = WX(H.p), mx = m.x, k = .6 + R() * .5, my = (m.y ?? 0) + MAG_Y;
+    spark(hx + (R() - .5) * .4, H.y + 1.2 + (R() - .5) * .4, (R() - .5) * .6, (mx - hx) * .32 * k, (my - H.y - 1.2) * .32 * k, 0, m.up ? 'up' : 'dn', 2.6, .022);
   }
 }
 function physics(dt) {
-  for (const o of objs.values()) if (o.L.k === 'stop' && o.L.fx && now - o.L.fx.t0 < 1.3) for (const sg of [-1, 1]) {   // sparks off the burning fuse
-    const fy = o.L.fx.y + sg * (now - o.L.fx.t0) * 3.2;
-    if (fy > 0 && fy < o.h && R() < .8 * dt * 60) spark(WX(o.L.p), fy, (R() - .5) * .1, (R() - .5) * .8, -.2 + R() * .6, (R() - .5) * .8, R() < .5 ? 'txt' : 'stop', .3 + R() * .3, .04);
-  }
-  for (const q of FX.sparks) { q.age += dt; q.x += q.vx * dt; q.y += q.vy * dt; q.z += q.vz * dt; if (q.size > .025) { q.vy -= 3.2 * dt; q.vx *= .985; q.vz *= .985; } if (q.y < .01) { q.y = .01; q.vy *= -.35; } }
+  for (const o of objs.values()) if (o.beams && o.L.fx && now - o.L.fx.t0 < 2) for (const b of o.beams)   // a beam that cuts out throws sparks
+    if (b.userData.cut && !b.userData.sparked && now >= b.userData.cut) { b.userData.sparked = true; const col = colOf(o.L);
+      for (let i = 0; i < 14; i++) spark(WX(o.L.p), SY(o.L.p) + b.position.y, (R() - .5) * SW, (R() - .5) * 1.4, R() * 1.2, (R() - .5) * 1.4, R() < .5 ? 'txt' : col, .3 + R() * .4, .04); }
+  for (const q of FX.sparks) { q.age += dt; q.x += q.vx * dt; q.y += q.vy * dt; q.z += q.vz * dt; if (q.size > .025) { q.vy -= 3.2 * dt; q.vx *= .985; q.vz *= .985; } const fl = SYx(q.x) + .01; if (q.y < fl && Math.abs(q.z) < SW / 2) { q.y = fl; q.vy *= -.35; } }
   for (const q of FX.shards) { q.age += dt; q.x += q.vx * dt; q.y += q.vy * dt; q.z += q.vz * dt; q.vy -= 6 * dt; q.rx += q.wx * dt; q.ry += q.wy * dt; q.rz += q.wz * dt;
-    if (q.y < .03) { q.y = .03; q.vy *= -.3; q.vx *= .6; q.vz *= .6; q.wx *= .5; q.wy *= .5; q.wz *= .5; } }
+    const fl = SYx(q.x) + .03; if (q.y < fl && Math.abs(q.z) < SW / 2) { q.y = fl; q.vy *= -.3; q.vx *= .6; q.vz *= .6; q.wx *= .5; q.wy *= .5; q.wz *= .5; } }
+  for (const q of FX.bills) { q.age += dt; q.vy -= 2.4 * dt; const dr = Math.exp(-dt * 1.6); q.vx *= dr; q.vz *= dr; q.vy *= Math.exp(-dt * .9);
+    q.x += (q.vx + Math.sin(q.age * 5 + q.rx) * .35) * dt; q.y += q.vy * dt; q.z += q.vz * dt; q.rx += q.wx * dt; q.ry += q.wy * dt; q.rz += q.wz * dt;
+    const fl = SYx(q.x) + .01; if (q.y < fl && Math.abs(q.z) < SW / 2) { q.y = fl; q.vx = q.vz = q.vy = 0; q.wx = q.wy = q.wz = 0; q.rx = -Math.PI / 2; q.ry = 0; } }
+  FX.bills = FX.bills.filter(q => q.age < q.life);
   FX.sparks = FX.sparks.filter(q => q.age < q.life); FX.shards = FX.shards.filter(q => q.age < q.life);
   FX.rings = FX.rings.filter(r => now - r.t0 < 1.8); FX.stars = FX.stars.filter(r => now - r.t0 < .45); FX.calls = FX.calls.filter(c => now - c.t0 < 2.4);
   FX.shake *= Math.exp(-dt * 5); FX.flash = Math.max(0, FX.flash - dt * 1.6); FX.ab = Math.max(0, FX.ab - dt * 2.5); FX.kick = Math.max(0, FX.kick - dt * 2.2);
@@ -879,8 +949,8 @@ addEventListener('resize', resize);
 function render3d(dt) {
   const t = now, P = live.px ?? D.price;
   // camera: follows him, closer for the punches; every so often it pulls back to show both magnets
-  const portrait = Math.max(.3, Math.min(1, aspect / 1.78)), base = nice(P * 0.0012) * 9 * portrait;
-  let tc = H.p + H.face * (H.mode === 'approach' ? 120 : 50) / (U * 100), ts = H.mode === 'combo' || H.mode === 'pose' || H.mode === 'knock' ? base * .82 : base * (1 + Math.min(.4, H.speed / 1000));
+  const portrait = Math.max(.45, Math.min(1, aspect / 1.78)), base = 11 / U * portrait;      // about 11 units wide
+  let tc = H.p + H.face * (H.mode === 'approach' ? 120 : 50) / K(), ts = H.mode === 'combo' || H.mode === 'pose' || H.mode === 'knock' ? base * .82 : base * (1 + Math.min(.4, H.speed / 1000));
   const both = MAG.up.p != null && MAG.dn.p != null;
   if (both && t > overviewAt && t < overviewAt + 6 && H.mode === 'follow' && !queue.length) { tc = (MAG.up.p + MAG.dn.p) / 2; ts = (MAG.up.p - MAG.dn.p) * 1.35; }
   else if (t >= overviewAt + 6) overviewAt = t + 45;
@@ -888,32 +958,35 @@ function render3d(dt) {
   camC += (tc - camC) * (1 - Math.exp(-dt * 2.4)); camS += (ts - camS) * (1 - Math.exp(-dt * 1.5));
   const lo = camC - camS * .33, hi = camC + camS * .33; if (H.p < lo) camC -= lo - H.p; else if (H.p > hi) camC += H.p - hi;
   const span = camS * U, dist = span / (2 * Math.tan(THREE.MathUtils.degToRad(17)) * aspect) * (1 - .05 * FX.kick);
-  const cx = WX(camC), yaw = 0, sh = FX.shake;     // straight on: the price runs left to right, thickness reads at a glance
-  camera.position.set(cx + Math.sin(yaw) * dist + (Math.sin(t * 91) + Math.sin(t * 57)) * sh * .5, .9 + dist * .07 + (Math.cos(t * 83) + Math.sin(t * 41)) * sh * .5, Math.cos(yaw) * dist);
-  camera.lookAt(cx, .95 + dist * .03, 0);
+  const cx = WX(camC), sh = FX.shake;                // straight on: the stairs climb left to right, up with the price
+  const cyT = (cx - WX(H.p)) / TREAD * RISE + H.y; camY = camY == null ? cyT : camY + (cyT - camY) * (1 - Math.exp(-dt * 3));
+  camera.position.set(cx + (Math.sin(t * 91) + Math.sin(t * 57)) * sh * .5, camY + .9 + dist * .07 + (Math.cos(t * 83) + Math.sin(t * 41)) * sh * .5, dist);
+  camera.lookAt(cx, camY + .95 + dist * .03, 0);
   scene.fog.near = dist * .7; scene.fog.far = dist * 2.6;
-  floorMat.uniforms.uFocus.value.set(cx, 0); floorMat.uniforms.uFar.value = Math.max(12, dist * 1.4);
+  placeSteps(cx - span * 1.2 - 4);
   const wide = Math.min(1, Math.max(0, (dist - 14) / 14));
   // levels: fade in, fade out, react
   for (const [k, o] of objs) {
     o.fade = Math.max(0, Math.min(1, o.fade + (o.gone ? -dt * 1.6 : dt * 1.4)));
     if (o.gone && o.fade <= 0) { scene.remove(o.group); dispose(o.group); objs.delete(k); continue; }
     const L = o.L, f = EASE.out(o.fade), age = L.fx ? t - L.fx.t0 : 9;
-    o.group.position.x = WX(L.p); o.group.scale.y = .02 + .98 * f;
-    const tk = THICK(L) / o.th0; if (o.pts) o.line.scale.set(tk, 1, tk); else o.panel.scale.z = tk;   // a size that changed at a refresh
-    if (isWall(L)) {
+    o.group.position.set(WX(L.p), SY(L.p), 0); o.group.scale.y = .02 + .98 * f;
+    const tk = THICK(L) / o.th0; if (isWall(L)) o.panel.scale.x = tk; else if (o.panel) o.panel.scale.z = tk;   // a size that changed at a refresh
+    const hot = L.lastFx != null && t - L.lastFx < .5 ? 1 - (t - L.lastFx) / .5 : 0, gone = L.state !== 'live';
+    if (isWall(L)) {                                // bills: gone once broken; banded when it stood for hours, flickering when fresh, cracked when eaten
       const u = o.mat.uniforms; u.uT.value = t; if (L.rip) { u.uRipT.value = L.rip.t0; u.uRipY.value = L.rip.y; u.uRipA.value = L.rip.a; }
-      if (L.state === 'broken') { u.uA.value = (age < .3 ? 1 + 3 * (1 - age / .3) : .06) * f; u.uEdge.value = (age < .3 ? 1 - age / .3 : .03) * f; o.glow.material.opacity = .03 * f; }
-      else { const hot = L.lastFx != null && t - L.lastFx < .5 ? 1 + (1 - (t - L.lastFx) / .5) * 2 : 1; u.uA.value = (.8 + L.rel * .5) * hot * f; u.uEdge.value = hot * f; o.glow.material.opacity = (.05 + L.rel * .06) * f; }
-      // stood 5 or 6 of the last 6 hours: steel; new this hour or the last: it flickers; being eaten: cracks
-      const ps = L.ps; u.uSteel.value = ps && ps[0] >= ps[1] - 1 ? 1 : 0; u.uFresh.value = ps && ps[0] <= 1 && L.state === 'live' ? 1 : 0;
+      o.panel.visible = !gone; u.uHot.value = hot; u.uA.value = f; o.glow.material.opacity = (gone ? .02 : .06 + L.rel * .06) * f;
+      const ps = L.ps; u.uSteel.value = ps && ps[0] >= ps[1] - 1 ? 1 : 0; u.uFresh.value = ps && ps[0] <= 1 && !gone ? 1 : 0;
       if (L.crack) L.crack = Math.max(0, L.crack - dt * .004);
       u.uCrack.value += ((L.crack || 0) - u.uCrack.value) * Math.min(1, dt * 3); u.uCrackY.value = PUNCH_Y / o.h;
-    } else {
-      const u = o.mat.uniforms; u.uT.value = t; u.uFade.value = f;
-      u.uT0.value = Math.max(L.fx?.t0 ?? -9, L.real ?? -9); u.uY.value = L.fx?.y ?? PUNCH_Y;      // a real liquidation there sends a shock through it too
-      u.uSpent.value = L.state === 'live' ? 0 : L.fx ? Math.min(1, age / 1.4) : 1;
-      o.line.material.opacity = (L.state === 'live' ? (L.k === 'stop' ? .18 : .35) : .06) * f;
+    } else if (L.k === 'stop') {                    // lasers: they hum; once hit they cut out one by one
+      for (const b of o.beams) { const cut = b.userData.cut && t >= b.userData.cut;
+        b.material.opacity = (cut ? Math.max(.03, .9 - (t - b.userData.cut) * 3) : gone ? .03 : (.75 + .25 * Math.sin(t * 40 + b.position.y * 9)) * (1 + hot)) * f; }
+      o.haze.material.opacity = (gone ? .01 : .05 + .05 * hot) * f;
+    } else {                                        // purple glass: shattered once hit; a real liquidation there makes it ring
+      const u = o.mat.uniforms; u.uT.value = t; if (L.rip) { u.uRipT.value = L.rip.t0; u.uRipY.value = L.rip.y; u.uRipA.value = L.rip.a; }
+      if (gone) { u.uA.value = (age < .3 ? 1 + 3 * (1 - age / .3) : .05) * f; u.uEdge.value = (age < .3 ? 1 - age / .3 : .03) * f; o.glow.material.opacity = .02 * f; }
+      else { u.uA.value = (.8 + L.rel * .5) * (1 + hot * 2) * f; u.uEdge.value = (1 + hot * 2) * f; o.glow.material.opacity = (.06 + L.rel * .06) * f; }
     }
   }
   // the labels in the levels: the most important first, and none on top of another one
@@ -925,7 +998,7 @@ function render3d(dt) {
   }
   cand.sort((a, b) => b.w - a.w);
   for (const c of cand) {
-    c.sp.scale.set(.02 + .98 * c.f, 1, 1); c.sp.position.set(WX(c.p), c.sp.userData.y * (.02 + .98 * c.f), c.sp.userData.z);
+    c.sp.scale.set(.02 + .98 * c.f, 1, 1); c.sp.position.set(WX(c.p), SY(c.p) + c.sp.userData.y * (.02 + .98 * c.f), c.sp.userData.z);
     tmpV.copy(c.sp.position).project(camera); const wpx = c.sp.geometry.parameters.height / span * W * 1.1, sx = (tmpV.x * .5 + .5) * W - wpx / 2;
     const free = !shown.some(o => sx < o[1] + 22 && sx + wpx > o[0] - 22);
     if (free) c.sp.material.opacity += (c.a - c.sp.material.opacity) * Math.min(1, dt * 8); else c.sp.material.opacity = 0;   // a label in the way of a more important one goes at once
@@ -936,7 +1009,8 @@ function render3d(dt) {
     m.shown += ((m.p != null ? 1 : 0) - m.shown) * Math.min(1, dt * 2); m.root.visible = m.shown > .01; if (m.p == null && !m.root.visible) continue;
     if (m.p != null) m.x += (WX(m.p) - m.x) * Math.min(1, dt * 2);
     const hit = t - m.hit < 30, age = t - m.hit, pulse = .5 + .5 * Math.sin(t * (2 + m.prob * 3)), closeness = m.p == null ? 0 : Math.max(0, 1 - Math.abs(H.p - m.p) / (camS * .9));
-    m.root.position.x = m.x; m.root.scale.setScalar(.01 + .99 * m.shown);
+    if (m.p != null) m.y = m.y == null ? SY(m.p) : m.y + (SY(m.p) - m.y) * Math.min(1, dt * 2);
+    m.root.position.set(m.x, m.y ?? 0, 0); m.root.scale.setScalar(.01 + .99 * m.shown);
     m.grp.position.y = MAG_Y + Math.sin(t * 1.3 + (m.up ? 0 : 2)) * .04; m.grp.rotation.y = -.25 + Math.sin(t * .5 + (m.up ? 0 : 1)) * .1;
     m.paint.emissiveIntensity = hit ? .5 + .2 * pulse : .1 + m.prob * .25 * pulse + closeness * .2;
     m.beamMat.uniforms.uT.value = t; m.beamMat.uniforms.uA.value = hit ? (age < 1.2 ? 1.2 - age * .5 : .4) : .05 + m.prob * .15 + closeness * .25;
@@ -948,7 +1022,7 @@ function render3d(dt) {
   const lock = t - H.lockAt < 1.2 ? 1 - (t - H.lockAt) / 1.2 : 0;
   const run = Math.min(1, H.speed / 430), walk = Math.min(1, H.speed / 140), gd = H.guard, ph = H.phase;
   const bob = Math.abs(Math.sin(ph)) * .028 * walk * (1 + run) + (1 - walk) * Math.sin(t * 2.2) * .005;
-  hero.position.set(WX(H.p), .585 * HS + bob, 0); hero.rotation.set(0, H.yaw, 0);
+  hero.position.set(WX(H.p), H.y + .585 * HS + bob, 0); hero.rotation.set(0, H.yaw, 0);
   const u = H.mode === 'combo' || H.mode === 'shadow' ? (t - H.t0) * (queue.length > 2 ? 1.6 : 1) : -1;
   const jab = u < .03 ? 0 : u < JAB ? EASE.out((u - .03) / (JAB - .03)) : u < .28 ? 1 - EASE.io((u - JAB) / (.28 - JAB)) : 0;
   const cross = u < .25 ? 0 : u < CROSS ? EASE.out((u - .25) / (CROSS - .25)) : u < .47 ? 1 : u < .68 ? 1 - EASE.io((u - .47) / .21) : 0;
@@ -980,14 +1054,19 @@ function render3d(dt) {
     dummy.position.set(q.x, q.y, q.z); dummy.rotation.set(q.rx, q.ry, q.rz); dummy.scale.setScalar(q.s); dummy.updateMatrix(); shardMesh.setMatrixAt(m, dummy.matrix);
     const c = PCOL[q.col]; shardMesh.instanceColor.setXYZ(m, c.r * (.5 + a * 1.2), c.g * (.5 + a * 1.2), c.b * (.5 + a * 1.2)); m++; }
   shardMesh.count = m; shardMesh.instanceMatrix.needsUpdate = true; shardMesh.instanceColor.needsUpdate = true;
+  let nb = 0;
+  for (const q of FX.bills) { if (nb >= BMAX) break; const a = Math.min(1, (q.life - q.age) / .6);
+    dummy.position.set(q.x, q.y, q.z); dummy.rotation.set(q.rx, q.ry, q.rz); dummy.scale.setScalar(a); dummy.updateMatrix(); billMesh.setMatrixAt(nb, dummy.matrix);
+    const c = q.col === 'up' ? [.5, 1, .62] : q.col === 'dn' ? [1, .5, .56] : [.9, .9, .9]; billMesh.instanceColor.setXYZ(nb, c[0], c[1], c[2]); nb++; }
+  billMesh.count = nb; billMesh.instanceMatrix.needsUpdate = true; billMesh.instanceColor.needsUpdate = true;
   ringPool.forEach(r => r.visible = false);
   FX.rings.slice(-ringPool.length).forEach((r, i) => {
     const age = t - r.t0; if (age < 0) return; const mesh = ringPool[i];
     const dur = r.kind === 'big' ? 1.3 : r.kind === 'floor' ? 1.6 : r.kind === 'step' ? .5 : 1.0, k = Math.min(1, age / dur), e = EASE.out(k);
     mesh.visible = true; mesh.material.color.copy(PCOL[r.col]).multiplyScalar(2.2 * (1 - k) * (r.kind === 'step' ? .35 : 1));
     if (r.kind === 'wall') { mesh.position.set(r.x, r.y, 0); mesh.rotation.set(0, Math.PI / 2, 0); mesh.scale.setScalar(.1 + e * 1.4); }
-    else if (r.kind === 'step') { mesh.position.set(r.x, .015, 0); mesh.rotation.set(-Math.PI / 2, 0, 0); mesh.scale.setScalar(.08 + e * .45); }
-    else if (r.kind === 'floor') { mesh.position.set(r.x, .015, 0); mesh.rotation.set(-Math.PI / 2, 0, 0); mesh.scale.setScalar(.2 + e * 5); }
+    else if (r.kind === 'step') { mesh.position.set(r.x, r.y, 0); mesh.rotation.set(-Math.PI / 2, 0, 0); mesh.scale.setScalar(.08 + e * .45); }
+    else if (r.kind === 'floor') { mesh.position.set(r.x, r.y, 0); mesh.rotation.set(-Math.PI / 2, 0, 0); mesh.scale.setScalar(.2 + e * 5); }
     else { mesh.position.set(r.x, r.y, .1); mesh.quaternion.copy(camera.quaternion); mesh.scale.setScalar(.2 + e * 3.2); }
   });
   starPool.forEach(s => s.visible = false);
@@ -999,7 +1078,7 @@ function render3d(dt) {
 }
 
 /* HUD: the ticker, the two targets, the price bar (projected from the scene so it moves with it), what just happened */
-const project = p => { tmpV.set(WX(p), PUNCH_Y, 0).project(camera); return (tmpV.x * .5 + .5) * W; };
+const project = p => { tmpV.set(WX(p), SY(p) + PUNCH_Y, 0).project(camera); return (tmpV.x * .5 + .5) * W; };
 function txt(s, x, y, font, color, align = 'left') { hg.font = font; hg.fillStyle = color; hg.textAlign = align; hg.textBaseline = 'alphabetic'; hg.fillText(s, x, y); }
 function drawHud() {
   const k = Math.max(W < 600 ? .8 : .62, Math.min(W / 960, Hh / 540)), LW = W / k, LH = Hh / k, t = now, P = live.px ?? D.price;   // a phone: larger, so the small print stays readable
@@ -1041,7 +1120,7 @@ function drawHud() {
     if (big) txt(fmtP(q), xx, ry - 10, `500 8.5px ${FM}`, 'rgba(233,241,238,.45)', 'center');
   }
   for (const o of objs.values()) {
-    const L = o.L, xx = Pk(L.p), c = CSS[kindCol(L.k)], liveL = L.state === 'live', age = L.lastFx != null ? t - L.lastFx : 9;
+    const L = o.L, xx = Pk(L.p), c = CSS[colOf(L)], liveL = L.state === 'live', age = L.lastFx != null ? t - L.lastFx : 9;
     hg.fillStyle = rgba(c, (liveL ? .95 : .25) * o.fade); hg.fillRect(xx - 1, ry + 1, 2, liveL ? 6 : 3);
     if (age < .7) { hg.fillStyle = rgba(c, .5 * (1 - age / .7)); hg.fillRect(xx - 10, ry - 18, 20, 26); }
   }
@@ -1051,6 +1130,13 @@ function drawHud() {
   hg.fillStyle = moodC; hg.fillRect(px - .5, ry - 16, 1, 26);
   hg.font = `600 9.5px ${FM}`; const lw = hg.measureText(fmtP(P)).width + 12;
   hg.beginPath(); hg.roundRect(px - lw / 2, ry + 10, lw, 15, 2); hg.fill(); txt(fmtP(P), px, ry + 21, `600 9.5px ${FM}`, '#05080a', 'center');
+  // the price of every 5th or 10th step, on the side of the stairs
+  const every = STEP * (camS / STEP > 160 ? 50 : camS / STEP > 50 ? 10 : 5);
+  for (let q = Math.ceil((camC - camS * .7) / every) * every; q <= camC + camS * .7; q += every) {
+    tmpV.set(WX(q) + TREAD * .5, SY(q) - .1, SW / 2 + .02).project(camera); if (tmpV.z > 1) continue;
+    const sx = (tmpV.x * .5 + .5) * W / k, sy = (-tmpV.y * .5 + .5) * Hh / k; if (sy < ry + 20 || sy > foot - 50) continue;
+    txt(fmtP(q), sx, sy, `500 8.5px ${FM}`, Math.round(q / STEP) % 10 === 0 ? 'rgba(143,214,255,.6)' : 'rgba(143,214,255,.32)', 'center');
+  }
   // what happened lately, with the time
   const nLog = LH > 520 ? 8 : 4, ly = ry + 50, wide2 = LW > 760;
   if (LOG.length) { const n = Math.min(nLog, LOG.length), lwid = wide2 ? Math.min(LW * .55, 470) : 180;
@@ -1109,7 +1195,7 @@ function frame(ts) {
 })();
 // a hidden tab: the stream and the frames rest; back again, the hero catches up with the price
 document.addEventListener('visibilitychange', () => { last = 0; acc = 0; Q.n = Q.t = 0; Q.wait = 2; });
-window.HELD = { get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, H, queue, onPrice, live, realLiq, objs, onLevels, LOG, Q };
+window.HELD = { overview() { overviewAt = now - .01; }, get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, H, queue, onPrice, live, realLiq, objs, onLevels, LOG, Q };
 })();
 </script>
 </body>

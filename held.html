@@ -315,11 +315,12 @@ const live = (() => {
   async function pollOnce() { try { apply(+(await getJSON(`https://www.okx.com/api/v5/market/ticker?instId=${A.okx}`)).data[0].last); } catch (e) {} }
   function open() {
     if (ws) return; let me; try { me = ws = new WebSocket('wss://ws.okx.com:8443/ws/v5/public'); } catch (e) { ws = null; return; }
-    me.onopen = () => { retry = 0; clearInterval(poll); poll = 0; me.send(JSON.stringify({ op: 'subscribe', args: [{ channel: 'tickers', instId: A.okx }, { channel: 'liquidation-orders', instType: 'SWAP' }] }));
+    me.onopen = () => { retry = 0; clearInterval(poll); poll = 0; me.send(JSON.stringify({ op: 'subscribe', args: [{ channel: 'tickers', instId: A.okx }, { channel: 'liquidation-orders', instType: 'SWAP' }, { channel: 'trades', instId: A.okx }] }));
       ping = setInterval(() => me.readyState === 1 && me.send('ping'), 25e3); };
     me.onmessage = e => { if (e.data === 'pong') return; try { const m = JSON.parse(e.data); if (!m.data?.[0]) return;
       if (m.arg?.channel === 'liquidation-orders') { for (const d of m.data) if (d.instId === A.okx) for (const x of d.details || [])
         realLiq('OKX', x.posSide === 'long' || (x.posSide !== 'short' && x.side === 'sell'), +x.bkPx, +x.sz * A.okxCt * +x.bkPx); }
+      else if (m.arg?.channel === 'trades') { for (const d of m.data) TAKER.add(d.side, +d.sz * A.okxCt * +d.px); apply(+m.data[m.data.length - 1].px); }
       else apply(+m.data[0].last); } catch (er) {} };
     me.onclose = () => { clearInterval(ping); if (ws !== me) return; ws = null; if (!poll) poll = setInterval(pollOnce, 3000); setTimeout(open, Math.min(30e3, 1000 * 2 ** retry++)); };
     me.onerror = () => me.close();
@@ -492,39 +493,8 @@ function frontLabel(lines, color, len) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(len, len * c.height / c.width), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false, fog: false }));
   m.rotation.z = Math.PI / 2; return m;            // turned a quarter: the text reads from the floor up
 }
-const dispose = o => o.traverse(n => { n.geometry?.dispose(); if (n.material) { n.material.map?.dispose(); n.material.dispose(); } });
+const dispose = o => o.traverse(n => { n.geometry?.dispose(); for (const m of [n.material].flat()) if (m) { m.map?.dispose(); m.dispose(); } });
 
-// glass walls: a panel with a glowing frame, rippling where a fist lands
-const wallVS = `uniform float uT, uRipT, uRipY, uH, uRipA; varying vec2 vUv; varying float vWave;
-  void main(){ vUv = uv; vec3 p = position; float age = uT - uRipT; vWave = 0.;
-    if (age > 0. && age < 2.) { float d = length(vec2(p.x, p.y + uH * .5 - uRipY)); float w = sin(d * 9. - age * 18.) * exp(-age * 2.4) * exp(-d * .9);
-      p.z += w * .16 * uRipA; vWave = max(w, 0.) * uRipA; }
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.); }`;
-const wallFS = `uniform vec3 uCol; uniform float uA, uEdge, uT, uSteel, uFresh, uCrack, uCrackY; varying vec2 vUv; varying float vWave;
-  void main(){ vec2 e = abs(vUv * 2. - 1.); float fw = mix(.965, .935, uSteel);
-    float frame = max(smoothstep(fw, 1., e.x), smoothstep(fw + .02, 1., e.y)) * (1. + uSteel * .25);
-    float top = smoothstep(.97, 1., vUv.y) * 1.5; float scan = .5 + .5 * sin(vUv.y * 160. - uT * 3.);
-    float base = (.05 + .07 * (1. - vUv.y)) * (.85 + .15 * scan) * (1. + uSteel * .12);
-    float fl = 1. - uFresh * .55 * step(.55, fract(sin(floor(uT * 13.) * 91.7 + uCrackY * 7.) * 437.58));
-    vec2 d = (vUv - vec2(.5, uCrackY)) * vec2(1., 1.6); float r = length(d), an = atan(d.y, d.x);
-    float rays = smoothstep(.93, 1., abs(sin(an * 5.5 + sin(an * 13.) * .6))) * step(r, uCrack * .75) * smoothstep(0., .04, r);
-    float rings = smoothstep(.015, 0., abs(r - uCrack * .28)) * step(.3, uCrack) + smoothstep(.015, 0., abs(r - uCrack * .5)) * step(.6, uCrack);
-    float crack = clamp(rays + rings * .7, 0., 1.) * min(1., uCrack * 2.);
-    gl_FragColor = vec4((uCol * (base * uA + frame * uEdge * 1.6 + top * uEdge + vWave * 2.2 * uA) + vec3(.9, .95, 1.) * crack * .7 * uA) * fl, 1.); }`;
-const stopVS = `uniform float uT, uT0, uY, uSpent, uPx, uSize; varying float vB;
-  void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.); float age = uT - uT0, d = abs(position.y - uY), front = age * 3.2;
-    float lit = (age > 0. && d < front) ? exp(-(front - d) * 1.4) * 3. + .4 * exp(-age) : 0.;
-    vB = mix(.55, .12, uSpent) + lit; gl_PointSize = uSize * uPx / -mv.z * (1. + min(lit, 2.) * .6); gl_Position = projectionMatrix * mv; }`;
-const stopFS = `uniform vec3 uCol; uniform float uFade; varying float vB; void main(){ float r = length(gl_PointCoord - .5); float a = smoothstep(.5, 0., r); float core = smoothstep(.18, 0., r);
-  gl_FragColor = vec4((uCol * a + vec3(core) * min(vB, 1.5) * .6) * vB * uFade, 1.); }`;
-const liqFS = `uniform vec3 uCol; uniform float uT, uT0, uY, uSpent, uS, uH, uFade; varying vec2 vUv;
-  void main(){ float y = vUv.y * uH; float fade = pow(1. - vUv.y, 1.6) * smoothstep(0., .12, vUv.x) * smoothstep(1., .88, vUv.x);
-    float strands = .5 + .5 * sin(vUv.x * 60. + sin(vUv.y * 6. + uT * 1.4) * 2.); float flow = .6 + .4 * sin(vUv.y * 14. - uT * 3. + vUv.x * 9.);
-    float a = (.08 + .14 * uS) * fade * (.6 + .4 * strands * flow) * mix(1., .25, uSpent);
-    float age = uT - uT0, shock = 0.;
-    if (age > 0. && age < 1.2) { float f = age * 4.; float d = abs(abs(y - uY) - f); shock = exp(-d * d * 18.) * (1. - age / 1.2) * 1.3 + exp(-age * 6.) * .35 * fade; }
-    gl_FragColor = vec4(uCol * (a + shock * fade * .9 + shock * .15) * uFade, 1.); }`;
-// a banknote, in grey: the walls tint it green or red
 const billTex = (() => {
   const c = document.createElement('canvas'); c.width = 512; c.height = 218; const x = c.getContext('2d');
   x.fillStyle = '#dfe2da'; x.fillRect(0, 0, 512, 218);
@@ -551,27 +521,39 @@ function buildLevel(L) {
     o.pole = new THREE.Mesh(new THREE.CylinderGeometry(.018, .018, h + .15, 8), dark); o.pole.position.set(-.06, (h + .15) / 2, SW / 2 + .05); o.pole.castShadow = true; o.group.add(o.pole);
     o.glow = new THREE.Mesh(new THREE.PlaneGeometry(th + .5, SW), new THREE.MeshBasicMaterial({ color: cl, opacity: .1, ...addBlend }));
     o.glow.rotation.x = -Math.PI / 2; o.glow.position.y = .012; o.group.add(o.glow); o.h = h;
-  } else if (L.k === 'stop') {                      // a laser wall between two posts: the higher the score, the more and thicker beams
-    const h = 2.1, nb = 3 + Math.round(Math.min(1, L.rel) * 7), bt = .012 + .04 * Math.min(1, L.rel);
-    o.beams = [];
+  } else if (L.k === 'stop') {                      // a minefield across the stair, a tripwire in front: the higher the score, the more mines
+    const nm = 3 + Math.round(Math.min(1, L.rel) * 7), h = 1.25;
+    const metal = new THREE.MeshStandardMaterial({ color: 0x3b4034, metalness: .7, roughness: .45 }), led = new THREE.MeshBasicMaterial({ color: cl.clone().multiplyScalar(2.6), toneMapped: false });
+    o.mines = [];
+    for (let i = 0; i < nm; i++) {
+      const m = new THREE.Group(); m.position.set(i % 2 ? .07 : -.07, 0, -SW / 2 + .22 + i * (SW - .44) / Math.max(1, nm - 1));
+      const disc = new THREE.Mesh(new THREE.CylinderGeometry(.095, .105, .05, 20), metal); disc.position.y = .028; disc.castShadow = true;
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(.032, .036, .025, 12), dark); cap.position.y = .065;
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(.014, 8, 6), led); lamp.position.set(.05, .058, 0);
+      m.add(disc, cap, lamp); o.group.add(m); o.mines.push(m);
+    }
+    o.led = led;
+    o.wire = new THREE.Mesh(new THREE.BoxGeometry(.008, .008, SW), new THREE.MeshBasicMaterial({ color: cl.clone().multiplyScalar(2), opacity: .8, ...addBlend }));
+    o.wire.position.set(-.2, .14, 0); o.group.add(o.wire);
+    for (const z of [-SW / 2, SW / 2]) { const st = new THREE.Mesh(new THREE.CylinderGeometry(.014, .02, .22, 8), dark); st.position.set(-.2, .11, z); o.group.add(st); }
+    o.glow = new THREE.Mesh(new THREE.PlaneGeometry(.6, SW), new THREE.MeshBasicMaterial({ color: cl, opacity: .08, ...addBlend }));
+    o.glow.rotation.x = -Math.PI / 2; o.glow.position.y = .012; o.group.add(o.glow); o.h = h;
+  } else {                                          // purple barrels of explosive, stacked: where liquidations would set in; the bigger, the more barrels
+    const nb = 4 + Math.round(Math.min(1, L.rel) * 8), h = 1.4, low = Math.ceil(nb * .62);
+    const c = document.createElement('canvas'); c.width = 128; c.height = 64; const x = c.getContext('2d');
+    x.fillStyle = '#5b33b8'; x.fillRect(0, 0, 128, 64); x.fillStyle = '#3a1f7a'; x.fillRect(0, 8, 128, 5); x.fillRect(0, 51, 128, 5);
+    x.fillStyle = '#e8d24a'; for (let i = -2; i < 16; i++) { x.beginPath(); x.moveTo(i * 10, 24); x.lineTo(i * 10 + 6, 24); x.lineTo(i * 10 + 12, 40); x.lineTo(i * 10 + 6, 40); x.fill(); }
+    const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
+    const bm = new THREE.MeshStandardMaterial({ map: tex, metalness: .55, roughness: .38, emissive: 0x6c3cff, emissiveIntensity: .15 });
+    const top = new THREE.MeshBasicMaterial({ color: cl.clone().multiplyScalar(1.6), toneMapped: false });
+    o.barrels = []; o.bmat = bm;
     for (let i = 0; i < nb; i++) {
-      const b = new THREE.Mesh(new THREE.BoxGeometry(bt, bt, SW), new THREE.MeshBasicMaterial({ color: cl.clone().multiplyScalar(2.4), opacity: .9, ...addBlend }));
-      b.position.y = .18 + i * (h - .3) / (nb - 1); o.group.add(b); o.beams.push(b);
+      const up = i >= low, k = up ? i - low : i, n = up ? nb - low : low, sp = (SW - .3) / Math.max(1, low - 1);
+      const b = new THREE.Group(); const z = up ? -SW / 2 + .15 + (k + .5) * sp * (low - 1) / Math.max(1, n) : -SW / 2 + .15 + k * sp;
+      b.position.set((hash(L.p + i) - .5) * .08, up ? .39 : .13, Math.min(SW / 2 - .15, z)); b.userData.home = b.position.clone();
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(.105, .105, .26, 20), [bm, top, top]); body.castShadow = true; b.add(body);
+      o.group.add(b); o.barrels.push(b);
     }
-    o.haze = new THREE.Mesh(new THREE.PlaneGeometry(SW, h), new THREE.MeshBasicMaterial({ color: cl, opacity: .06, side: THREE.DoubleSide, ...addBlend }));
-    o.haze.rotation.y = Math.PI / 2; o.haze.position.y = h / 2; o.group.add(o.haze);
-    for (const z of [-SW / 2, SW / 2]) {
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(.06, .07, h + .1, 16), dark); post.position.set(0, (h + .1) / 2, z); o.group.add(post);
-      const strip = new THREE.Mesh(new THREE.BoxGeometry(.03, h - .2, .03), new THREE.MeshBasicMaterial({ color: cl.clone().multiplyScalar(1.6), toneMapped: false }));
-      strip.position.set(0, h / 2, z - Math.sign(z) * .06); o.group.add(strip);
-    }
-    o.line = o.haze; o.h = h;
-  } else {                                          // purple glass: where liquidations would set in
-    const h = 2.0;
-    o.mat = new THREE.ShaderMaterial({ vertexShader: wallVS, fragmentShader: wallFS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-      uniforms: { uCol: { value: cl }, uA: { value: 1 }, uEdge: { value: 1 }, uT: { value: 0 }, uRipT: { value: -9 }, uRipY: { value: 0 }, uRipA: { value: 1 }, uH: { value: h },
-        uSteel: { value: 0 }, uFresh: { value: 0 }, uCrack: { value: 0 }, uCrackY: { value: .5 } } });
-    o.panel = new THREE.Mesh(new THREE.BoxGeometry(SW, h, th, 26, 40, 1), o.mat); o.panel.rotation.y = Math.PI / 2; o.panel.position.y = h / 2; o.group.add(o.panel);
     o.glow = new THREE.Mesh(new THREE.PlaneGeometry(th + .5, SW), new THREE.MeshBasicMaterial({ color: cl, opacity: .1, ...addBlend }));
     o.glow.rotation.x = -Math.PI / 2; o.glow.position.y = .012; o.group.add(o.glow); o.h = h;
   }
@@ -594,16 +576,24 @@ const SOL = (() => {
     pack: mk(new THREE.BoxGeometry(.06, .11, .09), uni, true),
     gun: mk(new THREE.BoxGeometry(.24, .03, .03), new THREE.MeshStandardMaterial({ color: 0x1c1f22, roughness: .45, metalness: .7 })),
     shield: mk(new THREE.BoxGeometry(.02, .3, .2), new THREE.MeshStandardMaterial({ color: 0x9aa4aa, roughness: .3, metalness: .9, envMapIntensity: .8 })),
+    cap: mk(new THREE.CylinderGeometry(.06, .055, .05, 16), uni, true), brim: mk(new THREE.BoxGeometry(.06, .008, .09), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: .4 })),
+    star: mk(new THREE.OctahedronGeometry(.014), new THREE.MeshStandardMaterial({ color: 0xffd34d, metalness: 1, roughness: .2, emissive: 0x7a5a00, emissiveIntensity: .6 })),
+    mega: mk(new THREE.CylinderGeometry(.045, .016, .13, 14, 1, true), new THREE.MeshStandardMaterial({ color: 0xe8e2d0, roughness: .4, side: THREE.DoubleSide })),
+    fpole: mk(new THREE.CylinderGeometry(.005, .005, .36, 6), new THREE.MeshStandardMaterial({ color: 0x8a6a40, roughness: .6 })),
+    fcloth: mk(new THREE.PlaneGeometry(.17, .11), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .8, side: THREE.DoubleSide, emissive: 0x666666, emissiveIntensity: .4 })),
   };
   // the rig: pivots for the legs and the rifle, each part where it sits on a soldier facing +x
   const root = new THREE.Object3D(), node = {}, at = (k, parent, x, y, z) => { const n = new THREE.Object3D(); n.position.set(x, y, z); parent.add(n); node[k] = n; return n; };
   for (const [k, sz] of [['legL', -1], ['legR', 1]]) { const hip = at(k + 'P', root, 0, .19, sz * .035); at(k, hip, 0, -.095, 0); }
   at('torso', root, 0, .3, 0); at('pack', root, -.07, .31, 0); at('head', root, .005, .45, 0); at('helmet', root, 0, .458, 0).scale.set(1, .8, 1);
   at('gun', at('gunP', root, .03, .33, .045), .09, 0, 0); at('shield', root, .1, .25, 0);
+  at('cap', root, 0, .49, 0); at('brim', root, .045, .475, 0); at('star', root, .058, .495, 0); at('mega', root, .1, .37, .05).rotation.z = -Math.PI / 2;
+  const fp = at('fpoleP', root, .04, .3, .07); at('fpole', fp, 0, .18, 0); at('fcloth', fp, .09, .3, 0);
   return { P, root, node };
 })();
 const SOLC = { bid: [0x3fae5c, 0x2a4d33], ask: [0xd8434a, 0x5a2326] };        // uniform, helmet and trousers
-const solWant = L => L.state !== 'live' ? 0 : Math.round(6 + 30 * Math.min(1, L.rel));
+const LITE = () => aspect < 1 || Q.i >= 2;          // a phone or a slow machine: smaller armies, fewer parts
+const solWant = L => L.state !== 'live' ? 0 : Math.round((6 + 30 * Math.min(1, L.rel)) * (LITE() ? .6 : 1));
 const BUL = [], BULN = 260;
 const bulMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(.1, .014, .014), new THREE.MeshBasicMaterial({ color: new THREE.Color(1, .82, .4).multiplyScalar(2.2), ...addBlend }), BULN);
 bulMesh.frustumCulled = false; bulMesh.count = 0; scene.add(bulMesh);
@@ -612,11 +602,17 @@ let shotSnd = 0;
 // one army, each frame: men march in to fill the ranks, close up when some are gone, aim at him when he comes, shoot
 function squad(o, dt, t, f) {
   const L = o.L, gx = o.group.position.x, hx = WX(H.p), side = Math.sign(hx - gx) || 1, live = L.state === 'live' && !o.gone;
-  const want = solWant(L), sq = o.sq, up = sq.filter(s => s.st === 'stand' || s.st === 'drop');
+  const want = solWant(L), sq = o.sq, up = sq.filter(s => !s.gen && (s.st === 'stand' || s.st === 'drop'));
+  // the biggest army in view has a general, behind the ranks with a megaphone
+  const gen = sq.find(s => s.gen && s.st === 'stand');
+  if (live && o.isBig && !gen && t - o.born > 1) sq.push({ gen: true, st: 'stand', x: gx - side * .6, y: SY(L.p), z: SW / 2 - .04, vx: 0, vy: 0, vz: 0, rx: 0, rz: 0, yaw: 0, ph: 0, next: 1e9, seed: .5, stag: -9, t0: t });
+  if (gen && (!o.isBig || !live)) { gen.st = 'flee'; gen.t0 = t; gen.vz = 1.1; }
+  // a very big wall brings a tank
+  if (live && L.s >= 1e8 && !o.tank) o.tank = buildTank(o, side);
   // reinforcements: the first ones drop from the sky, later ones march in from the side
   if (live && up.length < (t - o.born < 1.5 ? want : want - 1) && t > o.spawnAt) {
     const first = t - o.born < 1.5 || !up.length, n = first ? want - up.length : 1;
-    for (let i = 0; i < n; i++) { const z = first ? 0 : (R() < .5 ? -1 : 1) * (SW / 2 + .7);
+    for (let i = 0; i < n; i++) { const z = first ? 0 : (R() < .5 ? -1 : 1) * (SW / 2 - .04);
       sq.push({ st: first ? 'drop' : 'stand', x: gx + (R() - .5) * .3, y: SY(L.p) + (first ? 2 + R() * 2.5 : 0), z: first ? (R() - .5) * SW * .9 : z, vx: 0, vy: 0, vz: 0,
         rx: 0, rz: 0, yaw: side > 0 ? 0 : Math.PI, ph: R() * 6, next: t + 1 + R() * 2, seed: R(), stag: -9, t0: t }); }
     o.spawnAt = t + (first ? 0 : .3);
@@ -636,18 +632,68 @@ function squad(o, dt, t, f) {
     s.aim += ((aim ? 1 : 0) - (s.aim || 0)) * Math.min(1, dt * 5);
     const yawT = aim ? Math.atan2(s.z, dh) : (side > 0 ? 0 : Math.PI) + Math.sin(t * .7 + s.seed * 20) * (fresh ? .5 : .2);
     s.yaw += Math.atan2(Math.sin(yawT - s.yaw), Math.cos(yawT - s.yaw)) * Math.min(1, dt * 6);
-    if (aim && Math.abs(dh) < fireR && s.walk < .3 && t > s.next) { s.next = t + (.8 + R() * 1.9) * (1 + Math.abs(dh) / 2.5); fire(s, (L.k === 'bid' ? 'up' : 'dn')); }
+    const flag = t - (s.flagT ?? -9) < 2.5;
+    if (aim && !flag && Math.abs(dh) < fireR && s.walk < .3 && t > s.next) { s.next = t + (.8 + R() * 1.9) * (1 + Math.abs(dh) / 2.5) / fury(L.k); fire(s, (L.k === 'bid' ? 'up' : 'dn')); }
   });
+  if (gen) { const tx = gx - side * (ranks * .075 + .28), dx = tx - gen.x, dz = -gen.z, d = Math.hypot(dx, dz), v = Math.min(d, dt * .9);
+    if (d > .005) { gen.x += dx / d * v; gen.z += dz / d * v; gen.ph += v * 26; gen.walk = Math.min(1, d * 8); } else gen.walk = 0;
+    gen.y += (SYx(gen.x) - gen.y) * Math.min(1, dt * 14); gen.aim = live && Math.abs(hx - gen.x) < aimR ? 1 : 0;
+    const yawT = Math.atan2(gen.z, hx - gen.x); gen.yaw += Math.atan2(Math.sin(yawT - gen.yaw), Math.cos(yawT - gen.yaw)) * Math.min(1, dt * 4); }
+  if (o.tank) tankThink(o, dt, t, side, live);
 }
+// a tank: hull, tracks, a turret that turns to him and a barrel that fires a shell every few seconds
+function buildTank(o, side) {
+  const c = SOLC[o.L.k], body = new THREE.MeshStandardMaterial({ color: new THREE.Color(c[1]).convertSRGBToLinear().multiplyScalar(1.3), roughness: .6, metalness: .3 });
+  const g = new THREE.Group(), tur = new THREE.Group(), barrel = new THREE.Group(); g.add(tur); tur.add(barrel);
+  const box = (w, h, d, m, x, y, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.castShadow = true; return b; };
+  g.add(box(.5, .13, .3, body, 0, .12, 0)); for (const z of [-.17, .17]) g.add(box(.56, .1, .07, dark, 0, .06, z));
+  tur.position.y = .22; tur.add(box(.22, .09, .2, body, -.02, .02, 0));
+  barrel.position.set(.08, .03, 0); const bm = new THREE.Mesh(new THREE.CylinderGeometry(.018, .022, .34, 10), dark); bm.rotation.z = -Math.PI / 2; bm.position.x = .17; barrel.add(bm);
+  g.scale.setScalar(1.2); g.position.set(-side * .55, 0, -SW / 2 + .4); g.rotation.y = side > 0 ? 0 : Math.PI; o.group.add(g);
+  g.scale.setScalar(1e-4); return { g, tur, barrel, next: now + 2 + R() * 2, rec: 0, born: now };
+}
+function tankThink(o, dt, t, side, live) {
+  const T = o.tank, L = o.L, hx = WX(H.p);
+  if (T.v) { T.v.y -= 9.8 * dt; T.g.position.addScaledVector(T.v, dt); T.g.rotation.x += T.w.x * dt; T.g.rotation.z += T.w.z * dt;      // blown away with its army
+    const gy = SYx(o.group.position.x + T.g.position.x) - o.group.position.y; if (T.v.y < 0 && T.g.position.y < gy) { T.g.position.y = gy; T.v.multiplyScalar(.25); T.v.y = Math.abs(T.v.y) * .3; T.w.multiplyScalar(.4); T.land ??= t; }
+    if (T.land != null) T.g.scale.setScalar(1.2 * Math.max(1e-4, 1 - Math.max(0, t - T.land - 2.5) / .6)); return; }
+  T.g.position.y = SYx(o.group.position.x + T.g.position.x) - o.group.position.y; T.g.scale.setScalar(1.2 * Math.max(1e-4, EASE.out(Math.min(1, (t - T.born) / .6))));      // it rolls in
+  const wx = o.group.position.x + T.g.position.x, wz = T.g.position.z, dx = hx - wx, ang = Math.atan2(wz, dx) - T.g.rotation.y;
+  T.tur.rotation.y += Math.atan2(Math.sin(ang - T.tur.rotation.y), Math.cos(ang - T.tur.rotation.y)) * Math.min(1, dt * 3);
+  T.barrel.rotation.z = Math.atan2(H.y + .6 - (o.group.position.y + T.g.position.y + .3), Math.hypot(dx, wz)) * .8;
+  T.rec = Math.max(0, T.rec - dt * 4); T.barrel.position.x = .08 - T.rec * .06;
+  if (live && Math.abs(dx) < 4 && H.mode !== 'pose' && t > T.next) { T.next = t + (2.6 + R() * 1.8) / fury(L.k); T.rec = 1;
+    const a = T.g.rotation.y + T.tur.rotation.y, mx = wx + Math.cos(a) * .55, my = o.group.position.y + T.g.position.y + .33, mz = wz - Math.sin(a) * .55;
+    shoot(mx, my, mz, true);
+    for (let i = 0; i < 10; i++) spark(mx, my, mz, Math.cos(a) * (.5 + R()), R() * .6, -Math.sin(a) * (.5 + R()), R() < .5 ? 'stop' : 'txt', .2 + R() * .3, .06);
+    sfx('cannon'); }
+}
+// how hard an army fires: the share of aggressive selling (red) or buying (green) in the last ten seconds, against the usual pace
+function fury(k) { const tk = TAKER.now(); return Math.max(.35, Math.min(2.4, .3 + (k === 'ask' ? tk.sell : tk.buy) * 1.4 * Math.min(2, tk.act))); }
+const TAKER = (() => {                         // OKX trades: buy and sell volume per second, the last ten seconds, and the usual pace
+  const sec = new Map(); let avg = 0, seen = false;
+  return { add(side, usd) { const k = Math.floor(Date.now() / 1000), b = sec.get(k) || sec.set(k, { b: 0, s: 0 }).get(k); if (side === 'buy') b.b += usd; else b.s += usd; seen = true; },
+    now() { if (!seen) return { buy: .5, sell: .5, act: 1, seen }; const k = Math.floor(Date.now() / 1000); let bb = 0, ss = 0;
+      for (const [t, v] of sec) { if (t < k - 60) { sec.delete(t); continue; } if (t > k - 10) { bb += v.b; ss += v.s; } }
+      const tot = bb + ss; avg = avg ? avg + (tot - avg) * .002 : tot; return { buy: tot ? bb / tot : .5, sell: tot ? ss / tot : .5, act: avg ? tot / avg : 1, seen }; } };
+})();
 // a shot: a tracer from the muzzle to him (most hit, some fly past)
 function fire(s, col) {
-  if (BUL.length >= BULN) return;
   const c = Math.cos(s.yaw), sn = Math.sin(s.yaw), mx = s.x + c * .27 * SOLS, my = s.y + .33 * SOLS, mz = s.z - sn * .27 * SOLS + .045 * SOLS * c;
-  const hit = R() < .75, tx = WX(H.p) - H.face * .05 + (R() - .5) * (hit ? .3 : 1), ty = H.y + (hit ? .35 + R() * .75 : .2 + R() * 1.6), tz = hit ? .08 + (R() - .5) * .2 : (R() - .5) * 1.4;
-  const d = Math.hypot(tx - mx, ty - my, tz - mz);
-  BUL.push({ x0: mx, y0: my, z0: mz, x1: tx, y1: ty, z1: tz, age: 0, dur: d / 9, hit });
-  for (let i = 0; i < 3; i++) spark(mx, my, mz, (tx - mx) / d * (.6 + R()), (R() - .3) * .5, (tz - mz) / d * .6, 'stop', .08 + R() * .06, .05);
+  if (!shoot(mx, my, mz, false)) return;
+  for (let i = 0; i < 3; i++) spark(mx, my, mz, c * (.6 + R()), (R() - .3) * .5, -sn * .6, 'stop', .08 + R() * .06, .05);
   if (now - shotSnd > .09) { shotSnd = now; sfx('shot'); }
+}
+// where it goes: most hit him; free to move, he ducks some and swats some away with a glove
+function shoot(mx, my, mz, big) {
+  if (BUL.length >= BULN) return false;
+  const free = H.mode === 'follow' || H.mode === 'approach', r = R();
+  const fate = r < .2 ? 'miss' : free && !big && r < .42 ? 'dodge' : free && !big && r < .55 ? 'parry' : 'hit';
+  const tx = WX(H.p) - H.face * .05 + (R() - .5) * (fate === 'miss' ? 1 : .25), tz = fate === 'miss' ? (R() - .5) * 1.4 : .08 + (R() - .5) * .15;
+  const ty = H.y + (fate === 'dodge' ? 1.25 : fate === 'parry' ? .95 : fate === 'miss' ? .2 + R() * 1.6 : .35 + R() * .75);
+  const d = Math.hypot(tx - mx, ty - my, tz - mz);
+  BUL.push({ x0: mx, y0: my, z0: mz, x1: tx, y1: ty, z1: tz, age: 0, dur: d / (big ? 6 : 9), fate, big });
+  return true;
 }
 // the magnets: horseshoes over the target gates, poles down, with a beam of pull underneath
 const chrome = new THREE.MeshStandardMaterial({ color: 0xaab4b9, metalness: 1, roughness: .22, envMapIntensity: .8 });
@@ -819,7 +865,7 @@ const spent = new Map();         // level key -> time it was settled (kept while
 const labels = new Map();        // price -> label sprite
 const queue = [];                // { p, dir, type: 'cross' | 'hold' | 'target', levels, T }
 const FX = { slow: 0, orbit: 0, sparks: [], shards: [], bills: [], rings: [], stars: [], calls: [], shake: 0, flash: 0, ab: 0, kick: 0 };
-const H = { p: null, y: 0, v: 0, face: 1, yaw: Math.PI / 2, mode: 'follow', t0: 0, job: null, speed: 0, dist: 0, phase: 0, guard: 0, idleAt: 0, mood: 0, lockAt: -9, dash: 0 };
+const H = { hp: 1, hpAt: -9, p: null, y: 0, v: 0, face: 1, yaw: Math.PI / 2, mode: 'follow', t0: 0, job: null, speed: 0, dist: 0, phase: 0, guard: 0, idleAt: 0, mood: 0, lockAt: -9, dash: 0 };
 const stats = { walls: 0, liq: 0, stops: 0, targets: 0, real: 0 };
 let now = 0, camOv = 0, camC = null, camS = 1200, camY = null, overviewAt = 20, evAt = null, coinX = null, coinY = 0, coinRot = 0;
 // "the wall holds": the price came within tol x bucket of it and went back away x tol. Tested on 23 h of 1-minute candles
@@ -857,6 +903,10 @@ const SFX = {
   crack: () => { hiss(.18, .35, 'highpass', 3000); tone(2400, .08, 'square', .03); },
   shot: () => { hiss(.05, .12, 'highpass', 1800, 900); tone(520 + Math.random() * 160, .05, 'square', .015, 180); },
   ping: () => { tone(2600 + Math.random() * 800, .09, 'sine', .03, 1900); },
+  boom: (k = 1) => { tone(68, .5 * k + .15, 'sine', .45 * Math.min(1.4, k), 28); hiss(.35 * k + .1, .28 * Math.min(1.4, k), 'lowpass', 900, 120); },
+  cannon: () => { tone(52, .6, 'sine', .55, 24); hiss(.32, .35, 'lowpass', 1300, 200); },
+  far: () => { hiss(.07, .045, 'lowpass', 700); tone(80 + Math.random() * 40, .1, 'sine', .04, 45); },
+  bugle: () => { [392, 523, 659, 784].forEach((f, i) => tone(f, i === 3 ? .55 : .14, 'triangle', .09, null, i * .13)); },
   scatter: () => { for (let i = 0; i < 6; i++) tone(500 + Math.random() * 700, .12, 'triangle', .04, 900 + Math.random() * 600, Math.random() * .35); },
 };
 function sfx(name, k) { if (!SND.on || !SND.ctx || !SFX[name]) return; if (SND.ctx.state === 'suspended') SND.ctx.resume(); try { SFX[name](k); } catch (e) {} }
@@ -890,6 +940,7 @@ function onLevels() {
         if (sameBooks && L.s < oldS * .7 && Math.abs(P - o.L.p) <= D.B * 1.5 && Date.now() - (o.L.crackAt ?? 0) > 60e3) {
           o.L.crackAt = Date.now(); o.L.crack = Math.min(1, crack + (1 - L.s / oldS) * 2); crackFx(o, oldS, L.s); }
         else if (L.s > oldS * 1.15) o.L.crack = Math.max(0, crack - .35);
+        else if (sameBooks && L.s < oldS * .87 && o.sq) for (const s of o.sq.filter(s => s.st === 'stand' && !s.gen).sort(() => R() - .5).slice(0, 3)) s.flagT = now + R() * .4;      // shrinking: a few wave a white flag
       }
     }
   }
@@ -965,6 +1016,7 @@ function settle(L, type, dir, quiet) {
     L.rip = { t0: now, y, a: 1 }; FX.rings.push({ x, y: base + wy, t0: now, col, kind: 'wall' }); FX.shake = Math.max(FX.shake, .07); FX.ab = 1.2;
     for (let i = 0; i < 26; i++) spark(x - dir * .02, base + wy, (R() - .5) * .2, -dir * (.5 + R() * 2.2), (R() - .5) * 2.4, (R() - .5) * 2.4, R() < .4 ? 'txt' : col, .35 + R() * .4, .05);
     if (o.sq) for (const s of o.sq) if (s.st === 'stand') { s.next = now + R() * .3; s.aim = 1; }      // the army that holds: a volley, all at once
+    if (isWall(L)) { H.hp = Math.max(.05, H.hp - .12); H.hpAt = now; }
     callout(isWall(L) ? 'LEGER HOUDT STAND' : 'MUUR HOUDT', sub, col); if (!quiet) sfx('hold'); return;
   }
   spent.set(L.key, now);
@@ -972,28 +1024,63 @@ function settle(L, type, dir, quiet) {
     L.state = 'broken'; L.fx = { t0: now, y: SQ_PY }; FX.flash = Math.max(FX.flash, .2); FX.shake = Math.max(FX.shake, .08); FX.ab = 1; stats.walls++; if (!quiet) { FX.slow = 1; FX.kick = 1.8; }
     for (const s of o.sq) if (s.st === 'stand' || s.st === 'drop' || s.st === 'flee') { const d = Math.abs(s.z) * .5 + Math.abs(s.x - x) * 2;
       s.st = 'fly'; s.t0 = now; s.vx = dir * (1.4 + R() * 3) / (1 + d * .5); s.vy = 2 + R() * 3.2; s.vz = (R() - .5) * 2 + s.z * .9; s.wx = (R() - .5) * 16; s.wz = (R() - .5) * 16; }
+    if (o.tank && !o.tank.v) { o.tank.v = new THREE.Vector3(dir * 1.2, 3.5, (R() - .5)); o.tank.w = new THREE.Vector3((R() - .5) * 4, 0, (R() - .5) * 6); }
+    plantFlag(L.p, dir, quiet); H.hp = Math.min(1, H.hp + .2); H.hpAt = now;
     for (let i = 0; i < 30; i++) bill(x, base + .2 + R() * .6, (R() - .5) * SW, dir * (.8 + R() * 2.4), .8 + R() * 2.2, (R() - .5) * 2.4, col);
     for (let i = 0; i < 24; i++) spark(x, base + SQ_PY, (R() - .5) * .3, dir * (1 + R() * 3), (R() - .5) * 2.5, (R() - .5) * 2.5, R() < .5 ? 'txt' : col, .4 + R() * .5, .05);
-    callout('LEGER VERSLAGEN', sub, col); if (!quiet) { sfx('cross'); sfx('scatter'); }
-  } else if (L.k === 'stop') {                      // the beams cut out, one by one from where he hit
-    L.state = 'spent'; L.fx = { t0: now, y }; stats.stops++;
-    for (const b of o.beams) b.userData.cut = now + Math.abs(b.position.y - y) * .22;
+    callout('LEGER VERSLAGEN', sub, col); if (!quiet) { sfx('cross'); sfx('scatter'); sfx('bugle'); }
+  } else if (L.k === 'stop') {                      // the mines go off one after another, from where he tripped the wire outward
+    L.state = 'spent'; L.fx = { t0: now, y }; stats.stops++; H.hp = Math.min(1, H.hp + .05);
+    for (const m of o.mines) m.userData.boom = now + .05 + Math.abs(m.position.z) * .28;
     callout('STOPS GERAAKT', sub, col); if (!quiet) sfx('stop');
   } else {                                          // the purple glass shatters
-    L.state = 'spent'; L.fx = { t0: now, y }; FX.shake = Math.max(FX.shake, .12); FX.ab = 1; stats.liq += L.s; FX.flash = Math.max(FX.flash, .15); if (!quiet) { FX.slow = .8; FX.kick = 1.5; }
+    L.state = 'spent'; L.fx = { t0: now, y }; FX.shake = Math.max(FX.shake, .16); FX.ab = 1.2; stats.liq += L.s; FX.flash = Math.max(FX.flash, .3); if (!quiet) { FX.slow = .8; FX.kick = 1.5; } H.hp = Math.min(1, H.hp + .05);
+    for (const b of o.barrels) if (!b.userData.gone) { const d = Math.abs(b.position.z) * .4;
+      b.userData.v = new THREE.Vector3(dir * (1.5 + R() * 3) / (1 + d), 2.5 + R() * 3.5 + b.position.y * 3, (R() - .5) * 2 + b.position.z * 1.2); b.userData.w = new THREE.Vector3((R() - .5) * 14, 0, (R() - .5) * 14); }
+    for (let i = 0; i < 70; i++) { const a = R() * Math.PI * 2, v = 1 + R() * 4; spark(x, base + .35 + R() * .3, (R() - .5) * SW, Math.cos(a) * v * .6, 1 + R() * 4, Math.sin(a) * v, R() < .35 ? 'stop' : R() < .5 ? 'txt' : 'liq', .5 + R() * .8, .06); }
     FX.rings.push({ x, y: base + .02, t0: now, col, kind: 'floor' });
     for (let i = 0; i < 50; i++) { const sy = base + Math.max(.05, Math.min(o.h, y + (R() - .5) * o.h * 1.1)), sz = (R() - .5) * SW, d = Math.hypot(sy - base - y, sz);
       FX.shards.push({ x, y: sy, z: sz, vx: dir * (1.2 + R() * 3.5) / (1 + d * .5), vy: (R() - .3) * 2.5, vz: (R() - .5) * 2.5 + sz * .6,
         rx: R() * 6, ry: R() * 6, rz: R() * 6, wx: (R() - .5) * 14, wy: (R() - .5) * 14, wz: (R() - .5) * 14, s: .5 + R() * .9, col, age: 0, life: 1.4 + R() * .8 }); }
     for (let i = 0; i < 50; i++) spark(x, base + .2 + R() * 2, (R() - .5) * 2.2, dir * (1 + R() * 4.5), (R() - .2) * 1.5, (R() - .5) * 1.5, R() < .3 ? 'txt' : col, .6 + R() * .8, .045);
-    callout('LIQUIDATIES', sub, col); if (!quiet) sfx('glass'); if (!quiet) sfx('liq');
+    callout('LIQUIDATIES', sub, col); if (!quiet) { sfx('boom', 1.4); sfx('liq'); }
   }
+}
+// his flag on the step of a beaten army: it rises, waves, and stays ten minutes
+const FLAGTEX = (() => { const c = document.createElement('canvas'); c.width = 256; c.height = 160; const x = c.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 256, 160); g.addColorStop(0, '#ffb347'); g.addColorStop(1, '#e07b00'); x.fillStyle = g; x.fillRect(0, 0, 256, 160);
+  x.fillStyle = '#fff8ec'; x.font = '700 110px Georgia,serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('₿', 128, 86);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t; })();
+const FLAGS = [], flagPole = new THREE.MeshStandardMaterial({ color: 0xc9ced2, metalness: 1, roughness: .25 });
+function plantFlag(p, dir, quiet) {
+  if (FLAGS.length >= 6) { const old = FLAGS.shift(); scene.remove(old.g); old.g.children.forEach(m => m.geometry.dispose()); old.cloth.material.dispose(); }
+  const g = new THREE.Group(), pole = new THREE.Mesh(new THREE.CylinderGeometry(.016, .016, 1.15, 10), flagPole); pole.position.y = .575; pole.castShadow = true;
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(.035, 12, 8), new THREE.MeshStandardMaterial({ color: 0xffd34d, metalness: 1, roughness: .2 })); ball.position.y = 1.17;
+  const geo = new THREE.PlaneGeometry(.52, .32, 10, 1); geo.translate(.26, 0, 0);
+  const cloth = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: FLAGTEX, side: THREE.DoubleSide, roughness: .7, emissive: 0x7a3d00, emissiveIntensity: .35 })); cloth.position.set(.016, .95, 0); cloth.castShadow = true;
+  g.add(pole, ball, cloth); g.position.set(WX(p) + dir * .25, SY(p + dir * STEP), -SW / 2 + .3); g.scale.y = 1e-4; scene.add(g);
+  FLAGS.push({ g, cloth, t0: now + .5, p0: geo.attributes.position.array.slice() });
+}
+function flags(t) {
+  for (let i = FLAGS.length - 1; i >= 0; i--) { const F = FLAGS[i], a = t - F.t0;
+    if (a > 600) { scene.remove(F.g); F.g.children.forEach(m => m.geometry.dispose()); F.cloth.material.dispose(); FLAGS.splice(i, 1); continue; }
+    F.g.scale.y = a < 0 ? 1e-4 : EASE.out(Math.min(1, a / .6)) * (a > 597 ? (600 - a) / 3 : 1); F.g.visible = a > 0;
+    const pa = F.cloth.geometry.attributes.position, p0 = F.p0;      // it waves: a wave runs out along the cloth
+    for (let k = 0; k < pa.count; k++) { const x = p0[k * 3]; pa.array[k * 3 + 2] = Math.sin(x * 12 - t * 7) * .04 * x / .52; }
+    pa.needsUpdate = true; F.cloth.geometry.computeVertexNormals(); }
+}
+// an explosion: a fireball of sparks, smoke, a ring on the step, a thump
+function boom(x, y, z, col, k = 1) {
+  for (let i = 0; i < 18 + 26 * k; i++) { const a = R() * Math.PI * 2, v = (.6 + R() * 2.4) * k;
+    spark(x, y + .05, z, Math.cos(a) * v * .7, (1 + R() * 3) * k, Math.sin(a) * v * .7, R() < .45 ? 'stop' : R() < .6 ? 'txt' : col, .35 + R() * .5, .05 + .02 * k); }
+  FX.rings.push({ x, y: SYx(x) + .02, t0: now, col, kind: 'step' }); FX.shake = Math.max(FX.shake, .03 * k); FX.flash = Math.max(FX.flash, .05 * k);
+  if (now - (boom.at || 0) > .07) { boom.at = now; sfx('boom', k); }
 }
 // one bill, fluttering
 function bill(x, y, z, vx, vy, vz, col) { if (FX.bills.length < BMAX) FX.bills.push({ x, y, z, vx, vy, vz, rx: R() * 6, ry: R() * 6, rz: R() * 6, wx: (R() - .5) * 9, wy: (R() - .5) * 9, wz: (R() - .5) * 9, col, age: 0, life: 2.6 + R() * 1.4 }); }
 function hitTarget(m, quiet) {
   const x = WX(m.p), y = SY(m.p) + 1.25, col = m.up ? 'up' : 'dn';
-  m.hit = now; H.lockAt = now; FX.flash = .5; FX.shake = Math.max(FX.shake, .14); FX.ab = 1.4; FX.kick = 1.2; stats.targets++; if (!quiet) { FX.slow = 1; FX.orbit = 1; }
+  m.hit = now; H.lockAt = now; H.hp = Math.min(1, H.hp + .3); H.hpAt = now; FX.flash = .5; FX.shake = Math.max(FX.shake, .14); FX.ab = 1.4; FX.kick = 1.2; stats.targets++; if (!quiet) { FX.slow = 1; FX.orbit = 1; }
   for (let i = 0; i < 3; i++) FX.rings.push({ x, y, t0: now + i * .16, col, kind: 'big' });
   FX.rings.push({ x, y: SY(m.p) + .02, t0: now, col, kind: 'floor' });
   for (let i = 0; i < 80; i++) { const a = R() * Math.PI * 2, b = R() * Math.PI - Math.PI / 2, v = 1.5 + R() * 3.5;
@@ -1003,8 +1090,8 @@ function hitTarget(m, quiet) {
 // a wall eaten while the price stands against it: part of its army deserts
 function crackFx(o, from, to) {
   const L = o.L, x = WX(L.p), col = colOf(L), base = SY(L.p);
-  const run = o.sq ? o.sq.filter(s => s.st === 'stand') : [], n = Math.round(run.length * Math.min(.8, 1 - to / from));      // men desert: they run off the stairs
-  for (const s of run.sort(() => R() - .5).slice(0, n)) { s.st = 'flee'; s.t0 = now; s.vz = (s.z >= 0 ? 1 : -1) * (1.8 + R()); }
+  const run = o.sq ? o.sq.filter(s => s.st === 'stand' && !s.gen) : [], n = Math.round(run.length * Math.min(.8, 1 - to / from));      // men desert: they run off the stairs
+  for (const s of run.sort(() => R() - .5).slice(0, n)) { s.st = 'surrender'; s.t0 = now + R() * .3; }      // a white flag first, then they run
   L.lastFx = now; callout('LEGER DUNT UIT', `${nameOf(L.k, L.above)} · ${fmtUsd(from)} → ${fmtUsd(to)} · ${fmtP(L.p)}`, col, Date.now()); sfx('crack');
 }
 // a real liquidation: gathered over 1.5 s per side, then shown where it happened
@@ -1023,7 +1110,11 @@ function showRealLiq(long, p, usd, ex, at) {
     for (let i = 0; i < 10 + big * 70; i++) spark(x + (R() - .5) * .3, SY(p) + .05, (R() - .5) * 1.5, (R() - .5) * 1.2, 1 + R() * (2 + big * 3), (R() - .5) * 1.2, R() < .3 ? 'txt' : 'liq', .6 + R() * .8, .04);
     FX.shake = Math.max(FX.shake, .02 + big * .1);
     // the estimated liquidation level close by lights up: here it actually happens
-    for (const o of objs.values()) if (o.L.k === 'liq' && !o.gone && Math.abs(o.L.p - p) <= D.B && o.L.above === !long) { o.L.real = now; o.L.lastFx = now; o.L.rip = { t0: now, y: PUNCH_Y, a: .6 }; }
+    for (const o of objs.values()) if (o.L.k === 'liq' && !o.gone && Math.abs(o.L.p - p) <= D.B && o.L.above === !long) { o.L.real = now; o.L.lastFx = now; o.L.rip = { t0: now, y: PUNCH_Y, a: .6 + big * .8 };
+      const left = o.barrels?.filter(b => !b.userData.gone && !b.userData.v);
+      if (usd >= 500e3 && o.L.state === 'live' && left?.length > 2) { const b = left[left.length - 1]; b.userData.gone = true;      // a big one: one barrel blows
+        b.userData.v = new THREE.Vector3((R() - .5) * 2, 4 + R() * 2, (R() - .5) * 3); b.userData.w = new THREE.Vector3((R() - .5) * 12, 0, (R() - .5) * 12);
+        boom(o.group.position.x + b.position.x, o.group.position.y + b.position.y, b.position.z, 'liq', 1); } }
   }
   const sub = `${long ? 'Longs' : 'Shorts'} · ${fmtUsd(usd)} · ${ex.join(' + ')} · ${fmtP(p)}`;
   if (usd >= 250e3) callout('ECHTE LIQUIDATIE', sub, 'liq', at); else if (usd >= 50e3) logEvent('Echte liquidatie', sub, 'liq', at);
@@ -1073,6 +1164,7 @@ function think(dt) {
   // standing still a while: a little shadow-boxing
   if (H.mode === 'follow' && Math.abs(H.v) < 1e-6 && now - H.idleAt > 14) { H.mode = 'shadow'; H.t0 = now; H.idleAt = now; }
   // body state for the animation
+  if (now - (H.hitAt ?? -9) > 1.5) H.hp = Math.min(1, H.hp + dt * .05);          // out of fire he gets his breath back
   H.speed += (Math.abs(H.v) * K() - H.speed) * Math.min(1, dt * 12);
   H.y += (SY(H.p) - H.y) * Math.min(1, dt * 16);          // up and down the steps
   const ph0 = H.phase; H.dist += Math.abs(H.v * dt) * U; H.phase = H.dist / .95 * Math.PI * 2;
@@ -1095,9 +1187,6 @@ function think(dt) {
   }
 }
 function physics(dt) {
-  for (const o of objs.values()) if (o.beams && o.L.fx && now - o.L.fx.t0 < 2) for (const b of o.beams)   // a beam that cuts out throws sparks
-    if (b.userData.cut && !b.userData.sparked && now >= b.userData.cut) { b.userData.sparked = true; const col = colOf(o.L);
-      for (let i = 0; i < 14; i++) spark(WX(o.L.p), SY(o.L.p) + b.position.y, (R() - .5) * SW, (R() - .5) * 1.4, R() * 1.2, (R() - .5) * 1.4, R() < .5 ? 'txt' : col, .3 + R() * .4, .04); }
   for (const q of FX.sparks) { q.age += dt; q.x += q.vx * dt; q.y += q.vy * dt; q.z += q.vz * dt; if (q.size > .025) { q.vy -= 3.2 * dt; q.vx *= .985; q.vz *= .985; } const fl = SYx(q.x) + .01; if (q.y < fl && Math.abs(q.z) < SW / 2) { q.y = fl; q.vy *= -.35; } }
   for (const q of FX.shards) { q.age += dt; q.x += q.vx * dt; q.y += q.vy * dt; q.z += q.vz * dt; q.vy -= 6 * dt; q.rx += q.wx * dt; q.ry += q.wy * dt; q.rz += q.wz * dt;
     const fl = SYx(q.x) + .03; if (q.y < fl && Math.abs(q.z) < SW / 2) { q.y = fl; q.vy *= -.3; q.vx *= .6; q.vz *= .6; q.wx *= .5; q.wy *= .5; q.wz *= .5; } }
@@ -1179,10 +1268,12 @@ function render3d(dt, dtReal = dt) {
       for (const hy of [.15, .75, 1.3]) for (const xw of [x - th / 2 - .14, x + th / 2 + .14]) { const s = (xw - camP.x) / dx; if (s <= 0 || s >= 1) continue;
         const z = camP.z * (1 - s), y = camP.y + s * (H.y + hy - camP.y); if (Math.abs(z) < SW / 2 + .1 && y > y0 && y < y0 + h) return true; } }
     return false; };
+  // the biggest army in view gets the general
+  { let big = null; for (const o of objs.values()) { o.isBig = false; if (isWall(o.L) && o.L.state === 'live' && !o.gone && Math.abs(o.L.p - camC) < camS * .6 && (!big || o.L.s > big.L.s)) big = o; } if (big) big.isBig = true; }
   // levels: fade in, fade out, react
   for (const [k, o] of objs) {
     o.fade = Math.max(0, Math.min(1, o.fade + (o.gone ? -dt * 1.6 : dt * 1.4)));
-    if (o.gone && o.fade <= 0 && !o.sq?.some(s => s.st === 'fly' || s.st === 'down')) { scene.remove(o.group); dispose(o.group); objs.delete(k); continue; }
+    if (o.gone && o.fade <= 0 && !o.sq?.some(s => s.st === 'fly' || s.st === 'down') && !(o.tank?.v && t - (o.tank.land ?? t) < 3.2)) { scene.remove(o.group); dispose(o.group); objs.delete(k); continue; }
     const L = o.L, f = EASE.out(o.fade), age = L.fx ? t - L.fx.t0 : 9;
     o.group.position.set(WX(L.p), SY(L.p), 0); o.group.scale.y = .02 + .98 * f;
     if (!isWall(L) && o.panel) o.panel.scale.z = THICK(L) / o.th0;   // a size that changed at a refresh
@@ -1193,16 +1284,26 @@ function render3d(dt, dtReal = dt) {
       const occ = !gone && blocks(o.group.position.x, o.group.position.y, o.h, THICK(L));          // a banner in front of him goes see-through
       o.see = (o.see ?? 1) + ((occ ? .16 : 1) - (o.see ?? 1)) * Math.min(1, dt * 6);
       squad(o, dt, t, f);
-    } else if (L.k === 'stop') {                    // lasers: they hum; once hit they cut out one by one
-      for (const b of o.beams) { const cut = b.userData.cut && t >= b.userData.cut;
-        b.material.opacity = (cut ? Math.max(.03, .9 - (t - b.userData.cut) * 3) : gone ? .03 : (.75 + .25 * Math.sin(t * 40 + b.position.y * 9)) * (1 + hot)) * f; }
-      o.haze.material.opacity = (gone ? .01 : .05 + .05 * hot) * f;
-    } else {                                        // purple glass: shattered once hit; a real liquidation there makes it ring
-      const u = o.mat.uniforms; u.uT.value = t; if (L.rip) { u.uRipT.value = L.rip.t0; u.uRipY.value = L.rip.y; u.uRipA.value = L.rip.a; }
-      if (gone) { u.uA.value = (age < .3 ? 1 + 3 * (1 - age / .3) : .05) * f; u.uEdge.value = (age < .3 ? 1 - age / .3 : .03) * f; o.glow.material.opacity = .02 * f; }
-      else { u.uA.value = (.8 + L.rel * .5) * (1 + hot * 2) * f; u.uEdge.value = (1 + hot * 2) * f; o.glow.material.opacity = (.06 + L.rel * .06) * f; }
+    } else if (L.k === 'stop') {                    // mines: their lamps blink; once he trips the wire they go off one after another
+      const blink = .5 + .5 * Math.sin(t * 6 + L.p), on = gone ? 0 : (.35 + .65 * (blink > .8 ? 1 : .25)) * (1 + hot);
+      o.led.color.copy(PCOL[colOf(L)]).multiplyScalar(2.6 * on * f); o.wire.material.opacity = (gone ? 0 : .5 + .3 * hot) * f; o.glow.material.opacity = (gone ? .01 : .06 + .06 * hot) * f;
+      for (const m of o.mines) { const b = m.userData.boom;
+        if (b && t >= b && !m.userData.done) { m.userData.done = true; m.visible = false; boom(WX(L.p) + m.position.x, SY(L.p) + .06, m.position.z, colOf(L), .6); } }
+    } else {                                        // barrels: they shake when liquidations happen there; once hit they all go up
+      const shake = L.rip && t - L.rip.t0 < 1.4 ? (1 - (t - L.rip.t0) / 1.4) * .025 * (L.rip.a || 1) : 0;
+      o.bmat.emissiveIntensity = (.12 + L.rel * .12) * (1 + hot * 3) + (L.real && t - L.real < 2 ? 1 - (t - L.real) / 2 : 0);
+      o.glow.material.opacity = (gone ? .02 : .06 + L.rel * .06) * f;
+      for (const b of o.barrels) { const u = b.userData;
+        if (u.v) { u.v.y -= 9.8 * dt; b.position.addScaledVector(u.v, dt); b.rotation.x += u.w.x * dt; b.rotation.z += u.w.z * dt;
+          const g = SYx(o.group.position.x + b.position.x) - o.group.position.y + .1; if (u.v.y < 0 && b.position.y < g && Math.abs(b.position.z) < SW / 2 + .3) { b.position.y = g; u.v.multiplyScalar(.3); u.v.y = Math.abs(u.v.y) * .4; u.w.multiplyScalar(.5); u.land ??= t; }
+          if (u.land != null) b.scale.setScalar(Math.max(1e-4, 1 - Math.max(0, t - u.land - 2.2) / .6)); }
+        else if (!u.gone) { b.position.set(u.home.x + Math.sin(t * 61 + u.home.z * 9) * shake, u.home.y + Math.abs(Math.sin(t * 47 + u.home.z * 5)) * shake, u.home.z + Math.sin(t * 53 + u.home.x * 7) * shake); }
+      }
     }
   }
+  flags(t);
+  // a big army close by: the battle grumbles in the distance
+  if (SND.on && R() < dt * 1.4) { const nearBig = [...objs.values()].some(o => isWall(o.L) && o.L.state === 'live' && o.L.rel > .5 && Math.abs(WX(o.L.p) - WX(H.p)) < 4.4); if (nearBig) sfx('far'); }
   // the soldiers: flying, lying, running off, standing; each one posed on the rig and written into the parts
   { let n = 0; const P = SOL.P, N = SOL.node, cU = tmpC, cH = new THREE.Color(), lift = new THREE.Vector3();
     for (const o of objs.values()) { if (!o.sq) continue; const f = EASE.out(o.fade), cols = SOLC[o.L.k];
@@ -1210,10 +1311,13 @@ function render3d(dt, dtReal = dt) {
         if (s.st === 'drop') { s.vy -= 9.8 * dt; s.y += s.vy * dt; const g = SYx(s.x); if (s.y <= g) { s.y = g; s.vy = 0; s.st = 'stand'; s.stag = now - .2; } }
         else if (s.st === 'fly') { s.vy -= 9.8 * dt; s.x += s.vx * dt; s.y += s.vy * dt; s.z += s.vz * dt; s.rx += s.wx * dt; s.rz += s.wz * dt;
           const g = SYx(s.x); if (s.vy < 0 && s.y <= g && Math.abs(s.z) < SW / 2 + .3) { s.y = g; s.st = 'down'; s.t0 = now; s.rx = 0; s.rz = (R() < .5 ? 1 : -1) * Math.PI / 2; } if (s.y < g - 6) return false; }
-        else if (s.st === 'flee') { s.z += s.vz * dt; s.ph += Math.abs(s.vz) * dt * 26; s.walk = 1; s.yaw = s.vz > 0 ? -Math.PI / 2 : Math.PI / 2; s.y += (SYx(s.x) - s.y) * Math.min(1, dt * 14); if (Math.abs(s.z) > SW / 2 + 1.4) return false; }
+        else if (s.st === 'flee') { s.z += s.vz * dt; s.ph += Math.abs(s.vz) * dt * 26; s.walk = 1; s.yaw = s.vz > 0 ? -Math.PI / 2 : Math.PI / 2;
+          if (Math.abs(s.z) > SW / 2 + .03) { s.vy -= 9.8 * dt; s.y += s.vy * dt; } else s.y += (SYx(s.x) - s.y) * Math.min(1, dt * 14);      // off the edge of the stair they drop
+          if (s.y < SYx(s.x) - 2.5) return false; }
         else if (s.st === 'down' && now - s.t0 > 3.2) return false;
+        else if (s.st === 'surrender') { s.walk = 0; if (now - s.t0 > 1.2) { s.st = 'flee'; s.t0 = now; s.vz = (s.z >= 0 ? 1 : -1) * (1.8 + R()); } }
         if (n >= SOLN) return true;
-        const sc = SOLS * f * (s.st === 'down' ? Math.min(1, Math.max(0, (3.2 - (now - s.t0)) / .5)) : 1) * (s.st === 'flee' ? Math.min(1, (SW / 2 + 1.4 - Math.abs(s.z)) / .4) : 1);
+        const sc = SOLS * (s.gen ? 1.45 : 1) * f * (s.st === 'down' ? Math.min(1, Math.max(0, (3.2 - (now - s.t0)) / .5)) : 1) * (s.st === 'flee' ? Math.min(1, Math.max(0, (s.y - SYx(s.x) + 2.5) / 1.2)) : 1);
         const stag = Math.max(0, 1 - (now - s.stag) / .45), wk = s.walk || 0, aim = s.st === 'stand' ? s.aim || 0 : 0;
         SOL.root.position.set(s.x, s.y + (s.st === 'down' ? .07 * SOLS : 0), s.z); SOL.root.rotation.set(s.rx, s.yaw, s.rz + stag * .55 + (s.st === 'drop' ? Math.sin(now * 9 + s.seed * 9) * .2 : 0));
         SOL.root.scale.setScalar(Math.max(1e-4, sc));
@@ -1223,31 +1327,45 @@ function render3d(dt, dtReal = dt) {
         let pitch = -.9, across = .55;
         if (aim > 0) { lift.set(WX(H.p), H.y + .75, 0); const dh = Math.hypot(lift.x - s.x, lift.z - s.z), dy = lift.y - (s.y + .33 * SOLS); pitch = lerp(pitch, Math.atan2(dy, dh), aim); across = lerp(across, 0, aim); }
         if (s.st === 'fly' || s.st === 'down') { pitch = 1.2; across = 0; }
-        N.gunP.rotation.set(0, across, pitch); N.shield.scale.setScalar(s.steel && s.st === 'stand' ? 1 : 1e-4);
+        const flag = s.st === 'surrender' || now - (s.flagT ?? -9) < 2.5, H0 = 1e-4;
+        if (flag) { pitch = -1.1; across = .6; }
+        N.gunP.rotation.set(0, across, pitch); N.shield.scale.setScalar(s.steel && s.st === 'stand' && !flag ? 1 : H0);
+        N.gun.scale.setScalar(s.gen ? H0 : 1); N.helmet.scale.set(s.gen ? H0 : 1, s.gen ? H0 : .8, s.gen ? H0 : 1);
+        for (const k of ['cap', 'brim', 'star', 'mega']) N[k].scale.setScalar(s.gen ? 1 : H0);
+        N.mega.rotation.set(0, 0, -Math.PI / 2 + (aim ? Math.sin(now * 3) * .1 : -.5));
+        N.fpoleP.scale.setScalar(flag ? 1 : H0); N.fpoleP.rotation.z = flag ? Math.sin(now * 7 + s.seed * 9) * .35 : 0; N.fcloth.rotation.y = Math.sin(now * 12 + s.seed * 5) * .5;
         SOL.root.updateMatrixWorld(true);
         for (const k in P) P[k].setMatrixAt(n, N[k].matrixWorld);
         const v = .85 + s.seed * .3; cU.setHex(cols[0]).convertSRGBToLinear().multiplyScalar(v); cH.setHex(cols[1]).convertSRGBToLinear().multiplyScalar(v);
-        P.torso.setColorAt(n, cU); P.pack.setColorAt(n, cH); P.helmet.setColorAt(n, cH); P.legL.setColorAt(n, cH); P.legR.setColorAt(n, cH);
+        if (s.gen) cU.multiplyScalar(.7);
+        P.torso.setColorAt(n, cU); P.pack.setColorAt(n, cH); P.helmet.setColorAt(n, cH); P.legL.setColorAt(n, cH); P.legR.setColorAt(n, cH); P.cap.setColorAt(n, cU);
         n++; return true; });
     }
-    for (const k in SOL.P) { const m = SOL.P[k]; m.count = n; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; } }
+    for (const k in SOL.P) { const m = SOL.P[k]; m.count = k === 'pack' && LITE() ? 0 : n; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; } }
   // the tracers: they hit him in a spray of sparks and he flinches; the ones that miss fly on and go
   { let n = 0;
     for (let i = BUL.length - 1; i >= 0; i--) { const b = BUL[i]; b.age += dt; const u = b.age / b.dur;
-      if (b.hit && u >= 1) { BUL.splice(i, 1); H.hitAt = now;
-        for (let k = 0; k < 4; k++) spark(b.x1, b.y1, b.z1 + .05, -H.face * 0 + (b.x1 - b.x0) * -.1 + (R() - .5) * .8, R() * .9, .3 + R() * .5, R() < .5 ? 'stop' : 'txt', .15 + R() * .15, .035);
-        if (now - (H.pingAt || 0) > .12) { H.pingAt = now; sfx('ping'); } continue; }
+      if (b.fate === 'dodge' && u >= .62 && !b.ducked) { b.ducked = true; if (t - (H.dodgeAt ?? -9) > .45) H.dodgeAt = t; }       // he ducks under it
+      if (b.fate === 'parry' && u >= 1) {          // a glove swats it away
+        H.parryAt = t; b.x0 = b.x1; b.y0 = b.y1; b.z0 = b.z1; b.x1 += (R() - .5) * 1.5 - H.face * .6; b.y1 += .8 + R(); b.z1 += .5 + R(); b.age = 0; b.dur = .25; b.fate = 'miss';
+        for (let k = 0; k < 6; k++) spark(b.x0, b.y0, b.z0, (R() - .5) * 1.4, R() * 1.2, .3 + R() * .6, 'txt', .15 + R() * .15, .035);
+        sfx('ping'); continue; }
+      if (b.fate === 'hit' && u >= 1) { BUL.splice(i, 1); H.hitAt = now; const shield = H.guard > .6;
+        H.hp = Math.max(.05, H.hp - (b.big ? .03 : shield ? .0015 : .004)); H.hpAt = now;
+        for (let k = 0; k < (b.big ? 22 : 4); k++) spark(b.x1, b.y1, b.z1 + .05, (b.x1 - b.x0) * -.1 + (R() - .5) * (b.big ? 2.4 : .8), R() * (b.big ? 2 : .9), .3 + R() * .5, R() < .5 ? 'stop' : 'txt', .15 + R() * .2, b.big ? .05 : .035);
+        if (b.big) { FX.shake = Math.max(FX.shake, .05); FX.rings.push({ x: b.x1, y: b.y1, t0: now, col: 'stop', kind: 'wall' }); sfx('boom', .6); }
+        else if (now - (H.pingAt || 0) > .12) { H.pingAt = now; sfx('ping'); } continue; }
       if (u > 1.8) { BUL.splice(i, 1); continue; }
       if (n >= BULN) continue;
       tmpD.set(b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0); dummy.position.set(b.x0, b.y0, b.z0).addScaledVector(tmpD, u);
-      dummy.quaternion.setFromUnitVectors(AXX, tmpD.normalize()); dummy.scale.set(1, 1, 1); dummy.updateMatrix(); bulMesh.setMatrixAt(n++, dummy.matrix); }
+      dummy.quaternion.setFromUnitVectors(AXX, tmpD.normalize()); dummy.scale.set(b.big ? 1.6 : 1, b.big ? 3.5 : 1, b.big ? 3.5 : 1); dummy.updateMatrix(); bulMesh.setMatrixAt(n++, dummy.matrix); }
     bulMesh.count = n; bulMesh.instanceMatrix.needsUpdate = true; }
   // the labels in the levels: the most important first, and none on top of another one
   const shown = [], cand = [];
   for (const [p, sp] of labels) {
     const ls = [...objs.values()].filter(o => o.L.p === p), dead = ls.every(o => o.L.state !== 'live'), f = Math.max(0, ...ls.map(o => o.fade));
     const near = Math.max(0, 1 - Math.abs(p - H.p) / (camS * .55));
-    const see = Math.min(1, ...ls.map(o => o.see ?? 1));
+    const see = Math.min(1, ...ls.map(o => o.see ?? 1)) * (aspect < 1 && Math.abs(p - H.p) > camS * .3 ? 0 : 1);      // on a phone only the banners close to him
     cand.push({ p, sp, f, a: (.65 + .35 * near) * (1 - wide) * (dead ? .35 : 1) * f * see, w: Math.max(...ls.map(o => o.L.rel)) * (dead ? .3 : 1) + near });
   }
   cand.sort((a, b) => b.w - a.w);
@@ -1294,8 +1412,9 @@ function render3d(dt, dtReal = dt) {
   // the body leans where he goes, twists into the cross, rocks back off a wall that holds
   const tug = MAG.up.p != null && MAG.dn.p != null ? (MAG.up.prob - MAG.dn.prob) * (1 - Math.max(gd, cross)) : 0;      // the likelier target tugs at him
   body.rotation.set(0, F * .45 * cross, -F * (.06 * walk + .12 * run + .2 * H.dash + .08 * gd + .12 * cross) + F * .4 * kn - tug * .22);
-  const hitK = Math.max(0, 1 - (t - (H.hitAt ?? -9)) / .2);
-  body.position.set(Math.sin(t * 70) * .012 * hitK, Math.sin(ph * 2) * .012 * walk - .03 * lowK * gd, 0);
+  const hitK = Math.max(0, 1 - (t - (H.hitAt ?? -9)) / .2), duck = Math.sin(Math.PI * Math.min(1, Math.max(0, (t - (H.dodgeAt ?? -9)) / .4)));
+  const swat = Math.sin(Math.PI * Math.min(1, Math.max(0, (t - (H.parryAt ?? -9)) / .28)));
+  body.position.set(Math.sin(t * 70) * .012 * hitK, Math.sin(ph * 2) * .012 * walk - .03 * lowK * gd - .16 * duck, 0); body.rotation.z += F * .3 * duck;
   const lead = F, rear = -F;      // the arm on the side he faces jabs; the other one throws the cross across his front
   for (const sx of [-1, 1]) {
     const Lm = limbs[sx], s = Math.sin(ph + (sx > 0 ? 0 : Math.PI)), stance = gd * (1 - walk * .7);
@@ -1308,6 +1427,7 @@ function render3d(dt, dtReal = dt) {
     let ua = lerp(sx * .25 + swing, F * .8, gd), fa = lerp(sx * -.25, F * 1.5, gd), stretch = 1;
     ua = lerp(ua, F * (Math.PI / 2 - .62 * lowK), e); fa = lerp(fa, 0, e); stretch = 1 + e * (sx === lead ? .25 : 1.5);
     if (ps > 0) { ua = lerp(ua, sx * 2.6, ps); fa = lerp(fa, sx * .3, ps); }
+    if (swat > 0 && sx === lead) { ua = lerp(ua, F * 2.3, swat); fa = lerp(fa, F * .4, swat); }
     if (kn > 0) { ua = lerp(ua, sx * 1.9 + Math.sin(t * 30 + sx) * .4, kn); fa = lerp(fa, sx * .8, kn); }
     Lm.arm.rotation.z = ua; Lm.fore.rotation.z = fa; Lm.arm.position.z = sx === rear && cross > .05 ? .09 : sx > 0 ? .03 : -.03;
     Lm.up.scale.y = stretch; Lm.up.position.y = -.085 * stretch; Lm.fore.position.y = -.17 * stretch;
@@ -1322,7 +1442,7 @@ function render3d(dt, dtReal = dt) {
   for (const L of LV) { if (L.state && L.state !== 'live') continue; const d = Math.abs(L.p - P) / STEP;
     if (L.k === 'liq') liqNear = Math.max(liqNear, Math.min(1, L.rel) * cl(1 - d / 6)); if (d < 5) lvNear = true; }
   const fight = Math.max(gd, jab, cross), busy = fight > .1 || kn > 0 || ps > 0;
-  const want = { sweat: cl((liqNear - .2) / .4), shock: cl((-dv - 2) / 2), joy: cl((dv - 2) / 2), calm: !busy && H.mode === 'follow' && H.speed < 200 && !lvNear && Math.abs(dv) < 1.2 ? 1 : 0 };
+  const want = { sweat: Math.max(cl((liqNear - .2) / .4), cl((.35 - H.hp) / .25)), shock: cl((-dv - 2) / 2), joy: cl((dv - 2) / 2), calm: !busy && H.mode === 'follow' && H.speed < 200 && !lvNear && Math.abs(dv) < 1.2 ? 1 : 0 };
   Object.assign(want, FEEL.force);                // a test can hold a feeling
   for (const k in want) FEEL[k] += (want[k] - FEEL[k]) * Math.min(1, dt * (k === 'calm' ? .8 : 3));
   const { sweat, shock, joy, calm } = FEEL, pull = MAG.up.p != null && MAG.dn.p != null ? MAG.up.prob - MAG.dn.prob : 0;
@@ -1440,6 +1560,12 @@ function drawHud() {
     const sx = (tmpV.x * .5 + .5) * W / k, sy = (-tmpV.y * .5 + .5) * Hh / k; if (sy < ry + 20 || sy > foot - 50) continue;
     txt(fmtP(q), sx, sy, `500 8.5px ${FM}`, Math.round(q / STEP) % 20 === 0 ? 'rgba(143,214,255,.6)' : 'rgba(143,214,255,.32)', 'center');
   }
+  // his energy: a bar over his head while he is worn down
+  { const a = H.hp < .985 ? 1 : Math.max(0, 1 - (now - H.hpAt) / 2);
+    if (a > .01) { tmpV.set(WX(H.p), H.y + 1.62, 0).project(camera); const hx = (tmpV.x * .5 + .5) * W / k, hy = (-tmpV.y * .5 + .5) * Hh / k;
+      if (hx > gx && hx < LW - gx && hy > ry + 20) { const bw = 46; hg.globalAlpha = a;
+        hg.fillStyle = 'rgba(5,8,10,.75)'; hg.beginPath(); hg.roundRect(hx - bw / 2 - 2, hy - 3, bw + 4, 8, 4); hg.fill();
+        hg.fillStyle = lerpHex(CSS.dn, CSS.up, Math.min(1, Math.max(0, (H.hp - .2) / .7))); hg.beginPath(); hg.roundRect(hx - bw / 2, hy - 1, bw * H.hp, 4, 2); hg.fill(); hg.globalAlpha = 1; } } }
   // the coin's price over the coin
   { tmpV.set(coin.position.x, coin.position.y + 1.85, CZ).project(camera);
     const cxp = (tmpV.x * .5 + .5) * W / k, cyp = (-tmpV.y * .5 + .5) * Hh / k;
@@ -1490,7 +1616,8 @@ function drawHud() {
   // status, bottom right
   const ago = Math.max(0, Math.round((Date.now() - updAt) / 1000));
   const sy = narrow ? top + 136 : LH - 30;
-  txt(mode === 'live' ? `${nBooks} orderboeken · ververst ${ago} s geleden` : `uurdata van GlassSphere · ${nBooks} orderboeken`, LW - gx, sy, `500 9px ${FM}`, 'rgba(233,241,238,.45)', 'right');
+  const tk = TAKER.now(), druk = tk.seen ? ` · ${Math.round(tk.buy * 100)}% koopdruk` : '';
+  txt((mode === 'live' ? `${nBooks} orderboeken · ververst ${ago} s geleden` : `uurdata van GlassSphere · ${nBooks} orderboeken`) + druk, LW - gx, sy, `500 9px ${FM}`, 'rgba(233,241,238,.45)', 'right');
   txt(narrow ? `${stats.walls} muren · ${stats.stops} stops · ${fmtUsd(stats.real)} echte liq.` : `sinds openen: ${stats.walls} muren · ${stats.stops} stops · ${fmtUsd(stats.liq)} liq. geschat · ${fmtUsd(stats.real)} echt · ${stats.targets} doelen`,
     LW - gx, sy + 14, `500 9px ${FM}`, 'rgba(233,241,238,.3)', 'right');
 }
@@ -1524,7 +1651,7 @@ function frame(ts) {
 })();
 // a hidden tab: the stream and the frames rest; back again, the hero catches up with the price
 document.addEventListener('visibilitychange', () => { last = 0; acc = 0; Q.n = Q.t = 0; Q.wait = 2; });
-window.HELD = { overview() { overviewAt = now - .01; }, get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, H, queue, onPrice, live, realLiq, objs, onLevels, LOG, Q, FEEL, PH, MAG, labels };
+window.HELD = { overview() { overviewAt = now - .01; }, get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, H, queue, onPrice, live, realLiq, objs, onLevels, LOG, Q, FEEL, PH, MAG, labels, get now() { return now; } };
 })();
 </script>
 </body>

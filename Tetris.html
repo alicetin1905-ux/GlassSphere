@@ -475,10 +475,10 @@ sweep.position.z = 0.78; slab.add(sweep);
 const slabL = textPlane(1024, 96, 8.53, 0.8); slabL.m.material.opacity = 1; slabL.m.position.set(-6.9 + 4.27, 0, 0.8); slab.add(slabL.m);
 let slabStr = '';
 function drawSlab() {
-  const d = ref24 ? fmtPct((p / ref24 - 1) * 100) + ' 24u' : fmtPct((p / P0 - 1) * 100);
-  const s = fmtP(p) + '|' + d; if (s === slabStr) return; slabStr = s;
+  const d = ref24 ? fmtPct((shown / ref24 - 1) * 100) + ' 24u' : fmtPct((shown / P0 - 1) * 100);
+  const s = fmtP(shown) + '|' + d; if (s === slabStr) return; slabStr = s;
   const { g, c, t } = slabL; g.clearRect(0, 0, c.width, c.height); g.textBaseline = 'middle';
-  g.font = '800 64px "JetBrains Mono", monospace'; g.shadowColor = '#35ffb0'; g.shadowBlur = 18; g.fillStyle = '#7ff0d0'; g.fillText(fmtP(p), 6, 50);
+  g.font = '800 64px "JetBrains Mono", monospace'; g.shadowColor = '#35ffb0'; g.shadowBlur = 18; g.fillStyle = '#7ff0d0'; g.fillText(fmtP(shown), 6, 50);
   g.shadowBlur = 0; g.font = '700 30px "JetBrains Mono", monospace'; g.fillStyle = '#eef4f0'; g.fillText(d, 262, 50);
   const lx = ref24 ? 500 : 442;
   g.font = '700 32px Inter, system-ui, sans-serif'; const tw = g.measureText('HUIDIGE PRIJS').width;
@@ -575,7 +575,7 @@ function yOf(price) {
 
 /* ---------- state ---------- */
 const P0 = 80050;
-let mode = 'live', T = 0, p = P0, pv = 0, refP = P0, ref24 = 0, bucket = 50, anchorOff = 0, spikeUntil = 0, boost = 0, lastPx = 0;
+let mode = 'live', T = 0, p = P0, pS = P0, shown = P0, shownT = 0, pv = 0, refP = P0, ref24 = 0, bucket = 50, anchorOff = 0, spikeUntil = 0, boost = 0, lastPx = 0;
 let paused = false, shake = 0, firstApply = true, armed = false;   // armed: the levels are current, crossings count
 let nCleared = 0, eaten = 0, nTrades = 0, combo = 0, lastClearT = -99, pending = [], pendingT = 0;
 const tm = { piece: 1.2, small: 3.5, big: 16, flare: 4, dist: 0, demo: 0 };
@@ -591,6 +591,7 @@ let nextP = null;
 function applyLevels(L) {
   refP = L.P; ref24 = L.ref24 || 0; bucket = L.B || bucket;
   if (mode === 'live' && !tick.fresh()) p = L.P;
+  if (firstApply) pS = shown = p;
   const seen = new Set(), quiet = firstApply || !armed, now = mode === 'live' ? tick.fresh() : null;
   for (const lv of L.rows) {
     const k = keyOf(lv);
@@ -810,7 +811,7 @@ function startDemo() {
   status('demo', 'demo', 'Demo: de tabel van 13:21, beweging gesimuleerd');
 }
 function spike(dir, size) {
-  if (size === 'small') { anchorOff = dir * rnd(45, 135); spikeUntil = T + rnd(1.3, 2.2); return; }
+  if (size === 'small') { anchorOff = dir * rnd(30, 90); spikeUntil = T + rnd(1.5, 2.5); return; }
   const mega = size === 'mega';
   anchorOff = dir > 0 ? (mega ? 930 : rnd(490, 560)) : (mega ? -1005 : -rnd(490, 560));
   spikeUntil = T + (mega ? 3.4 : 2.8);
@@ -891,17 +892,18 @@ function update(dt) {
   if (mode === 'demo') {
     if (T > spikeUntil) anchorOff = 0;
     boost *= Math.exp(-0.5 * dt);
-    pv += ((P0 + anchorOff + boost - p) * 3.2 - pv * 2.6) * dt + gauss() * 95 * Math.sqrt(dt);
+    pv += ((P0 + anchorOff + boost - p) * 3.2 - pv * 2.6) * dt + gauss() * 40 * Math.sqrt(dt);
     p += pv * dt;
-    if ((tm.small -= dt) <= 0) { tm.small = rnd(3.5, 7); if (T > spikeUntil) spike(Math.random() < 0.5 ? 1 : -1, 'small'); }
-    if ((tm.big -= dt) <= 0) { tm.big = rnd(26, 42); spike(Math.random() < 0.5 ? 1 : -1, Math.random() < 0.3 ? 'mega' : 'big'); }
+    if ((tm.small -= dt) <= 0) { tm.small = rnd(6, 11); if (T > spikeUntil) spike(Math.random() < 0.5 ? 1 : -1, 'small'); }
+    if ((tm.big -= dt) <= 0) { tm.big = rnd(45, 70); spike(Math.random() < 0.5 ? 1 : -1, Math.random() < 0.3 ? 'mega' : 'big'); }
     if ((tm.demo -= dt) <= 0) { tm.demo = 4; applyLevels(demoLevels()); }
     // simulated trades, leaning with the price's direction
     let n = Math.random() < dt * 9 ? 1 + (Math.random() < 0.3) : 0;
     while (n--) trades.push({ usd: Math.exp(Math.log(25e3) + gauss() * 1.4), buy: Math.random() < 0.5 + Math.max(-0.35, Math.min(0.35, pv / 300)), px: p });
   } else {
-    const f = tick.fresh(); if (f) p += (f - p) * (1 - Math.exp(-dt * 10));
+    const f = tick.fresh(); if (f) p = f;
   }
+  pS += (p - pS) * (1 - Math.exp(-dt / 0.8));
 
   // pieces in, extra blocks out
   if ((tm.piece -= dt) <= 0) { tm.piece = rnd(0.28, 0.6); if (pieces.length < 4) spawn(); }
@@ -911,7 +913,7 @@ function update(dt) {
     const r = c[Math.floor(Math.random() * c.length)]; if (r) r.flare = 1.4;
   }
   if (pendingT > 0 && (pendingT -= dt) <= 0) flushPending();
-  const sy = yOf(p);
+  const sy = yOf(pS);
 
   for (const r of rows) {
     if (r.yd == null) r.yd = r.y;
@@ -1036,8 +1038,9 @@ function update(dt) {
   sGeo.attributes.position.needsUpdate = true;
 
   // HUD
-  if (Math.round(p) !== lastPx) { const el = $('px'); el.textContent = fmtP(p); el.className = p > lastPx ? 'u' : 'd'; lastPx = Math.round(p); }
-  const chg = ref24 ? fmtPct((p / ref24 - 1) * 100) + ' 24u' : mode === 'demo' ? fmtPct((p / P0 - 1) * 100) + ' t.o.v. 13:21' : '';
+  if ((shownT -= dt) <= 0) { shownT = 0.5; const v = Math.round(p);
+    if (v !== lastPx) { const el = $('px'); el.textContent = fmtP(p); el.className = v > lastPx ? 'u' : 'd'; lastPx = v; shown = p; } }
+  const chg = ref24 ? fmtPct((shown / ref24 - 1) * 100) + ' 24u' : mode === 'demo' ? fmtPct((shown / P0 - 1) * 100) + ' t.o.v. 13:21' : '';
   if ($('chg').textContent !== chg) $('chg').textContent = chg;
   $('s-clr').textContent = nCleared; $('s-eat').textContent = eaten ? fmtUsd(eaten).replace(' mln', 'M').replace(' mld', 'B') : '$0';
   $('s-trd').textContent = nTrades.toLocaleString('nl-NL'); $('s-cmb').textContent = '×' + (T - lastClearT < 4.5 ? combo : 0);
@@ -1046,8 +1049,8 @@ function update(dt) {
 }
 
 function render(rdt) {
-  const t = clock, sy = yOf(p);
-  slab.position.y += (sy - slab.position.y) * Math.min(1, rdt * 18);
+  const t = clock, sy = yOf(pS);
+  slab.position.y += (sy - slab.position.y) * Math.min(1, rdt * 6);
   sweep.position.x = -7 + ((t * 9) % 22);
   slabEdge.material.opacity = 0.7 + 0.3 * Math.sin(t * 6);
   slabEdge.material.color.lerp(tmpC.set(0x7ff0d0), Math.min(1, rdt * 3));

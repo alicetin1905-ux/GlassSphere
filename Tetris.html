@@ -8,6 +8,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Tetris">
+<meta name="application-name" content="GlassSphere Tetris">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@500;600;700&family=Press+Start+2P&display=swap">
 <style>
@@ -28,17 +31,46 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
 .band{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .hud{padding-block:10px 8px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#0b110f,var(--bg))}
 .tick{display:flex;align-items:baseline;gap:10px;min-width:0;flex:1}
-.coin{width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ffd27a,#f7931a 60%,#a85c00);box-shadow:0 0 12px #f7931a88;align-self:center}
-.tick .sym{font-family:var(--mono);font-weight:700;color:var(--dim);font-size:13px;letter-spacing:.06em}
+.coin{width:18px;height:18px;border-radius:50%;align-self:center}
+#coin{font:inherit;font-family:var(--mono);font-weight:700;font-size:13px;letter-spacing:.06em;color:var(--txt);background:#141020;border:1px solid #2a2540;border-radius:8px;padding:3px 22px 3px 8px;align-self:center;-webkit-appearance:none;appearance:none;cursor:pointer;
+  background-image:linear-gradient(45deg,transparent 50%,#8f87b0 50%),linear-gradient(135deg,#8f87b0 50%,transparent 50%);background-position:right 10px center,right 6px center;background-size:4px 4px;background-repeat:no-repeat}
+#coin:focus-visible{outline:2px solid var(--now);outline-offset:2px}
 #px{font-family:var(--mono);font-weight:800;font-size:22px;font-variant-numeric:tabular-nums;transition:color .25s,text-shadow .25s}
 #px.u{color:var(--up);text-shadow:0 0 14px #35ffb066}
 #px.d{color:var(--dn);text-shadow:0 0 14px #ff4d6a66}
 #chg{font-family:var(--mono);font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
-.stats{display:grid;grid-template-columns:repeat(4,auto);gap:4px 16px}
+.stats{display:grid;grid-template-columns:repeat(5,auto);gap:4px 16px;cursor:pointer;border-radius:8px}
+.stats:focus-visible{outline:2px solid var(--now);outline-offset:3px}
+.stats .lg b{color:var(--dim)}
+.stats em{font-style:normal}
 .stats div{display:flex;flex-direction:column;align-items:flex-end}
 .stats span{font-size:9px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
 .stats b{font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums}
-.stage{position:relative;flex:1;min-height:0;overflow:hidden;touch-action:none;cursor:grab}
+.main{flex:1;min-height:0;display:flex}
+.stage{position:relative;flex:1;min-width:0;min-height:0;overflow:hidden;touch-action:none;cursor:grab}
+#snd{margin-left:8px;align-self:center;display:inline-grid;place-items:center;width:30px;height:26px;border-radius:8px;border:1px solid #2a2540;background:#141020;color:var(--dim);cursor:pointer;padding:0}
+#snd .w{display:none} #snd[aria-pressed="true"]{color:var(--now);border-color:#3c5f56} #snd[aria-pressed="true"] .w{display:inline} #snd[aria-pressed="true"] .x{display:none}
+#snd:focus-visible{outline:2px solid var(--now);outline-offset:2px}
+.log{position:absolute;z-index:4;top:8px;left:max(10px,env(safe-area-inset-left,0px));right:max(10px,env(safe-area-inset-right,0px));max-height:72%;display:flex;flex-direction:column;
+  background:#0b0914f4;border:1px solid #2a2540;border-radius:12px;box-shadow:0 12px 40px #000c;touch-action:pan-y;cursor:auto}
+.log .lh{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);font-family:var(--sans);font-size:13px}
+.log .lh span{font-size:11px;color:var(--faint)}
+.log .lh button{margin-left:auto;font:inherit;font-size:20px;line-height:1;color:var(--dim);background:none;border:0;cursor:pointer;padding:0 4px}
+.log ol{list-style:none;margin:0;padding:6px 12px 10px;overflow:auto;display:flex;flex-direction:column;gap:5px;font-family:var(--mono);font-size:11px;line-height:1.4}
+.log li{border-left:3px solid var(--fc);padding-left:8px;color:var(--txt)} .log li b{color:var(--fc)} .log time{color:var(--faint);margin-right:6px}
+.log .none{color:var(--faint);border:0}
+.side{display:none}
+@media (min-width:900px){
+  .side{display:flex;flex-direction:column;gap:14px;width:340px;flex:none;border-left:1px solid var(--line);background:#09070f;overflow:auto;padding-block:12px;padding-inline:16px;font-family:var(--mono);font-size:11.5px;font-variant-numeric:tabular-nums}
+  .side h3{margin:0 0 6px;font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+  .side table{width:100%;border-collapse:collapse}
+  .side td{padding:3px 0;white-space:nowrap} .side td.r{text-align:right} .side td.d{color:var(--dim);padding-left:8px}
+  .side tr.now td{color:var(--now);font-weight:700;border-block:1px solid #2a3c38}
+  .side .pill{display:inline-block;font-family:var(--sans);font-size:10.5px;font-weight:600;padding:0 7px;border-radius:20px;border:1px solid}
+  .side .ex{display:grid;grid-template-columns:84px 1fr auto;align-items:center;gap:8px;padding:2px 0}
+  .side .ex i{height:5px;border-radius:3px}
+  .side .tg{display:flex;justify-content:space-between;gap:8px;padding:3px 0}
+}
 .stage:active{cursor:grabbing}
 #c{display:block;width:100%;height:100%}
 .banner{position:absolute;left:0;right:0;top:36%;text-align:center;pointer-events:none;opacity:0;padding-inline:16px}
@@ -64,11 +96,17 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
 .feed li b{color:var(--fc);font-weight:700}
 @keyframes fin{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
 @keyframes fout{to{opacity:0;transform:translateX(12px)}}
-.tip{position:absolute;z-index:3;min-width:180px;background:#0d1311f0;border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+.tip{position:absolute;z-index:3;min-width:200px;width:min(300px,86vw);background:#0d1311f0;border:1px solid var(--line);border-radius:10px;padding:10px 12px;
   font-family:var(--mono);font-size:11px;font-variant-numeric:tabular-nums;box-shadow:0 10px 30px #000a;pointer-events:none}
 .tip h4{margin:0 0 6px;font-family:var(--sans);font-size:13px;color:var(--tc)}
 .tip .r{display:flex;justify-content:space-between;gap:14px;color:var(--dim)}
-.tip .r b{color:var(--txt);font-weight:600}
+.tip .r b{color:var(--txt);font-weight:600;text-align:right}
+.tip p{margin:8px 0 0;font-family:var(--sans);font-size:11.5px;line-height:1.45;color:#b9c6c0}
+.tip .parts{margin-top:7px;padding-top:7px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:3px}
+.tip .pt{display:grid;grid-template-columns:74px 1fr auto;align-items:center;gap:7px}
+.tip .pt span{font-weight:700}
+.tip .pt i{height:5px;border-radius:3px;opacity:.85}
+.tip .more{color:var(--faint)}
 .note{position:absolute;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));bottom:8px;margin:0;font-family:var(--mono);font-size:10px;color:var(--faint);pointer-events:none}
 .st{display:inline-flex;align-items:center;gap:6px;margin-left:auto;align-self:center;font-family:var(--mono);font-size:10.5px;color:var(--dim);white-space:nowrap}
 .st i{width:7px;height:7px;border-radius:50%;background:var(--faint)}
@@ -77,7 +115,10 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
 .st.demo i{background:var(--liq)}
 @keyframes blink{50%{opacity:.35}}
 @media (max-width:520px){
-  .stats{grid-template-columns:repeat(4,1fr);width:100%}
+  .stats{grid-template-columns:repeat(4,1fr) auto;width:100%}
+  .stats em.lng{display:none}
+  .stats em{font-style:normal}
+  #px{font-size:20px} #chg{font-size:11px} .tick{gap:8px} #coin{padding:3px 20px 3px 7px;font-size:12px}
   .stats div{align-items:flex-start}
   .feed{top:auto;bottom:26px;left:max(12px,env(safe-area-inset-left,0px));width:auto}
   .feed li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px}
@@ -90,14 +131,16 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
 <body>
 <div class="app">
   <header class="hud band">
-    <div class="tick"><span class="coin" aria-hidden="true"></span><span class="sym">BTC</span><b id="px">—</b><span id="chg"></span><span class="st" id="st" title="laatste update"><i></i><span id="st-t">laden…</span></span></div>
-    <div class="stats">
+    <div class="tick"><img class="coin" id="coin-ico" src="icons/coins/btc.png" alt=""><select id="coin" aria-label="Munt"><option value="btc">BTC</option><option value="eth">ETH</option><option value="sol">SOL</option><option value="xrp">XRP</option><option value="doge">DOGE</option><option value="sui">SUI</option></select><b id="px">—</b><span id="chg"></span><span class="st" id="st" title="laatste update"><i></i><span id="st-t">laden…</span></span><button id="snd" type="button" aria-pressed="false" aria-label="Geluid aan of uit" title="Geluid"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path class="w" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path class="x" d="M16 9l5 6M21 9l-5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+    <div class="stats" id="stats" role="button" tabindex="0" aria-label="Logboek openen" title="Logboek">
       <div><span>Geveegd</span><b id="s-clr">0</b></div>
       <div><span>Opgegeten</span><b id="s-eat">$0</b></div>
-      <div><span>Echte liq.</span><b id="s-liq">$0</b></div>
+      <div><span><em class="lng">Echte </em>liq.</span><b id="s-liq">$0</b></div>
       <div><span>Combo</span><b id="s-cmb">×0</b></div>
+      <div class="lg"><span>Log<em class="lng">boek</em></span><b>≡</b></div>
     </div>
   </header>
+  <div class="main">
   <main class="stage" id="stage">
     <canvas id="c" aria-label="3D orderboek: muren, stops, liquidaties en doelen als Tetris-balken rond de huidige prijs"></canvas>
     <div class="next" aria-hidden="true"><span class="lab">VOLGENDE</span><div class="mini" id="mini"></div><span class="who" id="who">—</span></div>
@@ -105,7 +148,10 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
     <div class="banner" id="banner" aria-hidden="true"></div>
     <div class="tip" id="tip" hidden></div>
     <p class="note" id="note">laden…</p>
+    <div class="log" id="log" hidden><div class="lh"><b>Logboek</b><span>nieuwste boven</span><button id="log-x" type="button" aria-label="Logboek sluiten">×</button></div><ol id="log-l"></ol></div>
   </main>
+  <aside class="side" id="side" aria-label="Niveaus, doelen en beurzen"></aside>
+  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -120,9 +166,28 @@ try {
 } catch (e) {}
 
 /* ---------- data: the same sources and estimates as index.html (BTC) ---------- */
-const A = { name: 'BTC', file: 'glasssphere-data.json', okx: 'BTC-USDT-SWAP', okxCt: 0.01, usdt: 'BTCUSDT', gate: 'BTC_USDT', gateMul: 1e-4, gateIv: '10',
-  htx: 'BTC-USDT', htxCt: 0.001, deribit: 'BTC-PERPETUAL', deribitUsd: true, bitmex: 'XBTUSD', cdc: 'BTCUSD-PERP', hl: 'BTC', hlSig: 3, dydx: 'BTC-USD',
-  bin: 10, histBin: 100, auto: { 0.015: 50, 0.03: 100, 0.06: 250, 0.12: 500 }, dec: 0 };
+const ASSETS = {
+  btc: { name: 'BTC', file: 'glasssphere-data.json', okx: 'BTC-USDT-SWAP', okxCt: 0.01, usdt: 'BTCUSDT', gate: 'BTC_USDT', gateMul: 1e-4, gateIv: '10',
+    htx: 'BTC-USDT', htxCt: 0.001, deribit: 'BTC-PERPETUAL', deribitUsd: true, bitmex: 'XBTUSD', cdc: 'BTCUSD-PERP', hl: 'BTC', hlSig: 3, dydx: 'BTC-USD',
+    bin: 10, histBin: 100, auto: { 0.015: 50, 0.03: 100, 0.06: 250, 0.12: 500 }, dec: 0 },
+  eth: { name: 'ETH', file: 'glasssphere-eth.json', okx: 'ETH-USDT-SWAP', okxCt: 0.1, usdt: 'ETHUSDT', gate: 'ETH_USDT', gateMul: 0.01, gateIv: '1',
+    htx: 'ETH-USDT', htxCt: 0.01, deribit: 'ETH-PERPETUAL', deribitUsd: true, bitmex: null, cdc: 'ETHUSD-PERP', hl: 'ETH', hlSig: 4, dydx: 'ETH-USD',
+    bin: 0.25, histBin: 2.5, auto: { 0.015: 1, 0.03: 2.5, 0.06: 5, 0.12: 10 }, dec: 1 },
+  sol: { name: 'SOL', file: 'glasssphere-sol.json', okx: 'SOL-USDT-SWAP', okxCt: 1, usdt: 'SOLUSDT', gate: 'SOL_USDT', gateMul: 1, gateIv: '0.1',
+    htx: 'SOL-USDT', htxCt: 1, deribit: 'SOL_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'SOLUSD-PERP', hl: 'SOL', hlSig: 4, dydx: 'SOL-USD',
+    bin: 0.01, histBin: 0.1, auto: { 0.015: 0.05, 0.03: 0.1, 0.06: 0.25, 0.12: 0.5 }, dec: 2 },
+  xrp: { name: 'XRP', file: 'glasssphere-xrp.json', okx: 'XRP-USDT-SWAP', okxCt: 100, usdt: 'XRPUSDT', gate: 'XRP_USDT', gateMul: 10, gateIv: '0.001',
+    htx: 'XRP-USDT', htxCt: 10, deribit: 'XRP_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'XRPUSD-PERP', hl: 'XRP', hlSig: 4, dydx: 'XRP-USD', bitgetSc: 'scale1',
+    bin: 0.0001, histBin: 0.002, auto: { 0.015: 0.001, 0.03: 0.002, 0.06: 0.005, 0.12: 0.01 }, dec: 4 },
+  doge: { name: 'DOGE', file: 'glasssphere-doge.json', okx: 'DOGE-USDT-SWAP', okxCt: 1000, usdt: 'DOGEUSDT', gate: 'DOGE_USDT', gateMul: 10, gateIv: '0.0001',
+    htx: 'DOGE-USDT', htxCt: 100, deribit: 'DOGE_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'DOGEUSD-PERP', hl: 'DOGE', hlSig: 3, dydx: 'DOGE-USD', bitgetSc: 'scale1',
+    bin: 0.00001, histBin: 0.0001, auto: { 0.015: 0.00005, 0.03: 0.0001, 0.06: 0.00025, 0.12: 0.0005 }, dec: 5 },
+  sui: { name: 'SUI', file: 'glasssphere-sui.json', okx: 'SUI-USDT-SWAP', okxCt: 1, usdt: 'SUIUSDT', gate: 'SUI_USDT', gateMul: 1, gateIv: '0.001',
+    htx: 'SUI-USDT', htxCt: 1, deribit: 'SUI_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'SUIUSD-PERP', hl: 'SUI', hlSig: 3, dydx: 'SUI-USD', bitgetSc: 'scale1',
+    bin: 0.0001, histBin: 0.001, auto: { 0.015: 0.0005, 0.03: 0.001, 0.06: 0.0025, 0.12: 0.005 }, dec: 4 },
+};
+let coinKey = (() => { const h = location.hash.slice(1); if (ASSETS[h]) return h; try { const k = localStorage.getItem('tetris-coin'); if (ASSETS[k]) return k; } catch (e) {} return 'btc'; })();
+let A = ASSETS[coinKey];
 const digits = step => Math.max(0, -Math.floor(Math.log10(step))) + 3;
 const nice = x => { const m = 10 ** Math.floor(Math.log10(x));
   return [1, 2, 2.5, 5, 10].map(c => c * m).reduce((a, b) => Math.abs(Math.log(x / b)) < Math.abs(Math.log(x / a)) ? b : a); };
@@ -156,13 +221,13 @@ const BOOKS = {
     const f = r => [+r.px, +r.sz * +r.px]; return { b: j.levels[0].map(f), a: j.levels[1].map(f) }; },
   bybit: async () => { const r = (await getJSON(`https://api.bybit.com/v5/market/orderbook?category=linear&symbol=${A.usdt}&limit=500`)).result;
     const f = x => [+x[0], +x[1] * +x[0]]; return { b: r.b.map(f), a: r.a.map(f) }; },
-  bitget: async () => { const d = (await getJSON(`https://api.bitget.com/api/v2/mix/market/merge-depth?productType=usdt-futures&symbol=${A.usdt}&limit=max&precision=scale2`)).data;
+  bitget: async () => { const d = (await getJSON(`https://api.bitget.com/api/v2/mix/market/merge-depth?productType=usdt-futures&symbol=${A.usdt}&limit=max&precision=${A.bitgetSc || 'scale2'}`)).data;
     const f = x => [+x[0], +x[1] * +x[0]]; return { b: d.bids.map(f), a: d.asks.map(f) }; },
   htx: async () => { const t = (await getJSON(`https://api.hbdm.com/linear-swap-ex/market/depth?contract_code=${A.htx}&type=step0`)).tick;
     const f = x => [x[0], x[1] * A.htxCt * x[0]]; return { b: t.bids.map(f), a: t.asks.map(f) }; },
-  bitmex: async () => { const j = await getJSON(`https://www.bitmex.com/api/v1/orderBook/L2?symbol=${A.bitmex}&depth=0`);
+  bitmex: async () => { if (!A.bitmex) throw new Error('not listed'); const j = await getJSON(`https://www.bitmex.com/api/v1/orderBook/L2?symbol=${A.bitmex}&depth=0`);
     const f = x => [x.price, x.size]; return { b: j.filter(x => x.side === 'Buy').map(f), a: j.filter(x => x.side === 'Sell').map(f) }; },
-  cryptocom: async () => { const d = (await getJSON(`https://api.crypto.com/exchange/v1/public/get-book?instrument_name=${A.cdc}&depth=150`)).result.data[0];
+  cryptocom: async () => { if (!A.cdc) throw new Error('not listed'); const d = (await getJSON(`https://api.crypto.com/exchange/v1/public/get-book?instrument_name=${A.cdc}&depth=150`)).result.data[0];
     const f = x => [+x[0], +x[1] * +x[0]]; return { b: d.bids.map(f), a: d.asks.map(f) }; },
   dydx: async () => { const j = await getJSON(`https://indexer.dydx.trade/v4/orderbooks/perpetualMarket/${A.dydx}`);
     const f = x => [+x.price, +x.size * +x.price]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
@@ -178,7 +243,7 @@ const MARKET = {
   htx: async () => ({ vol: +(await getJSON(`https://api.hbdm.com/linear-swap-ex/market/detail/merged?contract_code=${A.htx}`)).tick.trade_turnover }),
   deribit: async () => { const r = (await getJSON(`https://www.deribit.com/api/v2/public/get_book_summary_by_instrument?instrument_name=${A.deribit}`)).result[0];
     return { oi: A.deribitUsd ? r.open_interest : r.open_interest * r.mark_price, vol: r.volume_usd, fund: r.funding_8h || 0 }; },
-  cryptocom: async () => { const t = (await getJSON(`https://api.crypto.com/exchange/v1/public/get-tickers?instrument_name=${A.cdc}`)).result.data[0];
+  cryptocom: async () => { if (!A.cdc) throw new Error('not listed'); const t = (await getJSON(`https://api.crypto.com/exchange/v1/public/get-tickers?instrument_name=${A.cdc}`)).result.data[0];
     return { oi: +t.oi * +t.a, vol: +t.vv }; },
   hyperliquid: async () => { const [m, c] = await hlPost({ type: 'metaAndAssetCtxs' });
     const x = c[m.universe.findIndex(u => u.name === A.hl)]; return { oi: +x.openInterest * +x.markPx, vol: +x.dayNtlVlm, fund: +x.funding * 8 }; },
@@ -189,7 +254,7 @@ const MARKET = {
     return { oi: +o.openInterest * +f.markPrice, vol: +t.quoteVolume, fund: +f.lastFundingRate }; },
   bybit: async () => { const t = (await getJSON(`https://api.bybit.com/v5/market/tickers?category=linear&symbol=${A.usdt}`)).result.list[0];
     return { oi: +t.openInterestValue, vol: +t.turnover24h, fund: +t.fundingRate }; },
-  bitmex: async () => { const [x] = await getJSON(`https://www.bitmex.com/api/v1/instrument?symbol=${A.bitmex}`);
+  bitmex: async () => { if (!A.bitmex) throw new Error('not listed'); const [x] = await getJSON(`https://www.bitmex.com/api/v1/instrument?symbol=${A.bitmex}`);
     return { oi: x.openInterest, vol: x.foreignNotional24h || 0, fund: x.fundingRate }; },
 };
 async function fetchAll(table, wrap) {
@@ -463,10 +528,12 @@ function drawLabel(r) {
   if (d === r.lblStr) return; r.lblStr = d;
   const { g, c, t } = r.lbl; g.clearRect(0, 0, c.width, c.height);
   g.textBaseline = 'middle'; const my = c.height / 2;
-  g.font = `700 ${COMPACT ? 62 : 40}px "JetBrains Mono", monospace`; g.fillStyle = '#eef4f0'; g.fillText(fmtP(r.price), 4, my + 1);
-  if (!COMPACT) { g.font = '500 29px "JetBrains Mono", monospace'; g.fillStyle = '#8fa39a'; g.fillText(d, 160, my + 1); }
+  const ps = fmtP(r.price), pf = Math.min(COMPACT ? 62 : 40, (COMPACT ? 300 : 200) / (ps.length * 0.6));
+  g.font = `700 ${pf}px "JetBrains Mono", monospace`; g.fillStyle = '#eef4f0'; g.fillText(ps, 4, my + 1);
+  let px = Math.max(COMPACT ? 238 : 160, g.measureText(ps).width + 16);
+  if (!COMPACT) { g.font = '500 29px "JetBrains Mono", monospace'; g.fillStyle = '#8fa39a'; g.fillText(d, px, my + 1); px = Math.max(290, px + g.measureText(d).width + 14); }
   g.font = `600 ${COMPACT ? 40 : 29}px Inter, system-ui, sans-serif`;
-  const tw = g.measureText(r.t.n).width, px = COMPACT ? 238 : 290, pw = tw + 36, ph = COMPACT ? 74 : 58;
+  const tw = g.measureText(r.t.n).width, pw = tw + 36, ph = COMPACT ? 74 : 58;
   roundRect(g, px, my - ph / 2, pw, ph, ph / 2); g.fillStyle = r.t.c + '29'; g.fill();
   g.shadowColor = r.t.c; g.shadowBlur = 14; g.lineWidth = 3; g.strokeStyle = r.t.c; g.stroke(); g.shadowBlur = 0;
   g.fillStyle = r.t.c; g.fillText(r.t.n, px + 18, my + 2);
@@ -503,12 +570,15 @@ function drawSlab() {
   roundRect(g, 8, 12, 1520, 156, 78); g.fillStyle = 'rgba(8,6,16,.94)'; g.fill();
   g.shadowColor = col; g.shadowBlur = 24; g.lineWidth = 6; g.strokeStyle = col; g.stroke();
   g.font = '800 84px "JetBrains Mono", monospace'; g.fillStyle = col; g.fillText(tagDir > 0 ? '▲' : tagDir < 0 ? '▼' : '●', 44, 92);
-  g.font = '800 128px "JetBrains Mono", monospace'; g.fillStyle = '#f2fbf6'; g.shadowBlur = 18; g.fillText(fmtP(shown), 140, 94); g.shadowBlur = 0;
-  g.font = '700 62px "JetBrains Mono", monospace'; g.fillStyle = col; g.fillText(d.replace(' 24u', ''), 640, 70);
-  g.font = '600 38px "JetBrains Mono", monospace'; g.fillStyle = '#8fa39a'; g.fillText(ref24 ? '24 uur' : 't.o.v. 13:21', 642, 128);
-  g.font = '700 46px "JetBrains Mono", monospace';
-  g.fillStyle = DNC; g.fillText(up != null ? '↑ $' + Math.round(up).toLocaleString('nl-NL') + ' verkoopmuur' : '↑ geen muur', 1010, 62);
-  g.fillStyle = UPC; g.fillText(dn != null ? '↓ $' + Math.round(dn).toLocaleString('nl-NL') + ' koopmuur' : '↓ geen muur', 1010, 122);
+  const ps = fmtP(shown), pf = Math.min(128, 470 / (ps.length * 0.6));
+  g.font = `800 ${pf}px "JetBrains Mono", monospace`; g.fillStyle = '#f2fbf6'; g.shadowBlur = 18; g.fillText(ps, 140, 94); g.shadowBlur = 0;
+  const cx = Math.max(640, 140 + g.measureText(ps).width + 40);
+  g.font = '700 62px "JetBrains Mono", monospace'; g.fillStyle = col; g.fillText(d.replace(' 24u', ''), cx, 70);
+  g.font = '600 38px "JetBrains Mono", monospace'; g.fillStyle = '#8fa39a'; g.fillText(ref24 ? '24 uur' : 't.o.v. 13:21', cx + 2, 128);
+  const ux = Math.max(1010, cx + 370), t1 = up != null ? '↑ ' + fmtDist(up) + ' verkoopmuur' : '↑ geen muur', t2 = dn != null ? '↓ ' + fmtDist(dn) + ' koopmuur' : '↓ geen muur';
+  g.font = `700 ${Math.min(46, (1510 - ux) / (Math.max(t1.length, t2.length) * 0.6))}px "JetBrains Mono", monospace`;
+  g.fillStyle = DNC; g.fillText(t1, ux, 62);
+  g.fillStyle = UPC; g.fillText(t2, ux, 122);
   t.needsUpdate = true;
 }
 
@@ -663,6 +733,8 @@ async function loadChain() {
     const first = !chainTop;
     for (const b of d) if (b.height > chainTop) {
       chainTop = b.height; if (first) continue;
+      if (A.name !== 'BTC') continue;
+      snd('block');
       netWave = 0; netGlow = Math.min(1.5, netGlow + 0.6);
       const pool = b.extras?.pool?.name;
       banner('NIEUW BTC-BLOK', `#${b.height.toLocaleString('nl-NL')} · ${b.tx_count.toLocaleString('nl-NL')} transacties${pool ? ' · ' + pool : ''}`, '', '#f7931a', true);
@@ -729,7 +801,7 @@ function absorbAt(r, x) {
   r.inbound = Math.max(0, r.inbound - 1);
   if (r.gone || r.cleared) return;
   r.units = Math.min(CAP, r.units + 1); r.pulse = Math.min(1.5, r.pulse + 0.45);
-  emit(x, r.yd + r.thS / 2, 0.4, r.t.col, 6, 3);
+  emit(x, r.yd + r.thS / 2, 0.4, r.t.col, 6, 3); snd('zap');
 }
 const barPt = (r, x) => { const v = new THREE.Vector3(); return () => v.set(x, r.yd, 0.35); };
 function zap(src, r, n, delay = 0) {   // n units of orders from a register to a bar
@@ -739,7 +811,7 @@ function zap(src, r, n, delay = 0) {   // n units of orders from a register to a
 function zapBack(r, dst, n, delay = 0) {   // n units pulled back from a bar into a register
   for (let k = 0; k < n; k++) { const x = rnd(0.5, 9.5);
     emit(x, r.yd, 0.4, r.t.col, 4, 2);
-    bolt(new THREE.Vector3(x, r.yd, 0.35), regPos(dst), (REGS[dst] || REGS.model).col, delay + k * 0.07, rnd(0.3, 0.45), () => { const R = REGS[dst]; if (R) R.open = 1; }); }
+    bolt(new THREE.Vector3(x, r.yd, 0.35), regPos(dst), (REGS[dst] || REGS.model).col, delay + k * 0.07, rnd(0.3, 0.45), () => { const R = REGS[dst]; if (R) R.open = 1; snd('back'); }); }
 }
 // a block on its way from a to c in an arc: into a bar (absorb), back into a register (withdraw) or a burst
 function pathTo(b, a, c, dur, end) { b.state = 'path'; b.ax = a.x; b.ay = a.y; b.az = a.z; b.cx = c[0]; b.cy = c[1]; b.cz = c[2]; b.dur = dur; b.end = end; b.t = 0; b.s0 = b.s1 = b.s > 0.01 ? b.s : 0.8; }
@@ -932,8 +1004,34 @@ function lock(q) {
   flashRow(r.yd, r.t.col); shake = Math.max(shake, 0.06);
 }
 
+// a strong level (stop score 80+, a wall or liquidation cluster of 80%+ of the largest, a target) close to the price:
+// its row flashes and a notice says how far it still is; once per approach
+function checkNear() {
+  if (!armed) return;
+  const th = Math.max(bucket * 1.5, p * 0.0012);
+  for (const r of liveRows()) {
+    if (r.cleared) continue;
+    const strong = r.t.u === 'score' ? r.val >= 80 : r.t.u === 'usd' ? r.rel >= 0.8 : true, d = Math.abs(r.price - p);
+    if (strong && !r.warned && d <= th) {
+      r.warned = true; r.warnT = 6; const tx = `${r.t.n} ${fmtP(r.price)} · nog ${fmtDist(d)}`;
+      feed(`<b>Nadert</b> ${esc(tx)}`, r.t.c); banner('NADERT ' + r.t.n.toUpperCase(), tx, '', r.t.c, true); snd('warn');
+    } else if (r.warned && d > th * 2) r.warned = false;
+  }
+}
+// on a wide screen: the levels as a table, the targets, the exchanges
+function drawSide() {
+  const el = $('side'); if (!el.offsetParent) return;
+  const lv = liveRows().slice().sort((a, b) => b.price - a.price || a.t.o - b.t.o), tg = lv.filter(r => r.t.u === 'pct');
+  const row = r => `<tr><td>${esc(fmtP(r.price))}</td><td class="d">${esc(fmtPct((r.price / p - 1) * 100))}</td><td><span class="pill" style="color:${r.t.c};border-color:${r.t.c}66">${esc(r.t.n)}</span></td><td class="r">${esc(r.cleared && r.t.u !== 'pct' ? 'geveegd' : valStr(r))}</td></tr>`;
+  const up = lv.filter(r => r.price > p), dn = lv.filter(r => r.price <= p);
+  const regs = Object.values(REGS).filter(R => R.k !== 'model' && R.on).sort((a, b) => b.tot - a.tot), mx = regs.length ? regs[0].tot : 1;
+  el.innerHTML = (tg.length ? `<section><h3>Doelen · 1 dag</h3>${tg.map(r => `<div class="tg"><span style="color:${r.t.c}">${esc(r.t.n)} ${esc(fmtP(r.price))}</span><b>${esc(valStr(r))}</b></div>`).join('')}</section>` : '')
+    + `<section><h3>Niveaus</h3><table>${up.map(row).join('')}<tr class="now"><td>${esc(fmtP(p))}</td><td class="d">nu</td><td>Huidige prijs</td><td></td></tr>${dn.map(row).join('')}</table></section>`
+    + (regs.length ? `<section><h3>Beurzen · boek in beeld</h3>${regs.map(R => `<div class="ex"><span style="color:${R.css}">${esc(R.name)}</span><i style="width:${Math.max(4, R.tot / mx * 100).toFixed(0)}%;background:${R.css}"></i><b>${esc(fmtUsd(R.tot))}</b></div>`).join('')}</section>` : '');
+}
 function clearRow(r) {
   if (r.cleared) return;
+  snd('sweep');
   r.cleared = true; r.clearedAt = T;
   const dir = r.t.up ? 1 : -1;
   if (r.units) debris(r, Math.min(28, 6 + r.units * 2), 'pop').forEach((b, k) => { b.t = 0.05 + k * 0.012; b.flash = 1.6; b.dir = dir; });
@@ -973,7 +1071,57 @@ function banner(big, sub, cmb, col, small) {
   void bEl.offsetWidth; bEl.classList.add('go');
 }
 const feedEl = $('feed');
+const sound = (() => {
+  let ctx = null, master = null, on = false; const last = {};
+  try { on = localStorage.getItem('tetris-sound') === '1'; } catch (e) {}
+  function ensure() {
+    if (!ctx) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null; ctx = new AC(); master = ctx.createGain(); master.gain.value = 0.8; master.connect(ctx.destination); }
+    if (ctx.state === 'suspended') ctx.resume(); return ctx;
+  }
+  function tone(type, f0, f1, dur, vol, delay = 0) {
+    const t0 = ctx.currentTime + delay, o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type; o.frequency.setValueAtTime(f0, t0); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t0 + dur);
+    g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur); o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  function noise(dur, vol, fc) {
+    const n = Math.floor(ctx.sampleRate * dur), buf = ctx.createBuffer(1, n, ctx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const src = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), g = ctx.createGain(); src.buffer = buf; bp.type = 'bandpass'; bp.frequency.value = fc; g.gain.value = vol;
+    src.connect(bp); bp.connect(g); g.connect(master); src.start();
+  }
+  const GAP = { zap: 70, back: 90, sweep: 160, liq: 300, block: 600, warn: 400 };
+  return {
+    play(kind) {
+      if (!on || !ctx || ctx.state !== 'running' || document.hidden) return;
+      const now = performance.now(); if (now - (last[kind] || 0) < (GAP[kind] || 100)) return; last[kind] = now;
+      if (kind === 'zap') tone('sawtooth', 1500, 320, 0.07, 0.022);
+      else if (kind === 'back') tone('sawtooth', 320, 1200, 0.08, 0.018);
+      else if (kind === 'sweep') { tone('sine', 170, 45, 0.35, 0.25); noise(0.25, 0.1, 1400); }
+      else if (kind === 'liq') { tone('sine', 95, 28, 0.6, 0.35); noise(0.5, 0.14, 420); }
+      else if (kind === 'block') { tone('sine', 880, 875, 0.7, 0.07); tone('sine', 1320, 1315, 0.9, 0.045, 0.09); }
+      else if (kind === 'warn') { tone('square', 660, 660, 0.09, 0.035); tone('square', 990, 990, 0.12, 0.035, 0.13); }
+    },
+    toggle() { on = !on; try { localStorage.setItem('tetris-sound', on ? '1' : '0'); } catch (e) {} if (on) ensure(); return on; },
+    wake() { if (on) ensure(); },
+    get on() { return on; },
+  };
+})();
+const snd = k => sound.play(k);
+$('snd').setAttribute('aria-pressed', sound.on);
+$('snd').addEventListener('click', () => { $('snd').setAttribute('aria-pressed', sound.toggle()); snd('warn'); });
+addEventListener('pointerdown', () => sound.wake(), { capture: true });   // the browser lets sound start only after a tap
+const logEv = [];
+function drawLog() {
+  $('log-l').innerHTML = logEv.length ? logEv.slice().reverse().map(e => `<li style="--fc:${e.col}"><time>${hhmmss(e.t)}</time>${e.html}</li>`).join('')
+    : '<li class="none">Nog niets gebeurd. Veegacties, liquidaties, weggetrokken muren en waarschuwingen komen hier.</li>';
+}
+function toggleLog(open) { const l = $('log'); l.hidden = open === undefined ? !l.hidden : !open; if (!l.hidden) { drawLog(); tip.hidden = true; } }
+$('stats').addEventListener('click', () => toggleLog());
+$('stats').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleLog(); } });
+$('log-x').addEventListener('click', () => toggleLog(false));
+$('log').addEventListener('pointerdown', e => e.stopPropagation());
 function feed(html, col) {
+  logEv.push({ t: Date.now(), html, col }); if (logEv.length > 120) logEv.shift(); if (!$('log').hidden) drawLog();
   const li = document.createElement('li'); li.style.setProperty('--fc', col); li.innerHTML = html; feedEl.prepend(li);
   while (feedEl.children.length > 4) feedEl.lastChild.remove();
   setTimeout(() => li.remove(), 6200);
@@ -1011,7 +1159,7 @@ const tick = (() => {
       retryT = setTimeout(open, Math.min(30e3, 1000 * 2 ** retry++)); };
     me.onerror = () => me.close();
   }
-  function stop() { on = false; clearTimeout(retryT); clearInterval(poll); poll = 0; clearInterval(ping); const w = ws; ws = null; if (w) { w.onclose = null; try { w.close(); } catch (e) {} } }
+  function stop() { on = false; px = null; clearTimeout(retryT); clearInterval(poll); poll = 0; clearInterval(ping); const w = ws; ws = null; if (w) { w.onclose = null; try { w.close(); } catch (e) {} } }
   function start() { stop(); on = true; pollOnce(); open(); }
   return { start, stop, fresh: () => px && Date.now() - at < 10e3 ? px : null };
 })();
@@ -1047,7 +1195,7 @@ function realLiq(ex, long, q, usd) {
 }
 function showLiq(long, q, usd, ex) {
   liqTot += usd;
-  netGlow = Math.min(1.5, netGlow + 0.4 + Math.min(1, usd / 1e6)); netPulse(TY.sliq.col, 6);
+  netGlow = Math.min(1.5, netGlow + 0.4 + Math.min(1, usd / 1e6)); netPulse(TY.sliq.col, 6); snd('liq');
   for (const e of ex) { const k = EXKEY[e], R = REGS[k]; if (!R) continue;
     R.open = 1; R.flash = 1.6; R.fTxt = 'LIQ ' + fmtUsd(usd); R.fCss = TY.sliq.c;
     for (let n = 0; n < 3; n++) bolt(regPos(k), new THREE.Vector3(rnd(-5, 12), slab.position.y, 0.8), TY.sliq.col, n * 0.08, 0.35, null); }
@@ -1062,7 +1210,22 @@ function showLiq(long, q, usd, ex) {
   if (usd >= 250e3) banner(usd >= 1e6 ? 'LIQUIDATIE!' : 'ECHTE LIQUIDATIE', sub, '', TY.sliq.c, usd < 1e6);
   if (usd >= 50e3) feed(`<b>Echte liquidatie</b> ${sub}`, TY.sliq.c);
 }
-let site = null, series = null, seriesAt = 0, market = null, liveTimer = 0, liveGen = 0;
+let site = null, series = null, seriesAt = 0, market = null, liveTimer = 0, liveGen = 0, lastRaw = null, fastTimer = 0, lastBooks = 0;
+// OKX's nearest 400 levels every 3 s: the walls close to the price move between the full refreshes of all books
+async function fastBook() {
+  const g = liveGen; if (!lastRaw || mode !== 'live' || document.hidden) return;
+  try {
+    const b = (await getJSON(`https://www.okx.com/api/v5/market/books?instId=${A.okx}&sz=400`)).data[0]; if (g !== liveGen || !lastRaw) return;
+    const f = r => [+r[0], +r[1] * A.okxCt * +r[0]], fb = binLevels(b.bids.map(f), 'b'), fa = binLevels(b.asks.map(f), 'a');
+    if (!fb.length || !fa.length) return;
+    const lo = Math.min(...fb.map(x => x[0])), hi = Math.max(...fa.map(x => x[0])), old = lastRaw.books.okx || { b: [], a: [] };
+    const okx = { b: [...old.b.filter(([q]) => q < lo), ...fb], a: [...old.a.filter(([q]) => q > hi), ...fa] };
+    lastRaw = { ...lastRaw, books: { ...lastRaw.books, okx }, price: tick.fresh() || lastRaw.price, ts: Date.now() };
+    applyLevels(levelsOf(lastRaw)); liveStatus(Date.now());
+  } catch (e) {}
+}
+const liveStatus = ts => status('live', COMPACT ? hhmmss(ts) : `live · ${lastBooks} boeken · ${hhmmss(ts)}`,
+  COMPACT ? `${lastBooks} boeken · stops/liq. geschat · glas = muur pas kort` : `${lastBooks} orderboeken · stops en liq. geschat · glas: muur pas kort · OKX elke 3 s`);
 async function loadSite() {
   if (!/^https?:$/.test(location.protocol)) return null;
   try { const r = await fetch(A.file, { cache: 'no-store' }); return r.ok ? await r.json() : null; } catch (e) { return null; }
@@ -1077,8 +1240,8 @@ async function loadLive() {
     const books = await fetchBooks(); if (g !== liveGen) return false;
     if (!Object.keys(books).length) throw new Error('no books');
     const raw = { ts: Date.now(), price: tick.fresh() || series.candles[series.candles.length - 1][4], books, ...series, market, bookHist: site?.bookHist };
-    const L = levelsOf(raw); applyLevels(L); armed = true;
-    status('live', COMPACT ? `live ${hhmmss(L.ts)}` : `live · ${L.nBooks} boeken · ${hhmmss(L.ts)}`, COMPACT ? `${L.nBooks} boeken · stops/liq. geschat · glas = muur pas kort` : `${L.nBooks} orderboeken · stops en liq. geschat · glas: muur pas kort`);
+    lastRaw = raw; const L = levelsOf(raw); applyLevels(L); armed = true; lastBooks = L.nBooks;
+    liveStatus(L.ts);
     return true;
   } catch (e) { return false; }
 }
@@ -1097,12 +1260,32 @@ async function startLive() {
   status('', 'laden…', 'orderboeken ophalen…');
   site = await loadSite(); if (g !== liveGen) return;
   if (site) { applyLevels(levelsOf(site)); status('site', `uurdata · ${hhmmss(site.ts)}`, 'Data van het laatste uur · live data laden…'); }
-  if (await loadLive()) { if (g === liveGen) liveTimer = setInterval(loadLive, 15e3); return; }
+  if (await loadLive()) { if (g === liveGen) { liveTimer = setInterval(loadLive, 15e3); fastTimer = setInterval(fastBook, 3000); } return; }
   if (g !== liveGen) return;
   if (site) { liveTimer = setInterval(loadLive, 15e3); return; }
+  if (A.name !== 'BTC') { status('', 'geen data', `Geen data voor ${A.name}: beurzen en ${A.file} niet bereikbaar`); return; }
   feed('<b>Geen live data</b> bereikbaar · demo gestart', TY.sliq.c);
   startDemo();
 }
+// switch coin: everything starts again for the new one
+function selectCoin(k) {
+  if (!ASSETS[k]) k = 'btc';
+  coinKey = k; A = ASSETS[k]; $('coin').value = k; $('coin-ico').src = `icons/coins/${k}.png`;
+  document.title = 'GlassSphere · Tetris' + (k === 'btc' ? '' : ' · ' + A.name);
+  try { localStorage.setItem('tetris-coin', k); } catch (e) {}
+  try { history.replaceState(null, '', location.pathname + (k === 'btc' ? '' : '#' + k)); } catch (e) {}
+  liveGen++; clearInterval(liveTimer); liveTimer = 0; clearInterval(fastTimer); fastTimer = 0; tick.stop(); liqWs.stop();
+  for (const r of liveRows()) removeRow(r, true);
+  for (const q of bolts) q.onHit = null;
+  site = series = market = null; lastRaw = null; firstApply = true; armed = false; mode = 'live';
+  p = pS = shown = 0; nCleared = eaten = liqTot = 0; combo = 0; trail.length = 0; trades.length = 0; lastPx = 0; tagDir = 0; slabStr = ''; ref24 = 0;
+  for (const R of Object.values(REGS)) { R.tot = 0; R.on = false; R.str = ''; }
+  $('px').textContent = '—'; $('chg').textContent = ''; selRow = null; selEx = null; tip.hidden = true;
+  startLive();
+}
+$('coin').value = coinKey; $('coin-ico').src = `icons/coins/${coinKey}.png`;
+$('coin').addEventListener('change', e => selectCoin(e.target.value));
+addEventListener('hashchange', () => { const h = location.hash.slice(1); if (ASSETS[h] && h !== coinKey) selectCoin(h); });
 function status(cls, txt, note) { $('st').className = 'st ' + cls; $('st-t').textContent = txt; $('note').textContent = note; }
 
 /* ---------- demo source: the table of 13:21, values that drift, a simulated price ---------- */
@@ -1132,7 +1315,7 @@ function demoLevels() {
   return { P: P0, ts: Date.now(), rows: rowsD, B: 50, ref24: 0, ex };
 }
 function startDemo() {
-  liveGen++; clearInterval(liveTimer); tick.stop(); liqWs.stop(); mode = 'demo'; trail.length = 0;
+  liveGen++; clearInterval(liveTimer); clearInterval(fastTimer); tick.stop(); liqWs.stop(); mode = 'demo'; trail.length = 0;
   for (const r of liveRows()) removeRow(r, true);
   firstApply = true; armed = true; p = P0; pv = 0; boost = 0; anchorOff = 0; tm.demo = 4; ref24 = 0;
   applyLevels(demoLevels());
@@ -1147,11 +1330,12 @@ function spike(dir, size) {
 }
 
 /* ---------- interaction ---------- */
+let selEx = null;
 let dragYaw = 0, dragPitch = 0, down = null, selRow = null, zoom = 1, panY = 0, pinch0 = null, lastTap = 0;
 const ptrs = new Map();
 const pinchD = () => { const [a, b] = [...ptrs.values()]; return Math.hypot(a.x - b.x, a.y - b.y) || 1; };
 const tip = $('tip'), ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
-stage.addEventListener('pointerdown', e => { ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); stage.setPointerCapture(e.pointerId);
+stage.addEventListener('pointerdown', e => { if (e.target.closest('.log')) return; ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); stage.setPointerCapture(e.pointerId);
   if (ptrs.size === 2) { pinch0 = { d: pinchD(), z: zoom }; down = null; return; }
   down = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, id: e.pointerId }; });
 stage.addEventListener('pointermove', e => {
@@ -1174,29 +1358,64 @@ stage.addEventListener('pointerup', e => {
   const rc = stage.getBoundingClientRect();
   ndc.set((e.clientX - rc.left) / rc.width * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
   ray.setFromCamera(ndc, cam);
+  const x = e.clientX - rc.left, y = e.clientY - rc.top, regs = Object.values(REGS);
+  const th = ray.intersectObjects(regs.map(R => R.g.children[0]))[0];
+  if (th) { const R = regs.find(R => R.g.children[0] === th.object); selRow = null;
+    if (selEx === R.k) { selEx = null; tip.hidden = true; } else { selEx = R.k; showTileTip(R, x, y); } return; }
   const hit = ray.intersectObjects(liveRows().map(r => r.hit))[0];
-  if (!hit || hit.object.userData.row === selRow) { selRow = null; tip.hidden = true; return; }
-  selRow = hit.object.userData.row; showTip(selRow, e.clientX - rc.left, e.clientY - rc.top);
+  if (!hit || hit.object.userData.row === selRow) { selRow = null; selEx = null; tip.hidden = true; return; }
+  selEx = null; selRow = hit.object.userData.row; showTip(selRow, x, y);
 });
 stage.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); pinch0 = null; down = null; });
 stage.addEventListener('wheel', e => { e.preventDefault(); zoom = Math.max(1, Math.min(2.8, zoom * Math.exp(-e.deltaY * 0.0015))); }, { passive: false });
 stage.addEventListener('dblclick', () => { zoom = 1; });
-function showTip(r, x, y) {
-  const rows_ = [['Prijs', fmtP(r.price)], ['Afstand', fmtPct((r.price / p - 1) * 100)], ['Grootte', r.cleared && r.t.u !== 'pct' ? 'geveegd' : valStr(r)],
-    ['Dikte', r.base ? `${r.units} van ${MAXB}` : '—'], ...(r.ps ? [['Aanwezig', `${r.ps[0]} van ${r.ps[1]} uur${r.glass ? ' · glas' : ''}`]] : [])];
-  tip.style.setProperty('--tc', r.t.c);
-  tip.innerHTML = `<h4></h4>` + rows_.map(() => `<div class="r"><span></span><b></b></div>`).join('');
-  tip.querySelector('h4').textContent = r.t.n;
-  tip.querySelectorAll('.r').forEach((el, i) => { el.children[0].textContent = rows_[i][0]; el.children[1].textContent = rows_[i][1]; });
+const EXPL = {
+  ask: 'Verkooporders in het orderboek van alle beurzen samen, gewogen naar volume. Een muur remt een stijging af; wordt hij opgegeten, dan kan de prijs doorschieten.',
+  bid: 'Kooporders in het orderboek van alle beurzen samen, gewogen naar volume. Een koopmuur vangt een daling op; breekt hij, dan valt die steun weg.',
+  bstop: 'Geschatte stop-orders net boven een top die nog niet geraakt is: stop-losses van shorts en uitbraakkopers. Geraakt worden het kooporders die de prijs verder omhoog kunnen duwen. Score 0–100 t.o.v. het sterkste stopniveau in beeld, geen bedrag.',
+  sstop: 'Geschatte stop-orders net onder een bodem die nog niet geraakt is: stop-losses van longs. Geraakt worden het verkooporders die de prijs verder omlaag kunnen duwen. Score 0–100 t.o.v. het sterkste stopniveau in beeld, geen bedrag.',
+  sliq: 'Geschatte liquidaties van shorts met hefboom, uit de groei van de open posities. Geraakt moeten ze terugkopen: een short squeeze kan de prijs verder omhoog jagen.',
+  lliq: 'Geschatte liquidaties van longs met hefboom, uit de groei van de open posities. Geraakt moeten ze verkopen: een long-flush kan de prijs verder omlaag drukken.',
+  tup: 'GlassSphere-doel voor 1 dag: het grootste cluster van stops en liquidaties boven de prijs. De kans zegt hoe vaak dit doel eerst geraakt wordt, berekend uit de afstanden; het is geen voorspelling van de richting.',
+  tdn: 'GlassSphere-doel voor 1 dag: het grootste cluster van stops en liquidaties onder de prijs. De kans zegt hoe vaak dit doel eerst geraakt wordt, berekend uit de afstanden; het is geen voorspelling van de richting.',
+};
+const esc = x => String(x).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const fmtDist = v => '$' + Math.abs(v).toLocaleString('nl-NL', { minimumFractionDigits: A.dec, maximumFractionDigits: A.dec });
+function placeTip(x, y) {
   tip.hidden = false;
   const w = stage.clientWidth, h = stage.clientHeight, tw = tip.offsetWidth, th = tip.offsetHeight;
   tip.style.left = Math.max(8, Math.min(w - tw - 8, x - tw / 2)) + 'px';
   tip.style.top = (y - th - 14 > 8 ? y - th - 14 : Math.min(h - th - 8, y + 18)) + 'px';
 }
+const kv = rows_ => rows_.map(([k, v]) => `<div class="r"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('');
+function showTip(r, x, y) {
+  const rows_ = [['Prijs', fmtP(r.price)], ['Afstand', fmtPct((r.price / p - 1) * 100) + ' · ' + fmtDist(r.price - p)], ['Grootte', r.cleared && r.t.u !== 'pct' ? 'geveegd' : valStr(r)],
+    ...(r.base ? [['Dikte', `${r.units} van ${MAXB}`]] : []), ...(r.ps ? [['Aanwezig', `${r.ps[0]} van ${r.ps[1]} uur${r.glass ? ' · glas, mogelijk nep' : ''}`]] : [])];
+  let parts = '';
+  if (r.per) {   // which books the wall is made of
+    const e = Object.entries(r.per).filter(([k]) => REGS[k]).sort((a, b) => b[1] - a[1]), sum = e.reduce((a, [, v]) => a + v, 0) || 1;
+    parts = '<div class="parts">' + e.slice(0, 5).map(([k, v]) => `<div class="pt"><span style="color:${REGS[k].css}">${esc(REGS[k].name)}</span><i style="width:${Math.max(4, v / sum * 100).toFixed(0)}%;background:${REGS[k].css}"></i><b>${esc(fmtUsd(v))}</b></div>`).join('')
+      + (e.length > 5 ? `<div class="more">+${e.length - 5} beurzen</div>` : '') + '</div>';
+  }
+  tip.style.setProperty('--tc', r.t.c);
+  tip.innerHTML = `<h4>${esc(r.t.n)}</h4>${kv(rows_)}${parts}<p>${esc(EXPL[r.type])}</p>`;
+  placeTip(x, y);
+}
+function showTileTip(R, x, y) {
+  const mine = liveRows().filter(r => R.k === 'model' ? (r.t.u === 'score' || r.type.endsWith('liq')) : r.per && r.per[R.k] > 0);
+  const lines = R.k === 'model' ? mine.slice(0, 5).map(r => [r.t.n + ' ' + fmtP(r.price), valStr(r)])
+    : mine.map(r => [r, r.per[R.k], r.per[R.k] / (Object.values(r.per).reduce((a, b) => a + b, 0) || 1)]).sort((a, b) => b[1] - a[1]).slice(0, 5)
+      .map(([r, v, f]) => [r.t.n + ' ' + fmtP(r.price), fmtUsd(v) + ' · ' + Math.round(f * 100) + '%']);
+  tip.style.setProperty('--tc', R.css);
+  tip.innerHTML = `<h4>${esc(R.name)}</h4>` + kv([[R.k === 'model' ? 'Niveaus' : 'Boek in beeld', R.k === 'model' ? String(mine.length) : R.on ? fmtUsd(R.tot) : 'geen data'],
+    ...(R.k === 'model' ? [] : [['Muren met een deel', String(mine.length)]])]) + (lines.length ? '<div class="parts">' + kv(lines) + '</div>' : '')
+    + `<p>${R.k === 'model' ? 'Stops en liquidaties staan in geen enkel orderboek; ze zijn geschat uit de koershistorie en de open posities. Hun niveaus lichten nu op.' : 'De muren waar ' + esc(R.name) + ' aan bijdraagt lichten nu op, de rest dimt. Tik de tegel nog eens om terug te gaan.'}</p>`;
+  placeTip(x, y);
+}
 document.addEventListener('visibilitychange', () => {
   if (mode !== 'live') return;
-  if (document.visibilityState === 'hidden') { tick.stop(); liqWs.stop(); clearInterval(liveTimer); liveTimer = 0; }
-  else { tick.start(); liqWs.start(); loadLive(); clearInterval(liveTimer); liveTimer = setInterval(loadLive, 15e3); }
+  if (document.visibilityState === 'hidden') { tick.stop(); liqWs.stop(); clearInterval(liveTimer); clearInterval(fastTimer); liveTimer = fastTimer = 0; }
+  else { tick.start(); liqWs.start(); loadLive(); clearInterval(liveTimer); clearInterval(fastTimer); liveTimer = setInterval(loadLive, 15e3); fastTimer = setInterval(fastBook, 3000); }
 });
 
 /* ---------- camera fit ---------- */
@@ -1400,13 +1619,14 @@ function update(dt) {
   sGeo.attributes.position.needsUpdate = true;
 
   // HUD
-  if ((shownT -= dt) <= 0) { shownT = 0.5; const v = Math.round(p);
+  if ((shownT -= dt) <= 0) { shownT = 0.5; const v = Math.round(p * 10 ** A.dec);   // in the coin's own decimals
     if (v !== lastPx) { const el = $('px'); el.textContent = fmtP(p); el.className = v > lastPx ? 'u' : 'd'; if (lastPx) { tagDir = v > lastPx ? 1 : -1; tagFlash = 1; } lastPx = v; shown = p; } }
-  const chg = ref24 ? fmtPct((shown / ref24 - 1) * 100) + ' 24u' : mode === 'demo' ? fmtPct((shown / P0 - 1) * 100) + ' t.o.v. 13:21' : '';
+  const chg = ref24 ? fmtPct((shown / ref24 - 1) * 100) + (COMPACT ? '' : ' 24u') : mode === 'demo' ? fmtPct((shown / P0 - 1) * 100) + ' t.o.v. 13:21' : '';
   if ($('chg').textContent !== chg) $('chg').textContent = chg;
   $('s-clr').textContent = nCleared; $('s-eat').textContent = eaten ? fmtUsd(eaten).replace(' mln', 'M').replace(' mld', 'B') : '$0';
   $('s-liq').textContent = liqTot ? fmtUsd(liqTot).replace(' mln', 'M').replace(' mld', 'B') : '$0'; $('s-cmb').textContent = '×' + (T - lastClearT < 4.5 ? combo : 0);
   if ((tm.dist -= dt) <= 0) { tm.dist = 1; for (const r of liveRows()) drawLabel(r);
+    checkNear(); drawSide();
     const now = Date.now(); trail.push({ t: now, p: pS }); while (trail.length && (trail.length > TRN || now - trail[0].t > 900e3)) trail.shift(); }
   drawSlab();
 }
@@ -1436,7 +1656,8 @@ function render(rdt) {
     R.drawer.position.x = -1.38 - R.open * 0.55; R.glow.material.opacity = R.open * 0.9;
     const ky = Math.min(1, rdt * 4); R.g.position.y += (tileTop - R.g.userData.i * tileStep - R.g.position.y) * ky; R.g.position.x += (tileX() - R.g.position.x) * ky;
     R.g.scale.setScalar(R.g.scale.x + (tileSc - R.g.scale.x) * ky);
-    R.edge.material.opacity = (R.on ? 0.3 : 0.12) + 0.6 * R.open + 0.06 * Math.sin(t * 2 + R.seed);
+    R.edge.material.opacity = selEx === k ? 0.8 + 0.2 * Math.sin(t * 6) : (R.on ? 0.3 : 0.12) + 0.6 * R.open + 0.06 * Math.sin(t * 2 + R.seed);
+    if (selEx === k) R.glow.material.opacity = Math.max(R.glow.material.opacity, 0.5);
     drawReg(R); }
   floor.position.y += (ctrY + 0.98 - floor.position.y) * Math.min(1, rdt * 4);
   if (!paused) updateNet(rdt, t);
@@ -1444,14 +1665,19 @@ function render(rdt) {
   // rows: halos, labels, size tags, gates
   for (const r of rows) {
     const y = r.yd ?? r.y;
-    const fade = r.gone ? Math.max(0, r.goneT / 0.9) : 1, fadeL = r.gone ? Math.max(0, (r.goneT - 0.55) / 0.35) : 1;
+    const exS = !selEx ? -1 : selEx === 'model' ? (r.t.u === 'score' || r.type.endsWith('liq') ? 1 : 0)
+      : r.per ? (r.per[selEx] || 0) / (Object.values(r.per).reduce((a, b) => a + b, 0) || 1) : 0;
+    const dim = exS === 0 ? 0.22 : 1;
+    if (r.warnT > 0) r.warnT -= rdt;
+    const wb = r.warnT > 0 ? Math.abs(Math.sin(t * 9)) : 0;
+    const fade = (r.gone ? Math.max(0, r.goneT / 0.9) : 1) * dim, fadeL = r.gone ? Math.max(0, (r.goneT - 0.55) / 0.35) : 1;
     if (r.bar) {
       r.thS += (thOf(r.units) - r.thS) * Math.min(1, rdt * 8);
       r.pulse = Math.max(0, r.pulse - rdt * 2.5);
       const th = Math.max(0.001, r.thS * (1 + 0.12 * r.pulse)), fl = r.flare > 0;
       r.bar.position.set(5 + (fl ? rnd(-0.04, 0.04) : 0), y, fl ? rnd(-0.06, 0.06) : 0); r.bar.scale.set(10, th, th);
       r.edge.position.copy(r.bar.position); r.edge.scale.copy(r.bar.scale);
-      let br = 1 + 0.6 * Math.exp(-((y - scanY) ** 2) * 1.4) + 0.5 * r.pulse + 0.35 * r.hl + (Math.abs(y - sy) < 1.2 * RS ? 0.2 : 0) + (fl ? 0.6 * Math.abs(Math.sin(t * 26)) : 0);
+      let br = 1 + 0.6 * Math.exp(-((y - scanY) ** 2) * 1.4) + 0.5 * r.pulse + 0.35 * r.hl + (exS > 0 ? 0.3 + exS : 0) + 0.9 * wb + (Math.abs(y - sy) < 1.2 * RS ? 0.2 : 0) + (fl ? 0.6 * Math.abs(Math.sin(t * 26)) : 0);
       if (r.glass) br *= 0.75 + 0.35 * Math.abs(Math.sin(t * 7 + y));
       r.bar.material.color.copy(r.t.col).multiplyScalar(br);
       const add = r.glass, m = r.bar.material;
@@ -1466,8 +1692,8 @@ function render(rdt) {
     r.hl += ((r === selRow ? 1 : 0) - r.hl) * Math.min(1, rdt * 4);
     r.halo.scale.set(Math.max(1.5, r.endX + 1.6), 1.7 + near * 0.6, 1);
     r.halo.position.set(r.endX / 2, y, -0.6);
-    r.halo.material.opacity = fade * (r.cleared ? 0.03 : 0.16 + 0.07 * Math.sin(t * 2.2 + y * 0.7) + near * 0.22 + r.hl * 0.45 + (r.flare > 0 ? 0.35 * Math.abs(Math.sin(t * 22)) : 0));
-    const lo = r.gone ? fadeL : T - r.born < 0.35 ? 0 : r.cleared ? 0.3 : 1;
+    r.halo.material.opacity = fade * (r.cleared ? 0.03 : 0.16 + 0.07 * Math.sin(t * 2.2 + y * 0.7) + near * 0.22 + r.hl * 0.45 + 0.7 * wb + (r.flare > 0 ? 0.35 * Math.abs(Math.sin(t * 22)) : 0));
+    const lo = (r.gone ? fadeL : T - r.born < 0.35 ? 0 : r.cleared ? 0.3 : 1) * (exS === 0 ? 0.35 : 1);
     r.lbl.m.material.opacity = r.gone ? Math.min(r.lbl.m.material.opacity, lo) : r.lbl.m.material.opacity + (lo - r.lbl.m.material.opacity) * Math.min(1, rdt * 6);
     r.sz.m.material.opacity = r.lbl.m.material.opacity;
     if (r.gate) {
@@ -1531,7 +1757,7 @@ function render(rdt) {
   renderer.render(scene, cam);
 }
 requestAnimationFrame(frame);
-if (/^https?:$/.test(location.protocol)) startLive(); else startDemo();
+if (/^https?:$/.test(location.protocol)) selectCoin(coinKey); else startDemo();
 })();
 </script>
 </body>

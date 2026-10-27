@@ -160,7 +160,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
         <li>Elke <b>neonbuis</b> is een prijsniveau: een muur in de orderboeken, of geschatte stops of liquidaties. Prijs en soort staan links in de buis, het bedrag rechts.</li>
         <li>Hoe <b>dikker</b> de buis, hoe groter het volume of de score.</li>
         <li><b>Blokje</b> = muur: die <b>remt</b> de prijs. <b>Dubbele pijl</b> = stops of liquidaties: die <b>duwen</b> de prijs verder in die richting als ze geraakt worden.</li>
-        <li>De <b>draden</b> lopen naar de beurzen die de buis vullen: hoe feller, hoe groter hun deel. Een <b>puls</b> is een order die erbij komt of verdwijnt; een grote puls is een groot bedrag.</li>
+        <li>De <b>draden</b> verbinden elke beurs met elke buis. De <b>pulsen</b> erover zijn een lichtpatroon voor de sfeer, geen echte orders; wat de beurzen echt bijdragen zie je als je op een buis tikt.</li>
         <li><b>Tik op een buis</b> voor de details; de tegels tonen dan het deel van elke beurs. <b>Tik op een beurs</b> om alleen haar buizen te zien.</li>
         <li><b>Scroll of knijp</b> om op een plek in te zoomen, sleep om rond te kijken, <b>dubbeltik</b> om terug te gaan.</li>
       </ul>
@@ -812,7 +812,7 @@ function fillRow(r, n, delay) {
 }
 // electric pulses: a flickering bolt in the exchange's colour with a bright head runs from a to b; where it strikes,
 // sparks fly and onHit runs (the bar gets a unit thicker, a register takes one back, a wall is hit by a trade)
-const BN = 56, BSEG = 16, bolts = [];
+const BN = 200, BSEG = 16, bolts = [];
 const boltPool = [...Array(BN)].map(() => {
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array((BSEG + 1) * 3), 3).setUsage(THREE.DynamicDrawUsage));
   const line = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: ADD, depthWrite: false }));
@@ -845,9 +845,6 @@ function bolt(a, b, col, delay, dur, onHit, path, mag = 0.4) {
   const slot = boltPool.find(x => !x.busy); if (!slot) { if (onHit) onHit(); return; }
   slot.busy = true; bolts.push({ slot, a: a.clone(), b, col: col.clone(), t: -delay, dur, onHit, hit: false, flash: 0, path, mag });
 }
-// how big a pulse is: 0 for $50K or less, 1 for $5M or more (stops and liquidations without an amount: in between)
-const magUsd = usd => Math.max(0, Math.min(1, Math.log10(Math.max(1, usd) / 5e4) / 2));
-const magOf = r => r.t.u === 'usd' ? magUsd(r.val / Math.max(1, r.base)) : 0.45;
 // the wire from a tube's cap on the tile's side (s = 0) to an exchange tile (s = 1)
 function wirePt(r, k, s, out) {
   const sd = (REGS[k] || REGS.model).side, W0 = regPos(k), y = r.yd ?? r.y, iu = 1 - s, a0 = sd > 0 ? BW + 0.2 : -0.2, c1 = a0 + sd * 1.2, c2 = W0.x - sd * 1.2;
@@ -863,22 +860,35 @@ function wireRoute(r, k, x, back) {
     return u < fA ? wirePt(r, k, 1 - u / fA, out) : out.set(cx - sd * (u - fA) / (1 - fA) * lB, y, 0.02);
   };
 }
-// a route from a tile along a curved wire to a free point (the price line): out of the drawer towards the bars, in level
-function tileCurve(k, end) {
-  const sd = (REGS[k] || REGS.model).side;
-  return (u, out) => {
-    const W0 = regPos(k), P = typeof end === 'function' ? end() : end, iu = 1 - u, c1 = W0.x - sd * 2.5, c2 = P.x + sd * 2.5;
-    return out.set(iu ** 3 * W0.x + 3 * iu * iu * u * c1 + 3 * iu * u * u * c2 + u ** 3 * P.x,
-      iu ** 3 * W0.y + 3 * iu * iu * u * W0.y + 3 * iu * u * u * P.y + u ** 3 * P.y, W0.z + (P.z - W0.z) * u);
-  };
-}
 const BP = new THREE.Vector3();
-// traffic on a wire: h glows while pulses run (seconds), hl keeps the wire lit while it is in use at all (a minute)
+// a wire glows for a few seconds while pulses run on it
 function wireHeat(r, k, n = 1) {
-  const H = r.wh || (r.wh = {}), w = H[k] || (H[k] = { h: 0, hl: 1 });
-  w.h = Math.min(1.5, w.h + 0.45 * n); w.hl = Math.min(3, w.hl + 0.8);
+  const H = r.wh || (r.wh = {}), w = H[k] || (H[k] = { h: 0 });
+  w.h = Math.min(1.5, w.h + 0.35 * n);
 }
-const WSTR = 3, wireMesh = () => {   // up to three strands side by side: a thicker wire for a bigger share
+// a pulse from a left tile through the whole tube into a right tile
+function passRoute(r, kL, kR) { const a = wireRoute(r, kL, BW / 2), c = wireRoute(r, kR, BW / 2, true); return (u, out) => u < 0.5 ? a(u * 2, out) : c((u - 0.5) * 2, out); }
+// the light pattern on the wires: decoration, not data. Three figures take turns every 9 s: a wave that runs down the
+// tubes and back up with every tile firing into the same tube, a chase where one tile after another fires into every
+// tube, and crossings from a tile on the left through a tube into a tile on the right
+const KEYS = Object.keys(EXN), PAT = { t: 0, beat: 0, mode: 0, mt: 0 };
+function firePat(r, k, delay) { bolt(regPos(k), null, REGS[k].col, delay, 0.8, () => { r.pulse = Math.min(1.5, r.pulse + 0.04); }, wireRoute(r, k, BW * (REGS[k].side < 0 ? rnd(0.12, 0.42) : rnd(0.58, 0.88))), 0.3); wireHeat(r, k, 0.6); }   // each lands in its own half, no pile-up in the middle
+function patternTick(dt) {
+  const lv = liveRows().filter(r => r.bar && !r.cleared).sort((a, b) => b.yd - a.yd), n = lv.length; if (!n) return;
+  if ((PAT.mt += dt) > 9) { PAT.mt = 0; PAT.mode = (PAT.mode + 1) % 3; PAT.beat = 0; }
+  if ((PAT.t -= dt) > 0) return;
+  PAT.t = [0.16, 0.22, 0.32][PAT.mode] * (LOWP ? 1.6 : 1) * (RM ? 2.5 : 1);
+  const b = PAT.beat++;
+  if (PAT.mode === 0) { const i = b % Math.max(1, 2 * n - 2), r = lv[i < n ? i : 2 * n - 2 - i]; for (const k of KEYS) firePat(r, k, 0); }
+  else if (PAT.mode === 1) { const k = KEYS[b % KEYS.length]; lv.forEach((r, i) => firePat(r, k, i * 0.025)); }
+  else { const L = KEYS.filter(k => REGS[k].side < 0), R = KEYS.filter(k => REGS[k].side > 0);
+    for (let j = b % 3; j < n; j += 3) { const r = lv[j], kl = L[(b + j) % L.length], kr = R[(b + 2 * j) % R.length];
+      bolt(regPos(kl), null, REGS[kl].col.clone().lerp(REGS[kr].col, 0.5), 0, 1.4, null, passRoute(r, kl, kr), 0.3); wireHeat(r, kl, 0.6); wireHeat(r, kr, 0.6); } }
+}
+// the data still fills and empties the tubes, only without a visible pulse: the change lands after a moment
+const later = [];
+function after(sec, fn) { later.push({ t: T + sec, fn }); }
+const WSTR = 1, wireMesh = () => {
   const m = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(WSTR * (WIREN - 1) * 6), 3).setUsage(THREE.DynamicDrawUsage)),
     new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: ADD, depthWrite: false }));
   m.frustumCulled = false; scene.add(m); return m;
@@ -932,18 +942,15 @@ function absorbAt(r, x, col) {
   emit(x, r.yd + r.thS / 2, 0.4, r.t.col, 6, 3); snd('zap');
   r.trend = Math.min(1, (r.trend || 0) + 0.22);
 }
-const barPt = (r, x) => { const v = new THREE.Vector3(); return () => v.set(x, r.yd, 0.35); };
 function zap(src, r, n, delay = 0) {   // n units of orders from a register to a bar
   r.inbound += n;
   const col = (REGS[src] || REGS.model).col;
-  for (let k = 0; k < n; k++) { const x = rnd(0.5, BW - 0.5); bolt(regPos(src), barPt(r, x), col, delay + k * 0.12, rnd(0.6, 0.8), () => absorbAt(r, x, col), wireRoute(r, src, x), magOf(r)); }
-  wireHeat(r, src, n);
+  for (let k = 0; k < n; k++) { const x = rnd(0.5, BW - 0.5); after(delay + k * 0.12 + rnd(0.6, 0.8), () => absorbAt(r, x, col)); }
 }
 function zapBack(r, dst, n, delay = 0) {   // n units pulled back from a bar into a register
   for (let k = 0; k < n; k++) { const x = rnd(0.5, BW - 0.5);
     emit(x, r.yd, 0.4, (REGS[dst] || REGS.model).col, 4, 2);
-    bolt(new THREE.Vector3(x, r.yd, 0.35), regPos(dst), (REGS[dst] || REGS.model).col, delay + k * 0.12, rnd(0.6, 0.85), () => { const R = REGS[dst]; if (R) R.open = 1; snd('back'); }, wireRoute(r, dst, x, true), magOf(r)); }
-  wireHeat(r, dst, n);
+    after(delay + k * 0.12 + 0.6, () => { const R = REGS[dst]; if (R) R.open = 1; snd('back'); }); }
 }
 // a block on its way from a to c in an arc: into a bar (absorb), back into a register (withdraw) or a burst
 function pathTo(b, a, c, dur, end) { b.state = 'path'; b.ax = a.x; b.ay = a.y; b.az = a.z; b.cx = c[0]; b.cy = c[1]; b.cz = c[2]; b.dur = dur; b.end = end; b.t = 0; b.s0 = b.s1 = b.s > 0.01 ? b.s : 0.8; }
@@ -1340,7 +1347,7 @@ function showLiq(long, q, usd, ex) {
   snd('liq');
   for (const e of ex) { const k = EXKEY[e], R = REGS[k]; if (!R) continue;
     R.open = 1; R.flash = 1.6; R.fTxt = 'LIQ ' + fmtUsd(usd); R.fCss = TY.sliq.c;
-    for (let n = 0; n < 3; n++) { const pv = new THREE.Vector3(rnd(0, BW), 0, 0.8); bolt(regPos(k), null, TY.sliq.col, n * 0.12, 0.5, null, tileCurve(k, () => pv.setY(slab.position.y)), magUsd(usd)); } }
+  }
   const big = Math.max(0, Math.min(1, Math.log10(Math.max(1, usd / 1e4)) / 2.5)), sy = slab.position.y, col = TY.sliq.col;
   for (let x = 0; x < BW; x += 1.4) emit(x, sy, 0.8, col, Math.round(3 + big * 10), 3 + big * 7, { vy: long ? -4 : 4, vz: 2, life: 1.2 });
   shake = Math.max(shake, 0.08 + big * 0.5); liqFlash = Math.max(liqFlash, 0.25 + big * 0.75);
@@ -1409,7 +1416,7 @@ function selectCoin(k) {
   try { history.replaceState(null, '', location.pathname + (k === 'btc' ? '' : '#' + k)); } catch (e) {}
   liveGen++; clearInterval(liveTimer); liveTimer = 0; clearInterval(fastTimer); fastTimer = 0; tick.stop(); liqWs.stop();
   for (const r of liveRows()) removeRow(r, true);
-  for (const q of bolts) q.onHit = null;
+  for (const q of bolts) q.onHit = null; later.length = 0;
   site = series = market = null; lastRaw = null; firstApply = true; armed = false; mode = 'live';
   p = pS = shown = 0; nCleared = eaten = liqTot = 0; combo = 0; trades.length = 0; lastPx = 0; tagDir = 0; slabStr = ''; ref24 = 0;
   for (const R of Object.values(REGS)) { R.tot = 0; R.on = false; R.str = ''; R.hist = []; }
@@ -1614,7 +1621,8 @@ function update(dt) {
 
   // pieces in, extra blocks out
   if ((tm.piece -= dt) <= 0) { tm.piece = rnd(0.25, 0.55); spawn(); }
-  updateBolts(dt); updateShards(dt);
+  updateBolts(dt); updateShards(dt); patternTick(dt);
+  for (let i = later.length - 1; i >= 0; i--) if (T >= later[i].t) { const f = later[i].fn; later.splice(i, 1); f(); }
   if ((tm.flare -= dt) <= 0) {
     tm.flare = rnd(3, 5.5);
     const c = liveRows().filter(r => (r.t.u === 'score' || r.type.endsWith('liq')) && !r.cleared && !r.flare && r.units >= 2);
@@ -1652,10 +1660,7 @@ function update(dt) {
     if (tr.usd >= 250e3) {
       const side = liveRows().filter(r => (tr.buy ? r.type === 'ask' : r.type === 'bid') && !r.cleared && r.units);
       const tgt = side.sort((a, b) => Math.abs(a.yd - sy) - Math.abs(b.yd - sy))[0];
-      const x = rnd(0.5, BW - 0.5), dir = tr.buy ? 1 : -1, end = tgt ? barPt(tgt, x) : new THREE.Vector3(x, sy + dir * 4, 0.35);
-      bolt(regPos('okx'), end, col, 0, 0.55, () => { if (tgt && !tgt.gone) { tgt.hl = Math.max(tgt.hl, 0.7); tgt.pulse = Math.min(1.5, tgt.pulse + 0.35); } },
-        tgt ? wireRoute(tgt, 'okx', x) : tileCurve('okx', end), magUsd(tr.usd));
-      if (tgt) wireHeat(tgt, 'okx', 1);
+      if (tgt) after(0.4, () => { if (!tgt.gone) { tgt.hl = Math.max(tgt.hl, 0.7); tgt.pulse = Math.min(1.5, tgt.pulse + 0.35); } });
       REGS.okx.open = Math.max(REGS.okx.open, 0.6);
       if (tr.usd >= 1e6) floatText(x, sy + (tr.buy ? 1 : -1), (tr.buy ? 'koop ' : 'verkoop ') + fmtUsd(tr.usd), tr.buy ? '#35ffb0' : '#ff4d6a');
       if (tr.usd >= 3e6) feed(`<b>${tr.buy ? 'Grote koop' : 'Grote verkoop'}</b> ${fmtUsd(tr.usd)} op ${fmtP(tr.px)}`, tr.buy ? TY.bid.c : TY.ask.c);
@@ -1850,23 +1855,20 @@ function render(rdt) {
       const fy = floor.position.y, dF = y - fy;
       if (dF > 0 && dF < 4 * RS) { r.refl.visible = true; r.refl.position.set(BW / 2, 2 * fy - y, -0.1); r.refl.scale.set(BW + 0.4, 0.25 + r.thS * 0.8, 1); r.refl.material.opacity = go * 0.22 * (1 - dF / (4 * RS)); }
       else r.refl.visible = false;
-      // wires to every exchange that fills it (the estimate for stops and liquidations): brighter and thicker for a
-      // bigger share, glowing while pulses run on them, dimming when nothing has come over them for a while
-      const ent = r.per ? Object.entries(r.per).filter(([k, v]) => REGS[k] && v > 0) : [], etot = ent.reduce((a, [, v]) => a + v, 0) || 1;
-      const shares = ent.length ? ent.map(([k, v]) => [k, v / etot]).filter(([, v]) => v >= 0.03) : [['model', 1]], H = r.wh || (r.wh = {}), on = new Set();
-      for (const [k, sh] of shares) {
-        on.add(k); const w = r.wires[k] || (r.wires[k] = wireMesh()), h = H[k] || (H[k] = { h: 0, hl: 1 });
-        h.h *= Math.exp(-rdt / 2.5); h.hl *= Math.exp(-rdt / 40);
-        const est = k === 'model', ns = est ? 1 : sh > 0.4 ? 3 : sh > 0.15 ? 2 : 1, wa = w.geometry.attributes.position.array; let j = 0;
+      // a wire from every tile to every tube, all alike; they glow while the light pattern runs over them
+      const H = r.wh || (r.wh = {});
+      for (const k of KEYS) {
+        const w = r.wires[k] || (r.wires[k] = wireMesh()), h = H[k] || (H[k] = { h: 0 });
+        h.h *= Math.exp(-rdt / 1.5);
+        const ns = 1, wa = w.geometry.attributes.position.array; let j = 0;
         for (let i = 0; i < WIREN; i++) wirePt(r, k, i / (WIREN - 1), WP[i]);
         for (let st = 0; st < ns; st++) { const off = (st - (ns - 1) / 2) * 0.05;
           for (let i = 0; i < WIREN - 1; i++) for (const P of [WP[i], WP[i + 1]]) { wa[j++] = P.x; wa[j++] = P.y + off; wa[j++] = P.z; } }
         w.geometry.setDrawRange(0, ns * (WIREN - 1) * 2); w.geometry.attributes.position.needsUpdate = true;
         w.material.color.copy((REGS[k] || REGS.model).col);
-        w.material.opacity = fade * ig * dim * ((0.04 + 0.22 * sh) * (est ? 0.45 : 1) * (0.35 + 0.65 * Math.min(1, h.hl)) + 0.45 * Math.min(1, h.h));   // the estimate is one thin wire
+        w.material.opacity = fade * ig * dim * (0.045 + 0.4 * Math.min(1, h.h));
         w.visible = r.thS > 0.01;
       }
-      for (const k in r.wires) if (!on.has(k)) r.wires[k].visible = false;
       r.bar.visible = r.gas.visible = r.glowA.visible = r.edge.visible = r.thS > 0.01;
     }
     r.lbl.m.position.set(3.6 - (1 - fadeL) * 1.4, y, 0.65); r.sz.m.position.set(r.endX - 0.4 - 1.8, y, 0.65); r.hit.position.set(RX, y, 0.5);

@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>GlassSphere · Rivier</title>
+<meta name="theme-color" content="#05090b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Rivier">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@500;600;700;800&display=swap">
+<style>
+/* Rivier: the price ladder as a river seen from above, higher prices upstream at the top. Order-book walls are dikes across
+   the river (red above the price, green below), estimated stops are sluice gates, estimated liquidation clusters are
+   masses of purple water waiting at their level. The live price is the water line; the water between the nearest dike
+   above and below it is the live pool, flowing the way the buyers or sellers push it and foaming against the dike it
+   presses on. A level the price passes breaks: a dike crumbles, a sluice swings open, a water mass is released, and the
+   water floods through to the next dike. Real liquidations (OKX, Binance, Bybit) are tidal waves that run from the water
+   line to the next dike and crash into it. Every 15 s the book is read again.
+   Stand-alone like Ladder; the data part is copied from zee.html, so it computes exactly what the coin page shows. */
+:root{
+  color-scheme: dark;
+  --bg:#05090b; --line:#1a252a; --line2:#21313a; --txt:#eef4f0; --dim:#8aa0a6; --faint:#4a5d63;
+  --up:#35ffb4; --dn:#ff4f6d; --stop:#ffc35a; --liq:#ad8bff; --btc:#f7931a; --water:#5fd4f0;
+  --mono:'JetBrains Mono','SF Mono',Consolas,monospace; --sans:'Inter',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow:hidden}
+#river{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;outline:none}
+#river.grab{cursor:grabbing}
+#top{position:fixed;top:0;left:0;right:0;z-index:5;padding:calc(env(safe-area-inset-top,0px) + 10px) 16px 10px;
+  background:linear-gradient(#05090b 78%,#05090b00);display:flex;flex-direction:column;align-items:center;pointer-events:none}
+#top .in{width:100%;max-width:820px;display:flex;align-items:center;gap:10px}
+.coin{width:26px;height:26px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffc46b,var(--btc) 55%,#b8640a);flex:none;
+  box-shadow:0 0 18px -2px rgba(247,147,26,.6);display:grid;place-items:center;font:800 14px var(--sans);color:#3a1d00}
+#tp{font:700 20px var(--mono);letter-spacing:-.01em;transition:color .5s}
+#tp.u{color:var(--up);transition:none} #tp.d{color:var(--dn);transition:none}
+#tc{font:600 12px var(--mono);color:var(--dim)}
+#verd{margin-left:auto;font:700 12px var(--mono);text-align:right;line-height:1.25}
+#verd small{display:block;font:500 10px var(--mono);color:var(--faint);letter-spacing:.04em}
+.flow{width:100%;max-width:820px;margin-top:9px;display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;font:600 10px var(--mono);color:var(--dim)}
+.flow .b{height:5px;border-radius:3px;background:var(--dn);overflow:hidden;box-shadow:0 0 10px -2px rgba(255,79,109,.5)}
+.flow .b i{display:block;height:100%;width:50%;background:var(--up);box-shadow:0 0 10px var(--up);transition:width .6s cubic-bezier(.3,.7,.3,1)}
+#toast{position:fixed;left:0;right:0;top:calc(env(safe-area-inset-top,0px) + 84px);z-index:6;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none;padding:0 16px}
+#toast div{width:100%;max-width:440px;background:rgba(8,14,17,.92);border:1px solid var(--line2);border-left:3px solid;padding:8px 14px 9px 12px;border-radius:8px;
+  animation:tin .35s cubic-bezier(.2,.8,.3,1);transition:opacity .5s,transform .5s;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+#toast b{display:block;font:800 13px var(--sans);letter-spacing:.06em}
+#toast span{font:500 11px var(--mono);color:var(--dim)}
+@keyframes tin{from{opacity:0;transform:translateY(-14px) scale(.96)}}
+.tools{position:fixed;left:0;right:0;bottom:max(12px,env(safe-area-inset-bottom,0px));z-index:6;display:flex;justify-content:center;gap:6px;pointer-events:none}
+.tools a,.tools button{pointer-events:auto;font:600 11px var(--mono);color:var(--dim);text-decoration:none;border:1px solid var(--line2);border-radius:8px;padding:8px 12px;
+  background:rgba(5,9,11,.82);cursor:pointer;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.tools a:hover,.tools button:hover{color:var(--txt)}
+.tools button[aria-pressed="true"]{color:var(--txt);border-color:#4d6670}
+.tools a:focus-visible,.tools button:focus-visible,.panel button:focus-visible{outline:2px solid var(--up);outline-offset:2px}
+#msg{position:fixed;inset:0;display:grid;place-items:center;text-align:center;font:500 12px var(--mono);letter-spacing:.1em;color:var(--dim);padding:24px;pointer-events:none;z-index:4}
+#msg[hidden]{display:none}
+.panel{position:fixed;left:12px;right:12px;bottom:calc(max(12px,env(safe-area-inset-bottom,0px)) + 48px);z-index:7;max-width:460px;margin:0 auto;max-height:62vh;overflow:auto;
+  background:rgba(8,14,17,.95);border:1px solid var(--line2);border-radius:12px;padding:16px 18px;font-size:12.5px;line-height:1.55;color:#cfdad6;
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.panel[hidden]{display:none}
+.panel .x{position:absolute;top:6px;right:8px;background:none;border:0;color:var(--dim);font:500 22px var(--sans);cursor:pointer;padding:2px 8px;line-height:1}
+.panel h2{font:800 14px var(--sans);letter-spacing:.04em;margin-bottom:8px;color:var(--txt)}
+.panel ul{list-style:none;display:grid;gap:8px;margin:10px 0}
+.panel li{display:grid;grid-template-columns:14px 1fr;gap:10px}
+.panel li i{width:10px;height:10px;border-radius:2px;margin-top:5px}
+.panel p{color:var(--dim)}
+.panel dl{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin-top:8px}
+.panel dt{color:var(--dim)} .panel dd{text-align:right;font:500 12px var(--mono)}
+@media (prefers-reduced-motion:reduce){#toast div{animation:none}}
+</style>
+</head>
+<body>
+<canvas id="river" tabindex="0" aria-label="De prijsladder van BTC als rivier: muren zijn dijken, stops zijn sluizen, liquidatieclusters zijn watermassa's; de live prijs is de waterlijn. Slepen schuift, knijpen of scrollen zoomt, tikken op een dijk geeft details."></canvas>
+<header id="top">
+  <div class="in">
+    <div class="coin">₿</div>
+    <div><div id="tp">—</div><div id="tc">BTC · live</div></div>
+    <div id="verd">—<small>binnen 3 dagen</small></div>
+  </div>
+  <div class="flow" title="Wie er nu agressief koopt of verkoopt (OKX, laatste 10 s): dat is de stroming"><span id="fb">kopers —</span><div class="b"><i id="fbar"></i></div><span id="fs">— verkopers</span></div>
+</header>
+<div id="msg">RIVIER LADEN…</div>
+<div id="sab" style="position:fixed;bottom:0;left:0;width:0;height:env(safe-area-inset-bottom,0px)"></div>
+<div id="toast" aria-live="polite"></div>
+<div class="panel" id="card" hidden role="dialog" aria-label="Details"><button class="x" type="button" aria-label="Sluiten">×</button><div></div></div>
+<div class="panel" id="help" hidden role="dialog" aria-label="Uitleg">
+  <button class="x" type="button" aria-label="Sluiten">×</button>
+  <h2>De rivier</h2>
+  <p>De prijsladder als rivier, van bovenaf gezien: hogere prijzen stroomopwaarts, bovenaan. De witte lijn is de waterlijn, de live prijs.</p>
+  <ul>
+    <li><i style="background:var(--dn)"></i><span><b>Verkoopmuur</b> · een dijk boven de prijs; hoe dikker, hoe meer dollars er staan.</span></li>
+    <li><i style="background:var(--up)"></i><span><b>Koopmuur</b> · een dijk onder de prijs.</span></li>
+    <li><i style="background:var(--stop)"></i><span><b>Koop- / verkoopstops</b> · houten sluizen: geschatte stops net voorbij oude toppen en bodems.</span></li>
+    <li><i style="background:var(--liq)"></i><span><b>Short-liq. / Long-liq.</b> · paarse watermassa's: geschatte liquidaties die op hun niveau wachten.</span></li>
+    <li><i style="background:var(--water)"></i><span><b>Het levende bassin</b> · het water tussen de dichtstbijzijnde dijk erboven en eronder. Het stroomt mee met wie er agressief koopt of verkoopt en schuimt tegen de dijk waar het tegen duwt.</span></li>
+  </ul>
+  <p>Passeert de prijs een niveau, dan breekt het: de dijk brokkelt af, de sluis zwaait open, de watermassa komt los, en het water stroomt door tot de volgende dijk. Echte liquidaties (OKX, Binance, Bybit) zijn vloedgolven die van de waterlijn naar de volgende dijk rollen en ertegen beuken: long-liquidaties stroomafwaarts, short-liquidaties stroomopwaarts.</p>
+  <p>Slepen schuift, knijpen of scrollen zoomt, tikken op een dijk geeft details. Na 10 s volgt de rivier de prijs weer (of druk op ⌖ Volg).</p>
+</div>
+<div class="tools">
+  <a href="./#btc">← GlassSphere</a>
+  <a href="ladder.html">☰ Ladder</a>
+  <button id="follow" type="button" aria-pressed="true">⌖ Volg</button>
+  <button id="helpb" type="button" aria-pressed="false">? Uitleg</button>
+</div>
+
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const msg = t => { $('msg').hidden = !t; if (t) $('msg').textContent = t; };
+
+/* =====================================================================================================================
+   DATA: copied from zee.html (which copies held.html and index.html): asset, fetching, estimates, levels and targets, BTC
+   ===================================================================================================================== */
+const A = { name: 'BTC', file: 'glasssphere-data.json', okx: 'BTC-USDT-SWAP', okxCt: 0.01, usdt: 'BTCUSDT', gate: 'BTC_USDT', gateMul: 1e-4, gateIv: '10',
+  htx: 'BTC-USDT', htxCt: 0.001, deribit: 'BTC-PERPETUAL', deribitUsd: true, bitmex: 'XBTUSD', cdc: 'BTCUSD-PERP', hl: 'BTC', hlSig: 3, dydx: 'BTC-USD',
+  bin: 10, histBin: 100, buckets: [25, 50, 100, 250, 500], auto: { 0.015: 50, 0.03: 100, 0.06: 250, 0.12: 500 }, dec: 0 };
+const digits = step => Math.max(0, -Math.floor(Math.log10(step))) + 3;
+const nice = x => { const m = 10 ** Math.floor(Math.log10(x));
+  return [1, 2, 2.5, 5, 10].map(c => c * m).reduce((a, b) => Math.abs(Math.log(x / b)) < Math.abs(Math.log(x / a)) ? b : a); };
+const LEV = [[5, .30], [10, .35], [25, .25], [50, .10]];
+const MAINT = 0.004, HALF_LIFE_H = 168, HZ_MIN = 0.3, HORIZON = 3;
+const fx = (x, d) => x.toFixed(d).replace('.', ',');
+const fmtP = p => p.toLocaleString('nl-NL', { minimumFractionDigits: A.dec, maximumFractionDigits: A.dec });
+const fmtUsd = v => v >= 1e9 ? '$' + fx(v / 1e9, 2) + ' mld' : v >= 1e6 ? '$' + fx(v / 1e6, 1) + ' mln' : v >= 1e3 ? '$' + fx(v / 1e3, 0) + 'K' : '$' + fx(v, 0);
+const pct = (p, ref) => { const v = (p / ref - 1) * 100; return (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2).replace('.', ',') + '%'; };
+
+async function getJSON(url, opts = {}) {
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 9000);
+  try { const r = await fetch(url, { ...opts, signal: ctl.signal }); if (!r.ok) throw new Error(r.status); return await r.json(); }
+  finally { clearTimeout(t); }
+}
+const hlPost = body => getJSON('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+function binLevels(rows, side) {
+  const m = {}, B = A.bin;
+  for (const [p, usd] of rows) {
+    if (!(usd > 0)) continue;
+    const k = +((side === 'b' ? Math.floor(p / B + 1e-9) : Math.ceil(p / B - 1e-9)) * B).toFixed(digits(B));
+    m[k] = (m[k] || 0) + usd;
+  }
+  return Object.entries(m).map(([k, v]) => [+k, Math.round(v)]);
+}
+const BOOKS = {
+  okx: async () => { const b = (await getJSON(`https://www.okx.com/api/v5/market/books-full?instId=${A.okx}&sz=5000`)).data[0];
+    const f = r => [+r[0], +r[1] * A.okxCt * +r[0]]; return { b: b.bids.map(f), a: b.asks.map(f) }; },
+  binance: async () => { const j = await getJSON(`https://fapi.binance.com/fapi/v1/depth?symbol=${A.usdt}&limit=1000`);
+    const f = r => [+r[0], +r[1] * +r[0]]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
+  deribit: async () => { const j = (await getJSON(`https://www.deribit.com/api/v2/public/get_order_book?instrument_name=${A.deribit}&depth=10000`)).result;
+    const f = A.deribitUsd ? r => r : r => [r[0], r[1] * r[0]]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
+  gate: async () => { const j = await getJSON(`https://api.gateio.ws/api/v4/futures/usdt/order_book?contract=${A.gate}&limit=300&interval=${A.gateIv}`);
+    const f = r => [+r.p, r.s * A.gateMul * +r.p]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
+  hyperliquid: async () => { const j = await hlPost({ type: 'l2Book', coin: A.hl, nSigFigs: A.hlSig });
+    const f = r => [+r.px, +r.sz * +r.px]; return { b: j.levels[0].map(f), a: j.levels[1].map(f) }; },
+  bybit: async () => { const r = (await getJSON(`https://api.bybit.com/v5/market/orderbook?category=linear&symbol=${A.usdt}&limit=500`)).result;
+    const f = x => [+x[0], +x[1] * +x[0]]; return { b: r.b.map(f), a: r.a.map(f) }; },
+  bitget: async () => { const d = (await getJSON(`https://api.bitget.com/api/v2/mix/market/merge-depth?productType=usdt-futures&symbol=${A.usdt}&limit=max&precision=scale2`)).data;
+    const f = x => [+x[0], +x[1] * +x[0]]; return { b: d.bids.map(f), a: d.asks.map(f) }; },
+  htx: async () => { const t = (await getJSON(`https://api.hbdm.com/linear-swap-ex/market/depth?contract_code=${A.htx}&type=step0`)).tick;
+    const f = x => [x[0], x[1] * A.htxCt * x[0]]; return { b: t.bids.map(f), a: t.asks.map(f) }; },
+  bitmex: async () => { const j = await getJSON(`https://www.bitmex.com/api/v1/orderBook/L2?symbol=${A.bitmex}&depth=0`);
+    const f = x => [x.price, x.size]; return { b: j.filter(x => x.side === 'Buy').map(f), a: j.filter(x => x.side === 'Sell').map(f) }; },
+  cryptocom: async () => { const d = (await getJSON(`https://api.crypto.com/exchange/v1/public/get-book?instrument_name=${A.cdc}&depth=150`)).result.data[0];
+    const f = x => [+x[0], +x[1] * +x[0]]; return { b: d.bids.map(f), a: d.asks.map(f) }; },
+  dydx: async () => { const j = await getJSON(`https://indexer.dydx.trade/v4/orderbooks/perpetualMarket/${A.dydx}`);
+    const f = x => [+x.price, +x.size * +x.price]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
+};
+const MARKET = {
+  okx: async () => { const [o, t] = await Promise.all([getJSON(`https://www.okx.com/api/v5/public/open-interest?instType=SWAP&instId=${A.okx}`),
+      getJSON(`https://www.okx.com/api/v5/market/ticker?instId=${A.okx}`)]);
+    return { oi: +o.data[0].oiUsd, vol: +t.data[0].volCcy24h * +t.data[0].last }; },
+  gate: async () => { const [t] = await getJSON(`https://api.gateio.ws/api/v4/futures/usdt/tickers?contract=${A.gate}`);
+    return { oi: +t.total_size * A.gateMul * +t.mark_price, vol: +t.volume_24h_quote }; },
+  bitget: async () => { const t = (await getJSON(`https://api.bitget.com/api/v2/mix/market/ticker?symbol=${A.usdt}&productType=usdt-futures`)).data[0];
+    return { oi: +t.holdingAmount * +t.lastPr, vol: +t.usdtVolume }; },
+  htx: async () => ({ vol: +(await getJSON(`https://api.hbdm.com/linear-swap-ex/market/detail/merged?contract_code=${A.htx}`)).tick.trade_turnover }),
+  deribit: async () => { const r = (await getJSON(`https://www.deribit.com/api/v2/public/get_book_summary_by_instrument?instrument_name=${A.deribit}`)).result[0];
+    return { oi: A.deribitUsd ? r.open_interest : r.open_interest * r.mark_price, vol: r.volume_usd }; },
+  cryptocom: async () => { const t = (await getJSON(`https://api.crypto.com/exchange/v1/public/get-tickers?instrument_name=${A.cdc}`)).result.data[0];
+    return { oi: +t.oi * +t.a, vol: +t.vv }; },
+  hyperliquid: async () => { const [m, c] = await hlPost({ type: 'metaAndAssetCtxs' });
+    const x = c[m.universe.findIndex(u => u.name === A.hl)]; return { oi: +x.openInterest * +x.markPx, vol: +x.dayNtlVlm }; },
+  dydx: async () => { const x = (await getJSON(`https://indexer.dydx.trade/v4/perpetualMarkets?ticker=${A.dydx}`)).markets[A.dydx];
+    return { oi: +x.openInterest * +x.oraclePrice, vol: +x.volume24H }; },
+  binance: async () => { const [o, t, f] = await Promise.all([getJSON(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${A.usdt}`),
+      getJSON(`https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=${A.usdt}`), getJSON(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${A.usdt}`)]);
+    return { oi: +o.openInterest * +f.markPrice, vol: +t.quoteVolume }; },
+  bybit: async () => { const t = (await getJSON(`https://api.bybit.com/v5/market/tickers?category=linear&symbol=${A.usdt}`)).result.list[0];
+    return { oi: +t.openInterestValue, vol: +t.turnover24h }; },
+  bitmex: async () => { const [x] = await getJSON(`https://www.bitmex.com/api/v1/instrument?symbol=${A.bitmex}`); return { oi: x.openInterest, vol: x.foreignNotional24h || 0 }; },
+};
+async function fetchAll(table, wrap) {
+  const out = {};
+  await Promise.all(Object.entries(table).map(async ([k, fn]) => { try { out[k] = wrap(await fn(), k); } catch (e) {} }));
+  return out;
+}
+const fetchBooks = () => fetchAll(BOOKS, r => ({ b: binLevels(r.b, 'b'), a: binLevels(r.a, 'a') }));
+const fetchMarket = () => fetchAll(MARKET, r => r);
+async function fetchSeries() {
+  const base = 'https://www.okx.com/api/v5/market/', toC = r => [+r[0], +r[1], +r[2], +r[3], +r[4], +r[7]];
+  const rows = (await getJSON(base + `candles?instId=${A.okx}&bar=1H&limit=300`)).data;
+  try { rows.push(...(await getJSON(base + `history-candles?instId=${A.okx}&bar=1H&limit=100&after=${rows[rows.length - 1][0]}`)).data); } catch (e) {}
+  const candles = rows.map(toC).sort((a, b) => a[0] - b[0]).slice(-400);
+  const st = await getJSON(`https://api.gateio.ws/api/v4/futures/usdt/contract_stats?contract=${A.gate}&interval=1h&from=${candles[0][0] / 1000}&limit=1000`);
+  return { candles, oi: st.map(r => [r.time * 1000, Math.round(r.open_interest_usd)]), taker: st.map(r => [r.time * 1000, r.lsr_taker / (1 + r.lsr_taker)]) };
+}
+// Stops: just beyond swing highs / lows that price has not traded through since.
+function estimateStops(candles, price, lo, hi) {
+  const out = [], n = candles.length, now = candles[n - 1][0];
+  const sufHi = new Float64Array(n + 1).fill(-Infinity), sufLo = new Float64Array(n + 1).fill(Infinity);
+  for (let i = n - 1; i >= 0; i--) { sufHi[i] = Math.max(sufHi[i + 1], candles[i][2]); sufLo[i] = Math.min(sufLo[i + 1], candles[i][3]); }
+  for (const [L, mult] of [[4, 1], [12, 2]]) {
+    for (let i = L; i < n - L; i++) {
+      const h = candles[i][2], l = candles[i][3];
+      let isH = true, isL = true;
+      for (let k = i - L; k <= i + L; k++) { if (k === i) continue; if (candles[k][2] >= h) isH = false; if (candles[k][3] <= l) isL = false; }
+      if (!isH && !isL) continue;
+      const rec = Math.pow(0.5, (now - candles[i][0]) / 3.6e6 / HALF_LIFE_H);
+      let vol = 0; for (let k = Math.max(0, i - 2); k <= Math.min(n - 1, i + 2); k++) vol += candles[k][5];
+      const w = vol * rec * mult;
+      if (isH && !(sufHi[i + 1] > h)) out.push({ p: h * 1.001, side: 'buy', w });
+      if (isL && !(sufLo[i + 1] < l)) out.push({ p: l * 0.999, side: 'sell', w });
+    }
+  }
+  const ws = out.map(o => o.w).sort((a, b) => a - b), med = ws.length ? ws[ws.length >> 1] : 1;
+  const rs = nice(price * 0.012);
+  for (let i = Math.ceil(lo / rs); i * rs <= hi; i++) {
+    const p = i * rs; out.push({ p: p > price ? p + rs * 0.05 : p - rs * 0.05, side: p > price ? 'buy' : 'sell', w: med * 0.25 });
+  }
+  return out.filter(o => (o.side === 'buy') === (o.p > price));
+}
+// Liquidations: OI added each hour at that hour's average price, split long/short, at the leverage mix that fit best.
+function estimateLiqs(candles, oi, taker) {
+  const oiAt = new Map(oi), tkAt = new Map(taker || []); let pos = [];
+  candles.forEach(([t, o, h, l, c]) => {
+    pos = pos.filter(q => q.side === 'long' ? l > q.p : h < q.p);
+    const a = oiAt.get(t), b = oiAt.get(t + 3.6e6), d = a != null && b != null ? b - a : null;
+    if (d != null && d < 0) { const r = b / a; pos.forEach(q => q.usd *= r); }
+    else if (d != null) {
+      let share = h > l ? (c - l) / (h - l) : 0.5;
+      const tk = tkAt.get(t); if (tk != null) share = 0.5 * share + 0.5 * tk;
+      const entry = (o + h + l + c) / 4;
+      for (const [L, w] of LEV) {
+        pos.push({ p: entry * (1 - 1 / L + MAINT), side: 'long', usd: d * share * w });
+        pos.push({ p: entry * (1 + 1 / L - MAINT), side: 'short', usd: d * (1 - share) * w });
+      }
+    }
+  });
+  return pos;
+}
+function volumeWeights(books, market, P) {
+  const depth = {};
+  for (const [ex, bk] of Object.entries(books)) {
+    let s = 0; for (const [p, v] of bk.b) if (p >= P * 0.99) s += v; for (const [p, v] of bk.a) if (p <= P * 1.01) s += v; depth[ex] = s;
+  }
+  const has = Object.keys(depth).filter(e => market[e]?.vol > 0);
+  const dT = has.reduce((s, e) => s + depth[e], 0), vT = has.reduce((s, e) => s + market[e].vol, 0);
+  const w = {};
+  for (const e of Object.keys(depth)) w[e] = has.includes(e) && dT && vT && depth[e] ? Math.min(1, (market[e].vol / vT) / (depth[e] / dT)) : 1;
+  return w;
+}
+function histEntry(books, weights, P, ts) {
+  const m = new Map(), HB = A.histBin;
+  for (const [ex, bk] of Object.entries(books)) {
+    const w = weights[ex] ?? 1;
+    [['b', 0], ['a', 1]].forEach(([side, i]) => { for (const [p, v] of bk[side]) {
+      if (p < P * 0.94 || p > P * 1.06) continue;
+      const k = +(Math.floor(p / HB + 1e-9) * HB).toFixed(digits(HB)), o = m.get(k) || [0, 0]; o[i] += v * w; m.set(k, o); } });
+  }
+  return { t: Math.floor(ts / 3.6e6) * 3.6e6, b: [...m].sort((x, y) => x[0] - y[0]).map(([k, [b, a]]) => [k, Math.round(b), Math.round(a)]) };
+}
+const READ = { range: 0.15 };
+function poolsOf(stops, liqs, P) {
+  const B = nice(P * 0.0012), lo = P * (1 - READ.range), hi = P * (1 + READ.range), bins = new Map();
+  const add = (p, kind, v) => { if (p < lo || p > hi) return; const k = Math.floor(p / B + 1e-9) * B;
+    const o = bins.get(k) || { stop: 0, liq: 0 }; o[kind] += v; bins.set(k, o); };
+  stops.forEach(s => add(s.p, 'stop', s.w)); liqs.forEach(q => add(q.p, 'liq', q.usd));
+  let mS = 1e-9, mL = 1e-9; for (const o of bins.values()) { if (o.stop > mS) mS = o.stop; if (o.liq > mL) mL = o.liq; }
+  return [...bins].map(([k, o]) => ({ p: k + B / 2, stop: o.stop / mS, liq: o.liq / mL, liqUsd: o.liq, v: o.stop / mS + o.liq / mL }));
+}
+function targetsOf(cs, pools, P, days) {
+  const n = cs.length, ranges = [];
+  for (let e = n; e >= 24 && ranges.length < 14; e -= 24) { let h = -Infinity, l = Infinity;
+    for (let k = e - 24; k < e; k++) { if (cs[k][2] > h) h = cs[k][2]; if (cs[k][3] < l) l = cs[k][3]; } ranges.push(h - l); }
+  const range24 = ranges.reduce((s, x) => s + x, 0) / ranges.length;
+  const rH = range24 * Math.sqrt(days), minD = HZ_MIN * rH;
+  const best = arr => arr.length ? arr.reduce((x, y) => y.v > x.v ? y : x) : undefined;
+  const tUp = best(pools.filter(q => q.p - P > minD && q.p - P <= rH));
+  const tDn = best(pools.filter(q => P - q.p > minD && P - q.p <= rH));
+  return { range24, rH, minD, tUp, tDn, pUp: tUp && tDn ? (P - tDn.p) / (tUp.p - tDn.p) : null };
+}
+
+// D: the data as the coin page holds it; LV: the levels of its "Alle niveaus" table; TG: its two targets
+let D = null, LV = [], TG = null, nBooks = 0, mode = '', updAt = 0, liveHist = [], exKey = '', exKeyPrev = '';
+function setData(raw, how) {
+  const price = raw.price, lo = price * 0.85, hi = price * 1.15, market = raw.market || {};
+  const weights = volumeWeights(raw.books, market, price);
+  const gateOi = raw.oi?.length ? raw.oi[raw.oi.length - 1][1] : 0, total = Object.values(market).reduce((s, m) => s + (m.oi || 0), 0);
+  const scale = gateOi && total > gateOi ? total / gateOi : 1;
+  const liqs = estimateLiqs(raw.candles, raw.oi || [], raw.taker).map(q => ({ ...q, usd: q.usd * scale }));
+  // the book history: the hourly file's, the hours seen live since, and now
+  const hist = new Map((raw.bookHist || []).map(e => [e.t, e])); for (const e of liveHist) hist.set(e.t, e);
+  const cur = histEntry(raw.books, weights, price, raw.ts); hist.set(cur.t, cur);
+  if (how === 'live') liveHist = [...liveHist.filter(x => x.t !== cur.t), cur].slice(-48);
+  D = { ...raw, market, weights, stops: estimateStops(raw.candles, price, lo, hi), liqs, bookHist: [...hist.values()].sort((a, b) => a.t - b.t).slice(-48) };
+  nBooks = Object.keys(raw.books).length; mode = how; updAt = raw.ts; exKeyPrev = exKey; exKey = Object.keys(raw.books).sort().join();
+  // targets, and the chance the upper one comes first (renderReading in index.html)
+  const r = targetsOf(D.candles, poolsOf(D.stops, D.liqs, price), price, HORIZON);
+  let prob = null, first = null;
+  if (r.pUp != null) { const upFirst = r.pUp >= 0.5; prob = upFirst ? r.pUp : 1 - r.pUp; first = upFirst ? r.tUp : r.tDn; }
+  TG = { up: r.tUp?.p, dn: r.tDn?.p, first: first?.p, prob };
+  // the view range ("Doelen") and its automatic bucket, then the four largest of each kind on each side (buildModel, renderLevels)
+  const far = Math.max(r.tUp ? r.tUp.p / price - 1 : 0, r.tDn ? 1 - r.tDn.p / price : 0);
+  const rg = far ? Math.max(0.012, Math.min(0.25, far * 1.22)) : 0.03, ks = Object.keys(A.auto).map(Number);
+  const B = A.auto[ks.reduce((a, b) => Math.abs(Math.log(b / rg)) < Math.abs(Math.log(a / rg)) ? b : a)];
+  const i0 = Math.floor(price * (1 - rg) / B), i1 = Math.ceil(price * (1 + rg) / B), N = i1 - i0 + 1;
+  const bid = new Float64Array(N), ask = new Float64Array(N), stop = new Float64Array(N), liq = new Float64Array(N);
+  const idx = p => Math.floor(p / B + 1e-9) - i0;
+  for (const [ex, bk] of Object.entries(D.books)) { const w = weights[ex] ?? 1;
+    for (const [side, arr] of [['b', bid], ['a', ask]]) for (const [p, v] of bk[side]) { const j = idx(p); if (j >= 0 && j < N) arr[j] += v * w; } }
+  for (const s of D.stops) { const j = idx(s.p); if (j >= 0 && j < N) stop[j] += s.w; }
+  for (const q of D.liqs) { const j = idx(q.p); if (j >= 0 && j < N) liq[j] += q.usd; }
+  // presence: in how many of the last 6 hours (before this one) the wall held at least half its size now
+  const HB = A.histBin, sub = Math.max(1, Math.round(HB / B)), hr = Math.floor(raw.ts / 3.6e6) * 3.6e6;
+  const prev = D.bookHist.filter(h => h.t < hr).slice(-6).map(e => { const sum = new Float64Array(N);
+    for (const [p, vb, va] of e.b) for (let q = 0; q < sub; q++) { const j = idx(p + (q + .5) * HB / sub); if (j >= 0 && j < N) sum[j] += (vb + va) / sub; }
+    return sum; });
+  const persist = j => { const w = bid[j] + ask[j]; return prev.length < 2 || !w ? null : [prev.filter(h => h[j] >= w * .5).length, prev.length]; };
+  const mx = a => { let m = 1e-9; for (const v of a) if (v > m) m = v; return m; };
+  const mB = mx([...bid, ...ask]), mS = mx(stop), mL = mx(liq);
+  const top = (arr, above, k) => { const out = [];
+    for (let j = 0; j < N; j++) { const mid = (i0 + j + .5) * B; if ((mid > price) === above && arr[j] > 0) out.push([mid, arr[j], j]); }
+    return out.sort((a, b) => b[1] - a[1]).slice(0, k); };
+  const rows = [];
+  for (const [k, arr, above, m, fmt] of [['ask', ask, true, mB, fmtUsd], ['bid', bid, false, mB, fmtUsd],
+    ['stop', stop, true, mS, v => 'score ' + Math.round(v / mS * 100)], ['stop', stop, false, mS, v => 'score ' + Math.round(v / mS * 100)],
+    ['liq', liq, true, mL, fmtUsd], ['liq', liq, false, mL, fmtUsd]])
+    for (const [p, v, j] of top(arr, above, 4)) rows.push({ key: k + '|' + p, k, p, s: v, rel: v / m, v: fmt(v), above, ps: k === 'bid' || k === 'ask' ? persist(j) : null });
+  LV = rows; D.B = B; D.range = rg;
+  onLevels();
+}
+async function loadSite() {
+  if (!/^https?:$/.test(location.protocol)) return null;
+  try { const r = await fetch(A.file, { cache: 'no-store' }); return r.ok ? await r.json() : null; } catch (e) { return null; }
+}
+let series = null, seriesAt = 0, market = null, site = null;
+async function loadLive() {
+  try {
+    if (!series || Date.now() - seriesAt > 5 * 60e3) {
+      const [se, mk] = await Promise.all([fetchSeries(), fetchMarket()]);
+      series = se; seriesAt = Date.now(); market = { ...(site?.market || {}), ...mk };
+    }
+    const books = await fetchBooks(); if (!Object.keys(books).length) throw new Error('no books');
+    const last = series.candles[series.candles.length - 1][4];
+    setData({ ts: Date.now(), price: live.fresh() || last, books, ...series, market, bookHist: D?.bookHist || site?.bookHist }, 'live');
+    return true;
+  } catch (e) { return false; }
+}
+// the live price: OKX's ticker stream (every trade), polling the ticker every 3 s while the stream is down
+const live = (() => {
+  let ws = null, px = null, at = 0, ping = 0, poll = 0, retry = 0;
+  function apply(p) { if (!(p > 0)) return; const prev = px; px = p; at = Date.now(); onPrice(prev, p); }
+  async function pollOnce() { try { apply(+(await getJSON(`https://www.okx.com/api/v5/market/ticker?instId=${A.okx}`)).data[0].last); } catch (e) {} }
+  function open() {
+    if (ws) return; let me; try { me = ws = new WebSocket('wss://ws.okx.com:8443/ws/v5/public'); } catch (e) { ws = null; return; }
+    me.onopen = () => { retry = 0; clearInterval(poll); poll = 0; me.send(JSON.stringify({ op: 'subscribe', args: [{ channel: 'tickers', instId: A.okx }, { channel: 'liquidation-orders', instType: 'SWAP' }, { channel: 'trades', instId: A.okx }] }));
+      ping = setInterval(() => me.readyState === 1 && me.send('ping'), 25e3); };
+    me.onmessage = e => { if (e.data === 'pong') return; try { const m = JSON.parse(e.data); if (!m.data?.[0]) return;
+      if (m.arg?.channel === 'liquidation-orders') { for (const d of m.data) if (d.instId === A.okx) for (const x of d.details || [])
+        realLiq('OKX', x.posSide === 'long' || (x.posSide !== 'short' && x.side === 'sell'), +x.bkPx, +x.sz * A.okxCt * +x.bkPx); }
+      else if (m.arg?.channel === 'trades') { for (const d of m.data) TAKER.add(d.side, +d.sz * A.okxCt * +d.px); apply(+m.data[m.data.length - 1].px); }
+      else apply(+m.data[0].last); } catch (er) {} };
+    me.onclose = () => { clearInterval(ping); if (ws !== me) return; ws = null; if (!poll) poll = setInterval(pollOnce, 3000); setTimeout(open, Math.min(30e3, 1000 * 2 ** retry++)); };
+    me.onerror = () => me.close();
+  }
+  return { start() { pollOnce(); open(); }, fresh: () => px && Date.now() - at < 10e3 ? px : null, get px() { return px; }, get at() { return at; } };
+})();
+// real liquidations, as the exchanges stream them: OKX (on the price stream above), Binance and Bybit
+function feed(url, hello, onMsg, pingMsg) {
+  let retry = 0;
+  const open = () => { let ws, ping = 0; try { ws = new WebSocket(url); } catch (e) { return; }
+    ws.onopen = () => { retry = 0; if (hello) ws.send(hello); if (pingMsg) ping = setInterval(() => ws.readyState === 1 && ws.send(pingMsg), 20e3); };
+    ws.onmessage = e => { try { onMsg(JSON.parse(e.data)); } catch (er) {} };
+    ws.onclose = () => { clearInterval(ping); setTimeout(open, Math.min(60e3, 2000 * 2 ** retry++)); };
+    ws.onerror = () => ws.close(); };
+  open();
+}
+function liqFeeds() {
+  feed(`wss://fstream.binance.com/ws/${A.usdt.toLowerCase()}@forceOrder`, null, m => { const o = m.o;      // S SELL: a long was closed
+    if (o?.s === A.usdt) { const p = +o.ap || +o.p; realLiq('Binance', o.S === 'SELL', p, p * (+o.z || +o.q)); } });
+  feed('wss://stream.bybit.com/v5/public/linear', JSON.stringify({ op: 'subscribe', args: [`allLiquidation.${A.usdt}`] }),
+    m => { for (const x of m.data || []) if (x.s === A.usdt) realLiq('Bybit', x.S === 'Buy', +x.p, +x.p * +x.v); }, JSON.stringify({ op: 'ping' }));   // S Buy: a long
+}
+// aggressive buying and selling on OKX, per second (as in Zee)
+const TAKER = (() => {
+  const sec = new Map(); let avg = 0, seen = false;
+  return { add(side, usd) { const k = Math.floor(Date.now() / 1000), b = sec.get(k) || sec.set(k, { b: 0, s: 0 }).get(k); if (side === 'buy') b.b += usd; else b.s += usd; seen = true; },
+    now() { if (!seen) return { buy: .5, sell: .5, act: 1, seen }; const k = Math.floor(Date.now() / 1000); let bb = 0, ss = 0;
+      for (const [t, v] of sec) { if (t < k - 60) { sec.delete(t); continue; } if (t > k - 10) { bb += v.b; ss += v.s; } }
+      const tot = bb + ss; avg = avg ? avg + (tot - avg) * .002 : tot; return { buy: tot ? bb / tot : .5, sell: tot ? ss / tot : .5, act: avg ? tot / avg : 1, seen }; } };
+})();
+
+/* =====================================================================================================================
+   RIVER
+   ===================================================================================================================== */
+const RGB = { ask: '255,79,109', bid: '53,255,180', stop: '255,195,90', liq: '173,139,255', up: '53,255,180', dn: '255,79,109', water: '95,212,240', foam: '230,248,255' };
+const nameOf = (k, above) => ({ ask: 'Verkoopmuur', bid: 'Koopmuur', stop: above ? 'Koopstops' : 'Verkoopstops', liq: above ? 'Short-liq.' : 'Long-liq.' })[k];
+const R = Math.random, PI = Math.PI;
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const ease = u => 1 - Math.pow(1 - u, 3);
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FM = "'JetBrains Mono','SF Mono',Consolas,monospace", FD = "'Inter',system-ui,sans-serif";
+const isBar = it => it.k === 'ask' || it.k === 'bid' || it.k === 'stop';
+const cv = $('river'), g = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1, phone = false, TOP = 0, BOT = 0, MID = 0, HH = 0, X0 = 0, CW = 0, RL = 0, RR = 0;
+function resize() {
+  DPR = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight; phone = W < 640;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  TOP = $('top').offsetHeight + 6; BOT = H - 58 - (parseFloat(getComputedStyle($('sab')).height) || 0); MID = (TOP + BOT) / 2; HH = (BOT - TOP) / 2 - 8;
+  CW = Math.min(W, 820); X0 = (W - CW) / 2; RL = X0 + CW * (phone ? .25 : .27); RR = X0 + CW * (phone ? .625 : .64);
+}
+addEventListener('resize', resize);
+
+// the view: a fisheye around the centre price, so the levels close to the price get the most room
+const V = { c: null, r: null, follow: true, userR: false };
+const sOf = () => V.r * .12;
+const Y = p => { const s = sOf(); return MID - HH * Math.asinh((p - V.c) / s) / Math.asinh(V.r / s); };
+const PY = y => { const s = sOf(); return V.c + s * Math.sinh((MID - y) / HH * Math.asinh(V.r / s)); };
+const dPdY = () => sOf() * Math.asinh(V.r / sOf()) / HH;       // price per pixel at the centre
+// the banks wander a little, fixed to the price so they travel with the river
+const wob = p => Math.sin(p / 53) * 4 + Math.sin(p / 131 + 1) * 3;
+const bankL = y => RL + wob(PY(y)) * (phone ? .7 : 1);
+const bankR = y => RR - wob(PY(y) + 400) * (phone ? .7 : 1);
+
+let ITEMS = [], PX = null, SP = null, VEL = 0, ready = false, C24 = null, T = 0;
+const ST = new Map();                                          // per level, kept across readings by key: shaking, breaking, flaring
+const st = it => ST.get(it.key) || ST.set(it.key, { shake: -9, broke: -9, flare: -9, born: T }).get(it.key);
+function onLevels() {
+  ITEMS = LV.map(L => ({ key: L.key, k: L.k, p: L.p, above: L.above, rel: L.rel, name: nameOf(L.k, L.above), col: RGB[L.k],
+    v: L.k === 'stop' ? 'score ' + Math.round(L.rel * 100) : fmtUsd(L.s), big: L.rel >= .6 }));
+  if (TG?.prob != null) for (const [p, up] of [[TG.up, true], [TG.dn, false]]) if (p) {
+    const first = TG.first === p, ch = first ? TG.prob : 1 - TG.prob;
+    ITEMS.push({ key: 'tgt|' + (up ? 'u' : 'd'), k: 'tgt', p, above: up, rel: ch, name: up ? 'Doel ▲' : 'Doel ▼', col: up ? RGB.up : RGB.dn,
+      v: (first ? 'eerst · ' : '') + Math.round(ch * 100) + '%', big: true });
+  }
+  for (const it of ITEMS) st(it);
+  const cs = D.candles, n = cs.length; C24 = n > 25 ? cs[n - 25][4] : null;
+  if (TG?.prob != null) {
+    const upFirst = TG.first === TG.up, pc = Math.round(TG.prob * 100), lab = pc < 60 ? 'Neutraal' : upFirst ? 'Eerst omhoog' : 'Eerst omlaag';
+    $('verd').innerHTML = `<span style="color:${pc < 60 ? 'var(--dim)' : upFirst ? 'var(--up)' : 'var(--dn)'}">${lab} ${pc}%</span><small>binnen 3 dagen</small>`;
+  }
+  if (!ready) { ready = true; SP = PX = live.fresh() || D.price; V.c = SP; V.r = fitR(); CMP.top = CMP.bot = null; }
+  if (SEL) SEL = ITEMS.find(it => it.key === SEL.key) || null;
+  msg('');
+}
+const broken = it => it.k !== 'tgt' && it.above !== (it.p > PX);
+function fitR() { let m = PX * .004; for (const it of ITEMS) m = Math.max(m, Math.abs(it.p - PX)); return m * 1.1; }
+
+/* ---- the live pool: between the nearest standing dike or sluice above the price and below it ----------------------- */
+const CMP = { top: null, bot: null, topIt: null, botIt: null };
+function pool(dt) {
+  let a = null, b = null;
+  for (const it of ITEMS) if (isBar(it) && !broken(it)) {
+    if (it.p > PX && (!a || it.p < a.p)) a = it;
+    if (it.p < PX && (!b || it.p > b.p)) b = it;
+  }
+  CMP.topIt = a; CMP.botIt = b;
+  const ta = a ? a.p : PY(TOP - 40), tb = b ? b.p : PY(BOT + 40), k = 1 - Math.exp(-dt * 3.2);
+  // after a breach the water does not jump: it floods on to the next dike
+  CMP.top = CMP.top == null ? ta : lerp(CMP.top, ta, ta > CMP.top ? k : 1);
+  CMP.bot = CMP.bot == null ? tb : lerp(CMP.bot, tb, tb < CMP.bot ? k : 1);
+}
+
+/* ---- the current: streaks in the water, fast in the live pool, nearly still outside it ------------------------------ */
+let FLOW = 0;
+const STRK = Array.from({ length: 150 }, (_, i) => ({ p: 0, xf: R(), a: .4 + R() * .6, inside: i < 100, fresh: true }));
+function respawn(s) {
+  if (s.inside) s.p = lerp(CMP.bot, CMP.top, R()); else s.p = PY(lerp(TOP - 20, BOT + 20, R()));
+  s.xf = R(); s.fresh = false;
+}
+function stepStreaks(dt) {
+  const tk = TAKER.now(), push = tk.seen ? (tk.buy - .5) * 2 : 0;
+  const target = push * V.r * .32 + clamp(VEL, -V.r, V.r) * .7;
+  FLOW = lerp(FLOW, target, 1 - Math.exp(-dt * 2));
+  const idle = Math.abs(FLOW) < V.r * .03 ? Math.sin(T * .7) * V.r * .03 : 0;
+  for (const s of STRK) {
+    if (s.fresh) respawn(s);
+    if (s.inside) { s.p += (FLOW + idle) * dt * (.7 + s.a * .6); if (s.p > CMP.top || s.p < CMP.bot) { s.p = FLOW + idle > 0 ? CMP.bot + (CMP.top - CMP.bot) * R() * .15 : CMP.top - (CMP.top - CMP.bot) * R() * .15; s.xf = R(); } }
+    else { s.p += Math.sin(T * .3 + s.xf * 9) * V.r * .01 * dt; const y = Y(s.p); if (y < TOP - 30 || y > BOT + 30 || (s.p < CMP.top && s.p > CMP.bot)) respawn(s); }
+  }
+}
+
+/* ---- waves: a real liquidation, a released water mass, or the surge through a broken dike --------------------------- */
+const WAVES = [], PARTS = [];
+function wave(p0, up, amp, col, label) {
+  // it runs to the first dike or sluice still standing in its way, and crashes there
+  let stop = null;
+  for (const it of ITEMS) if (isBar(it) && !broken(it) && (up ? it.p > p0 : it.p < p0) && (!stop || Math.abs(it.p - p0) < Math.abs(stop.p - p0))) stop = it;
+  WAVES.push({ p0, up, amp, col, stop, d: 0, age: 0, label });
+}
+function stepWaves(dt) {
+  for (let i = WAVES.length - 1; i >= 0; i--) {
+    const w = WAVES[i]; w.age += dt; w.d += (140 + w.amp * 220) * dt * (w.age < .3 ? .5 + w.age / .6 : 1);
+    const y = Y(w.p0) + (w.up ? -w.d : w.d); w.y = y;
+    if (w.stop) {
+      const ys = Y(w.stop.p), th = barT(w.stop) / 2;
+      if (w.up ? y <= ys + th : y >= ys - th) { crash(w, ys + (w.up ? th : -th)); WAVES.splice(i, 1); continue; }
+    }
+    if (w.d > 520 || y < TOP - 80 || y > BOT + 80) WAVES.splice(i, 1);
+  }
+}
+function crash(w, y) {
+  const s = st(w.stop); s.shake = T; s.hit = w.amp;
+  if (reduced || document.hidden) return;
+  const l = bankL(y), r = bankR(y), n = 14 + Math.round(w.amp * 40);
+  for (let i = 0; i < n; i++) PARTS.push({ t: 'dot', x: l + (r - l) * R(), y, vx: (R() - .5) * 140, vy: (w.up ? 1 : -1) * (40 + R() * 160 * (.4 + w.amp)), r: 1 + R() * 2.2 * (.5 + w.amp), age: 0, life: .5 + R() * .7, col: R() < .7 ? RGB.foam : w.col });
+  PARTS.push({ t: 'ring', x: (l + r) / 2, y, r1: (r - l) * (.6 + w.amp * .5), age: 0, life: .7, w: 2 + w.amp * 2, col: RGB.foam });
+}
+
+/* ---- the price ---------------------------------------------------------------------------------------------------- */
+const HIST = []; let flashT = 0, rippleP = null;
+function flash(e, up) { e.classList.remove('u', 'd'); void e.offsetWidth; e.classList.add(up ? 'u' : 'd'); }
+function onPrice(prev, p) {
+  PX = p; if (SP == null) SP = p;
+  const t = Date.now(); if (!HIST.length || t - HIST[HIST.length - 1][0] > 250) HIST.push([t, p]); while (HIST.length && t - HIST[0][0] > 65e3) HIST.shift();
+  if (prev > 0 && p !== prev && t - flashT > 120) { flashT = t; flash($('tp'), p > prev); setTimeout(() => $('tp').classList.remove('u', 'd'), 140); }
+  $('tp').textContent = fmtP(p);
+  if (!D || !(prev > 0)) return;
+  if (rippleP == null || Math.abs(p - rippleP) >= p * .0002) { if (rippleP != null && ready) ripple(p > rippleP ? RGB.up : RGB.dn, .5); rippleP = p; }
+  const lo = Math.min(prev, p), hi = Math.max(prev, p); if (hi <= lo) return;
+  for (const it of ITEMS) if (it.p > lo && it.p <= hi) cross(it, p > prev);
+}
+function ripple(col, k) { if (reduced || document.hidden || !ready) return; const y = Y(SP); PARTS.push({ t: 'ring', x: (bankL(y) + bankR(y)) / 2, y, r1: (RR - RL) * (.35 + k * .4), age: 0, life: .9, w: 1.5, col, flat: 1 }); }
+const CROSSED = new Map();
+function cross(it, rising) {
+  const t = Date.now(); if (t - (CROSSED.get(it.key) || 0) < 120e3) return; CROSSED.set(it.key, t);
+  const s = st(it); s.broke = T;
+  const sub = `${it.name} · ${it.v} · ${fmtP(it.p)}`;
+  if (it.k === 'liq') { wave(it.p, rising, .55 + it.rel * .45, RGB.liq); s.flare = T; if (it.big) toast('VLOEDGOLF', 'liquidatiecluster bereikt · ' + sub, RGB.liq); return; }
+  if (it.k === 'tgt') { ripple(it.col, 1.4); toast('DOEL BEREIKT', sub, it.col); return; }
+  // a dike crumbles or a sluice swings open, and the water surges through to the next one
+  if (!reduced && !document.hidden && ready) {
+    const y = Y(it.p), l = bankL(y), r = bankR(y), n = it.k === 'stop' ? 16 : 30;
+    for (let i = 0; i < n; i++) PARTS.push({ t: 'chunk', x: l + (r - l) * R(), y: y + (R() - .5) * barT(it), vx: (R() - .5) * 120, vy: (rising ? -1 : 1) * (30 + R() * 160),
+      rot: R() * PI, vr: (R() - .5) * 9, w: 3 + R() * (it.k === 'stop' ? 9 : 7), h: 2 + R() * 4, age: 0, life: .9 + R() * .9, col: it.k === 'stop' ? '150,105,40' : '70,80,88', rim: it.col });
+  }
+  wave(it.p, rising, .35 + it.rel * .4, RGB.water);
+  if (it.big) toast(it.k === 'stop' ? 'SLUIS OPEN · STOPS GERAAKT' : 'DIJK DOORGEBROKEN', sub, it.col);
+}
+
+/* ---- trades and real liquidations ----------------------------------------------------------------------------------- */
+const add0 = TAKER.add; let bigAt = 0;
+TAKER.add = (side, usd) => { add0(side, usd); if (usd >= 250e3 && performance.now() - bigAt > 700) { bigAt = performance.now(); ripple(side === 'buy' ? RGB.up : RGB.dn, 1); } };
+const liqBurst = { long: null, short: null };
+function realLiq(ex, long, p, usd) {
+  if (!(usd > 0) || !(p > 0) || !D) return;
+  const k = long ? 'long' : 'short', b = liqBurst[k] || (liqBurst[k] = { usd: 0, pw: 0, ex: new Set() });
+  b.usd += usd; b.pw += p * usd; b.ex.add(ex);
+  if (!b.timer) b.timer = setTimeout(() => { liqBurst[k] = null; showRealLiq(long, b.pw / b.usd, b.usd, [...b.ex]); }, 1500);
+}
+function showRealLiq(long, p, usd, ex) {
+  if (!ready) return;
+  for (const it of ITEMS) if (it.k === 'liq' && it.above === !long && Math.abs(it.p - p) <= D.B * 2) st(it).flare = T;
+  // long liquidations are forced selling: the wave rolls downstream, towards the buy walls; short liquidations upstream
+  const amp = clamp(Math.log10(Math.max(1, usd / 5e3)) / 2.6, .08, 1);
+  if (!document.hidden) wave(SP, !long, amp, RGB.liq, usd >= 25e3 ? `${long ? 'LONG' : 'SHORT'}-LIQ ${fmtUsd(usd)}` : null);
+  if (usd >= 250e3) toast('ECHTE LIQUIDATIE · VLOEDGOLF', `${long ? 'Longs' : 'Shorts'} · ${fmtUsd(usd)} · ${ex.join(' + ')} · ${fmtP(p)}`, RGB.liq);
+}
+
+/* ---- drawing -------------------------------------------------------------------------------------------------------- */
+const barT = it => (phone ? .8 : 1) * (it.k === 'stop' ? 3 + 7 * it.rel : 5 + 13 * it.rel);
+const prox = it => Math.pow(clamp(1 - Math.abs(it.p - PX) / (PX * .007), 0, 1), 1.6);
+let riverPath = null;
+function drawBanks() {
+  const gr = g.createLinearGradient(0, 0, W, 0);
+  gr.addColorStop(0, '#070b0a'); gr.addColorStop(.5, '#0b1110'); gr.addColorStop(1, '#070b0a');
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  // strata on the banks, every round price, so they travel with the river
+  const step = nice(V.r / 5), lo = PY(BOT + 40), hi = PY(TOP - 40);
+  g.lineWidth = 1; g.font = `500 ${phone ? 9 : 10}px ${FM}`; g.textAlign = 'left';
+  for (let p = Math.ceil(lo / step) * step; p <= hi; p += step) {
+    const y = Y(p); g.strokeStyle = 'rgba(120,150,140,.06)';
+    g.beginPath(); g.moveTo(X0, y); g.lineTo(bankL(y) - 2, y); g.moveTo(bankR(y) + 2, y); g.lineTo(X0 + CW, y); g.stroke();
+  }
+  // the river bed
+  riverPath = new Path2D(); const y0 = TOP - 60, y1 = BOT + 60;
+  riverPath.moveTo(bankL(y0), y0); for (let y = y0; y <= y1; y += 6) riverPath.lineTo(bankL(y), y);
+  for (let y = y1; y >= y0; y -= 6) riverPath.lineTo(bankR(y), y); riverPath.closePath();
+  const wg = g.createLinearGradient(RL, 0, RR, 0);
+  wg.addColorStop(0, '#04161c'); wg.addColorStop(.5, '#062029'); wg.addColorStop(1, '#04161c');
+  g.fillStyle = wg; g.fill(riverPath);
+  g.strokeStyle = 'rgba(95,212,240,.16)'; g.lineWidth = 1.5; g.stroke(riverPath);
+}
+function drawWater() {
+  g.save(); g.clip(riverPath);
+  // the live pool
+  const yt = Y(CMP.top), yb = Y(CMP.bot), up = FLOW >= 0;
+  const pg = g.createLinearGradient(0, yt, 0, yb);
+  const hot = `rgba(${RGB.water},.34)`, cool = `rgba(${RGB.water},.16)`;
+  pg.addColorStop(0, up ? hot : cool); pg.addColorStop(.5, `rgba(${RGB.water},.2)`); pg.addColorStop(1, up ? cool : hot);
+  g.fillStyle = pg; g.fillRect(RL - 20, yt, RR - RL + 40, yb - yt);
+  // shimmer: slow bright bands
+  for (let i = 0; i < 5; i++) {
+    const y = yt + (yb - yt) * ((i / 5 + T * .03 * Math.sign(FLOW || 1) + 10) % 1);
+    g.fillStyle = `rgba(${RGB.foam},.035)`; g.fillRect(RL - 20, y, RR - RL + 40, 10 + (i % 2) * 8);
+  }
+  // the current
+  const pxs = Math.abs(FLOW) / dPdY();
+  g.lineCap = 'round';
+  for (const s of STRK) {
+    const y = Y(s.p); if (y < TOP - 30 || y > BOT + 30) continue;
+    const l = bankL(y), r = bankR(y), x = l + (r - l) * (.06 + .88 * s.xf);
+    const len = s.inside ? clamp(pxs * .1, 3, 24) * s.a : 3, dir = FLOW >= 0 ? 1 : -1;
+    g.strokeStyle = `rgba(${RGB.foam},${s.inside ? .14 + .3 * s.a : .07})`; g.lineWidth = s.inside ? 1.4 : 1;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.sin(s.p / 40) * 1.5, y + dir * len); g.stroke();
+  }
+  // the water masses: estimated liquidation clusters, swelling as the price comes close
+  for (const it of ITEMS) if (it.k === 'liq') drawMass(it);
+  // waves
+  for (const w of WAVES) drawWave(w);
+  g.restore();
+}
+function drawMass(it) {
+  const y = Y(it.p); if (y < TOP - 40 || y > BOT + 40) return;
+  const s = st(it), l = bankL(y), r = bankR(y), cx = (l + r) / 2, br = broken(it);
+  const fl = clamp(1 - (T - s.flare) / 1.6, 0, 1), pr = prox(it), sw = 1 + .1 * Math.sin(T * 1.4 + it.p * .01) + pr * .25 + fl * .3;
+  const hw = (r - l) * (.16 + .32 * Math.sqrt(it.rel)) * sw, hh = (phone ? 4 : 5) + 16 * Math.sqrt(it.rel) * sw;
+  if (br) { g.setLineDash([3, 4]); g.strokeStyle = `rgba(${RGB.liq},.3)`; g.lineWidth = 1; g.beginPath(); g.ellipse(cx, y, hw, hh * .6, 0, 0, PI * 2); g.stroke(); g.setLineDash([]); return; }
+  const rg = g.createRadialGradient(cx, y, 0, cx, y, hw);
+  rg.addColorStop(0, `rgba(${RGB.liq},${.55 + fl * .35})`); rg.addColorStop(.7, `rgba(${RGB.liq},${.28 + pr * .2})`); rg.addColorStop(1, `rgba(${RGB.liq},0)`);
+  g.fillStyle = rg; g.beginPath(); g.ellipse(cx, y, hw, hh, 0, 0, PI * 2); g.fill();
+  // the crest leans towards the price: that is where it will run
+  const toward = it.p > PX ? 1 : -1;
+  g.strokeStyle = `rgba(${RGB.foam},${.25 + pr * .45 + fl * .3})`; g.lineWidth = 1.2 + pr * 1.5;
+  g.beginPath();
+  for (let i = 0; i <= 20; i++) { const u = i / 20, x = cx - hw * .8 + hw * 1.6 * u, yy = y + toward * hh * .55 * Math.sin(u * PI) + Math.sin(T * 3 + u * 9) * 1.2; i ? g.lineTo(x, yy) : g.moveTo(x, yy); }
+  g.stroke();
+}
+function drawWave(w) {
+  const y = w.y; if (y == null) return;
+  const l = bankL(y) - 4, r = bankR(y) + 4, a = clamp(1 - w.d / 520, 0, 1) * clamp(w.age / .15, 0, 1), dir = w.up ? 1 : -1;
+  const body = 18 + w.amp * 80, gr = g.createLinearGradient(0, y, 0, y + dir * body);
+  gr.addColorStop(0, `rgba(${w.col},${.55 * a})`); gr.addColorStop(1, `rgba(${w.col},0)`);
+  g.fillStyle = gr; g.fillRect(l, Math.min(y, y + dir * body), r - l, body);
+  g.strokeStyle = `rgba(${RGB.foam},${.85 * a})`; g.lineWidth = 1.5 + w.amp * 3.5;
+  g.beginPath();
+  for (let i = 0; i <= 24; i++) { const u = i / 24, x = l + (r - l) * u, yy = y - dir * Math.sin(u * PI) * (3 + w.amp * 8) + Math.sin(u * 23 + T * 9) * (1 + w.amp * 2); i ? g.lineTo(x, yy) : g.moveTo(x, yy); }
+  g.stroke();
+  if (w.label && w.age < 2.4) {
+    g.font = `800 ${11 + w.amp * 5}px ${FM}`; g.textAlign = 'center'; g.fillStyle = `rgba(${w.col},${Math.min(1, (2.4 - w.age) * 1.2)})`;
+    g.shadowColor = `rgba(${w.col},.9)`; g.shadowBlur = 10; g.fillText(w.label, (l + r) / 2, y + dir * (body * .5 + 8)); g.shadowBlur = 0;
+  }
+}
+function drawBars() {
+  for (const it of ITEMS) {
+    const y = Y(it.p); if (y < TOP - 30 || y > BOT + 30) continue;
+    if (it.k === 'tgt') { drawTarget(it, y); continue; }
+    if (!isBar(it)) continue;
+    const s = st(it), br = broken(it), t = barT(it), pr = br ? 0 : prox(it);
+    const sh = clamp(1 - (T - s.shake) / .6, 0, 1), dx = sh ? Math.sin(T * 70) * 3 * sh * (s.hit || .5) : 0;
+    const l = bankL(y) - 5 + dx, r = bankR(y) + 5 + dx, w = r - l, sel = SEL?.key === it.key;
+    if (it.k !== 'stop') {
+      if (!br) {
+        g.shadowColor = `rgba(${it.col},${.25 + pr * .7})`; g.shadowBlur = 6 + pr * 22 + (sel ? 14 : 0);
+        const sg = g.createLinearGradient(0, y - t / 2, 0, y + t / 2); sg.addColorStop(0, '#4a545a'); sg.addColorStop(1, '#1d2428');
+        g.fillStyle = sg; rrect(l, y - t / 2, w, t, Math.min(3, t / 2)); g.fill(); g.shadowBlur = 0;
+        g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 1;
+        g.beginPath(); for (let x = l + 9; x < r - 4; x += 13) { g.moveTo(x, y - t / 2 + 1); g.lineTo(x, y + t / 2 - 1); } g.stroke();
+        g.strokeStyle = `rgba(${it.col},${.5 + pr * .5})`; g.lineWidth = 1.5; rrect(l, y - t / 2, w, t, Math.min(3, t / 2)); g.stroke();
+      } else {
+        // what is left of a dike: two stubs on the banks
+        g.fillStyle = '#262d31'; g.strokeStyle = `rgba(${it.col},.3)`; g.lineWidth = 1;
+        for (const [x0, x1] of [[l, l + w * .2], [r, r - w * .2]]) {
+          g.beginPath(); g.moveTo(x0, y - t / 2); g.lineTo(x1, y - t / 2); g.lineTo(x1 - (x1 - x0) * .25, y); g.lineTo(x1 + (x0 - x1) * .1, y + t / 2); g.lineTo(x0, y + t / 2); g.closePath(); g.fill(); g.stroke();
+        }
+      }
+    } else {
+      // a sluice: two wooden gates between posts; open (swung against the banks) once the stops are hit
+      const pt = Math.max(5, t + 3);
+      g.fillStyle = '#4c3c22'; g.fillRect(l - 1, y - pt / 2, 5, pt); g.fillRect(r - 4, y - pt / 2, 5, pt);
+      if (!br) {
+        g.shadowColor = `rgba(${it.col},${.25 + pr * .7})`; g.shadowBlur = 5 + pr * 18 + (sel ? 14 : 0);
+        g.fillStyle = '#7a5a26'; g.fillRect(l + 4, y - t / 2, w / 2 - 5, t); g.fillRect(l + w / 2 + 1, y - t / 2, w / 2 - 5, t); g.shadowBlur = 0;
+        g.strokeStyle = 'rgba(30,20,8,.6)'; g.lineWidth = 1; g.beginPath();
+        for (let x = l + 12; x < r - 6; x += 8) { g.moveTo(x, y - t / 2); g.lineTo(x, y + t / 2); } g.stroke();
+        g.strokeStyle = `rgba(${it.col},${.55 + pr * .45})`; g.lineWidth = 1.2; g.strokeRect(l + 4, y - t / 2, w / 2 - 5, t); g.strokeRect(l + w / 2 + 1, y - t / 2, w / 2 - 5, t);
+      } else {
+        const dir = it.above ? -1 : 1, len = w * .3;
+        g.strokeStyle = `rgba(${it.col},.45)`; g.lineWidth = Math.max(2, t * .6); g.lineCap = 'round';
+        g.beginPath(); g.moveTo(l + 4, y); g.lineTo(l + 8, y + dir * len); g.moveTo(r - 4, y); g.lineTo(r - 8, y + dir * len); g.stroke();
+      }
+    }
+  }
+}
+function drawTarget(it, y) {
+  const l = bankL(y), r = bankR(y), br = broken(it);
+  g.setLineDash([5, 5]); g.strokeStyle = `rgba(${it.col},${br ? .2 : .5})`; g.lineWidth = 1.2;
+  g.beginPath(); g.moveTo(l, y); g.lineTo(r, y); g.stroke(); g.setLineDash([]);
+  // a flag on the right bank
+  g.strokeStyle = 'rgba(220,230,226,.6)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(r + 6, y); g.lineTo(r + 6, y - 16); g.stroke();
+  g.fillStyle = `rgba(${it.col},${br ? .35 : .9})`; g.beginPath(); g.moveTo(r + 7, y - 16); g.lineTo(r + 18 + Math.sin(T * 4) * 1.5, y - 12.5); g.lineTo(r + 7, y - 9); g.closePath(); g.fill();
+}
+function rrect(x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function drawFoam() {
+  // the water presses against the dike it is pushed into: the closer and the harder the push, the more foam
+  const tk = TAKER.now(), push = tk.seen ? (tk.buy - .5) * 2 : 0;
+  for (const [it, up] of [[CMP.topIt, true], [CMP.botIt, false]]) {
+    if (!it) continue;
+    const y0 = Y(it.p) + (up ? 1 : -1) * barT(it) / 2; if (y0 < TOP - 20 || y0 > BOT + 20) continue;
+    const near = clamp(1 - Math.abs(it.p - PX) / (V.r * .3), 0, 1), pr = clamp(near * .7 + Math.max(0, up ? push : -push) * .8 + Math.max(0, (up ? 1 : -1) * FLOW / V.r) * .6, 0, 1);
+    const l = bankL(y0), r = bankR(y0), n = 10 + Math.round(pr * 30), dir = up ? 1 : -1;
+    for (let i = 0; i < n; i++) {
+      const x = l + 3 + (r - l - 6) * ((i + .5) / n) + Math.sin(T * 3 + i * 2.1) * 2, d = Math.abs(Math.sin(T * 2.2 + i * 1.7)) * (2 + pr * 9);
+      g.fillStyle = `rgba(${RGB.foam},${(.18 + pr * .55) * (1 - d / (3 + pr * 10))})`;
+      g.beginPath(); g.arc(x, y0 + dir * (1 + d), .8 + pr * 1.8 * Math.abs(Math.sin(T * 4 + i)), 0, PI * 2); g.fill();
+    }
+  }
+}
+function drawWaterline() {
+  const y = Y(SP), l = bankL(y), r = bankR(y);
+  g.save(); g.clip(riverPath);
+  const gl = g.createLinearGradient(0, y - 14, 0, y + 14);
+  gl.addColorStop(0, 'rgba(238,244,240,0)'); gl.addColorStop(.5, 'rgba(238,244,240,.16)'); gl.addColorStop(1, 'rgba(238,244,240,0)');
+  g.fillStyle = gl; g.fillRect(l - 10, y - 14, r - l + 20, 28); g.restore();
+  g.strokeStyle = 'rgba(245,250,248,.95)'; g.lineWidth = 2; g.shadowColor = 'rgba(238,244,240,.9)'; g.shadowBlur = 12;
+  g.beginPath(); for (let i = 0; i <= 30; i++) { const u = i / 30, x = l + (r - l) * u, yy = y + Math.sin(u * 14 + T * 3) * 1.6; i ? g.lineTo(x, yy) : g.moveTo(x, yy); } g.stroke(); g.shadowBlur = 0;
+  // the price tag on the left bank, and the live mark on the right
+  const tw = Math.min(RL - X0 - 12, phone ? 84 : 112), tx = RL - 8 - tw, th = phone ? 26 : 30;
+  g.fillStyle = 'rgba(20,29,33,.95)'; rrect(tx, y - th / 2, tw, th, 7); g.fill();
+  g.strokeStyle = 'rgba(238,244,240,.45)'; g.lineWidth = 1; g.stroke();
+  g.fillStyle = '#fff'; g.font = `700 ${phone ? 14 : 17}px ${FM}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(fmtP(PX), tx + tw / 2, y + 1);
+  const rx = bankR(y) + 12;
+  g.fillStyle = `rgba(${RGB.up},${.55 + .45 * Math.abs(Math.sin(T * 2))})`; g.beginPath(); g.arc(rx + 3, y, 3.5, 0, PI * 2); g.fill();
+  g.font = `700 ${phone ? 10 : 11}px ${FD}`; g.textAlign = 'left'; g.fillStyle = '#eef4f0'; g.fillText('WATERLIJN', rx + 12, y - (phone ? 5 : 6));
+  const old = HIST.find(h => Date.now() - h[0] <= 61e3);
+  if (old) { const d = PX - old[1]; g.font = `600 ${phone ? 9.5 : 10.5}px ${FM}`; g.fillStyle = d > 0 ? '#35ffb4' : d < 0 ? '#ff4f6d' : '#8aa0a6';
+    g.fillText(`${d >= 0 ? '+' : '−'}${fmtP(Math.abs(d))} in 1 min`, rx + 12, y + (phone ? 7 : 8)); }
+  g.textBaseline = 'alphabetic';
+}
+// labels on both banks, the most important first; one that would overlap another is left out (tap the river for it)
+function drawLabels() {
+  const yP = Y(SP), gap = phone ? 30 : 34, taken = [[yP - 24, yP + 24]];
+  const free = y => taken.every(([a, b]) => y + gap / 2 <= a || y - gap / 2 >= b);
+  const list = ITEMS.map(it => ({ it, y: Y(it.p) })).filter(o => o.y > TOP + 10 && o.y < BOT - 10)
+    .sort((a, b) => (b.it.k === 'tgt') - (a.it.k === 'tgt') || (b.it.rel + prox(b.it) * 2 + (SEL?.key === b.it.key) * 9) - (a.it.rel + prox(a.it) * 2 + (SEL?.key === a.it.key) * 9));
+  for (const o of list) {
+    let y = null; for (const d of [0, -6, 6, -12, 12]) if (free(o.y + d)) { y = o.y + d; break; }
+    if (y == null) continue;
+    taken.push([y - gap / 2, y + gap / 2]);
+    const it = o.it, br = broken(it), a = br ? .45 : 1, l = bankL(o.y), r = bankR(o.y) + (it.k === 'tgt' ? 22 : 0);
+    g.strokeStyle = `rgba(${it.col},${.35 * a})`; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(l - 6, o.y); g.lineTo(l - 12, y); g.moveTo(r + 6, o.y); g.lineTo(r + 12, y); g.stroke();
+    g.textAlign = 'right'; g.font = `500 ${phone ? 12 : 13.5}px ${FM}`; g.fillStyle = `rgba(223,232,228,${a})`; g.fillText(fmtP(it.p), l - 15, y + 1);
+    g.font = `500 ${phone ? 9.5 : 10.5}px ${FM}`; g.fillStyle = `rgba(138,160,166,${a})`; g.fillText(pct(it.p, PX), l - 15, y + (phone ? 12 : 14));
+    g.textAlign = 'left'; g.font = `700 ${phone ? 11.5 : 13}px ${FD}`; g.fillStyle = `rgba(${it.col},${a})`;
+    g.fillText(it.name + (br ? ' ✓' : ''), r + 15, y + 1);
+    g.font = `500 ${phone ? 10.5 : 12}px ${FM}`; g.fillStyle = `rgba(200,214,210,${a * .85})`; g.fillText(it.v, r + 15, y + (phone ? 12 : 14));
+  }
+}
+function drawParts(dt) {
+  for (let i = PARTS.length - 1; i >= 0; i--) {
+    const q = PARTS[i]; q.age += dt; if (q.age >= q.life) { PARTS.splice(i, 1); continue; }
+    const u = q.age / q.life, a = 1 - u;
+    if (q.t === 'ring') { const rr = q.r1 * ease(u); g.strokeStyle = `rgba(${q.col},${a * .7})`; g.lineWidth = q.w * a + .4;
+      g.beginPath(); g.ellipse(q.x, q.y, rr, rr * (q.flat ? .18 : .35), 0, 0, PI * 2); g.stroke(); continue; }
+    q.vx *= Math.exp(-dt * 2); q.vy *= Math.exp(-dt * 2); q.x += q.vx * dt; q.y += q.vy * dt;
+    if (q.t === 'chunk') { q.rot += q.vr * dt * a; g.save(); g.translate(q.x, q.y); g.rotate(q.rot);
+      g.fillStyle = `rgba(${q.col},${a})`; g.fillRect(-q.w / 2, -q.h / 2, q.w, q.h); g.strokeStyle = `rgba(${q.rim},${a * .6})`; g.lineWidth = 1; g.strokeRect(-q.w / 2, -q.h / 2, q.w, q.h); g.restore(); continue; }
+    g.fillStyle = `rgba(${q.col},${a})`; g.beginPath(); g.arc(q.x, q.y, q.r, 0, PI * 2); g.fill();
+  }
+  if (PARTS.length > 600) PARTS.splice(0, PARTS.length - 600);
+}
+
+/* ---- header, toasts, the card, help --------------------------------------------------------------------------------- */
+function paintHead() {
+  if (PX && C24) { const v = PX / C24 - 1; $('tc').innerHTML = `BTC · 24u <span style="color:${v >= 0 ? 'var(--up)' : 'var(--dn)'}">${pct(PX, C24)}</span>`; }
+  const tk = TAKER.now();
+  if (tk.seen) { const b = Math.round(tk.buy * 100); $('fbar').style.width = b + '%'; $('fb').textContent = `kopers ${b}%`; $('fs').textContent = `${100 - b}% verkopers`; }
+  if (SEL && !$('card').hidden) renderCard();
+}
+setInterval(paintHead, 500);
+function toast(head, sub, col) {
+  const d = document.createElement('div'); d.style.borderLeftColor = `rgb(${col})`;
+  d.innerHTML = `<b style="color:rgb(${col})">${head}</b><span>${sub}</span>`;
+  const box = $('toast'); box.prepend(d); while (box.children.length > 3) box.lastChild.remove();
+  setTimeout(() => { d.style.opacity = 0; d.style.transform = 'translateY(-8px)'; setTimeout(() => d.remove(), 520); }, 5200);
+}
+const WHAT = { ask: 'Een dijk van verkooporders boven de prijs: hier moet de stroming doorheen om hoger te komen.',
+  bid: 'Een dijk van kooporders onder de prijs: die houdt het water tegen als het zakt.',
+  stop: 'Een sluis: geschatte stops net voorbij een oude top of bodem. Gaat hij open, dan versnelt de stroming.',
+  liq: 'Een watermassa: geschatte liquidaties. Bereikt de prijs ze, dan komt er een vloedgolf los in dezelfde richting.',
+  tgt: 'Een van de twee doelen van GlassSphere, met de kans dat dit doel eerst komt (binnen 3 dagen).' };
+let SEL = null;
+function renderCard() {
+  const it = SEL, br = broken(it);
+  $('card').lastElementChild.innerHTML = `<h2 style="color:rgb(${it.col})">${it.name}${br ? ' · ' + (it.k === 'tgt' ? 'bereikt' : 'doorgebroken') : ''}</h2><p>${WHAT[it.k]}</p>
+    <dl><dt>Prijs</dt><dd>${fmtP(it.p)}</dd><dt>Afstand</dt><dd>${pct(it.p, PX)} · ${fmtP(Math.abs(it.p - PX))}</dd><dt>${it.k === 'tgt' ? 'Kans' : 'Grootte'}</dt><dd>${it.v}</dd></dl>`;
+}
+const setCard = it => { SEL = it; $('card').hidden = !it; if (it) renderCard(); };
+$('card').querySelector('.x').addEventListener('click', () => setCard(null));
+const setHelp = on => { $('help').hidden = !on; $('helpb').setAttribute('aria-pressed', String(on)); if (on) setCard(null); };
+$('helpb').addEventListener('click', () => setHelp($('help').hidden));
+$('help').querySelector('.x').addEventListener('click', () => setHelp(false));
+
+/* ---- dragging, zooming, following ----------------------------------------------------------------------------------- */
+let userAt = 0;
+const setFollow = on => { V.follow = on; if (on) V.userR = false; $('follow').setAttribute('aria-pressed', String(on)); };
+$('follow').addEventListener('click', () => setFollow(true));
+const PTR = new Map(); let drag = null;
+cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); PTR.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (PTR.size === 1) drag = { y: e.clientY, c: V.c, t: performance.now(), moved: 0, x: e.clientX };
+  else if (PTR.size === 2) { const [a, b] = [...PTR.values()]; drag = { pinch: Math.hypot(a.x - b.x, a.y - b.y), r: V.r, moved: 99 }; } });
+cv.addEventListener('pointermove', e => {
+  if (!PTR.has(e.pointerId) || !drag || !ready) return; PTR.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (drag.pinch && PTR.size === 2) { const [a, b] = [...PTR.values()]; V.r = clamp(drag.r * drag.pinch / Math.max(20, Math.hypot(a.x - b.x, a.y - b.y)), PX * .003, PX * .15); setFollow(false); V.userR = true; userAt = performance.now(); return; }
+  if (drag.pinch) return;
+  const dy = e.clientY - drag.y; drag.moved = Math.max(drag.moved, Math.abs(dy), Math.abs(e.clientX - drag.x));
+  if (drag.moved > 6) { cv.classList.add('grab'); setFollow(false); userAt = performance.now(); V.c = drag.c + dy * dPdY(); }
+});
+const up = e => { PTR.delete(e.pointerId); cv.classList.remove('grab');
+  if (drag && !drag.pinch && drag.moved <= 6 && performance.now() - drag.t < 500) tap(e.clientX, e.clientY);
+  drag = PTR.size ? { moved: 99, pinch: 0 } : null; };
+cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+cv.addEventListener('wheel', e => { e.preventDefault(); if (!ready) return;
+  V.r = clamp(V.r * Math.exp(e.deltaY * .0015), PX * .003, PX * .15); V.userR = true; setFollow(false); userAt = performance.now(); }, { passive: false });
+function tap(x, y) {
+  if (!ready) return;
+  let best = null, bd = 22;
+  for (const it of ITEMS) { const d = Math.abs(Y(it.p) - y); if (d < bd) { bd = d; best = it; } }
+  setHelp(false); setCard(best);
+}
+addEventListener('keydown', e => {
+  if (e.key === 'Escape') { setHelp(false); setCard(null); }
+  else if (e.key === '0') setFollow(true);
+  else if (!ready) return;
+  else if (e.key === '+' || e.key === '=') { V.r = clamp(V.r / 1.25, PX * .003, PX * .15); V.userR = true; setFollow(false); userAt = performance.now(); }
+  else if (e.key === '-') { V.r = clamp(V.r * 1.25, PX * .003, PX * .15); V.userR = true; setFollow(false); userAt = performance.now(); }
+  else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { V.c += (e.key === 'ArrowUp' ? 1 : -1) * V.r * .12; setFollow(false); userAt = performance.now(); }
+});
+
+/* ---- the frame ---------------------------------------------------------------------------------------------------- */
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now; T += dt;
+  g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (ready) {
+    PX = live.px || PX || D.price;
+    const sp0 = SP; SP = Math.abs(PX - SP) < PX * 1e-7 ? PX : lerp(SP, PX, 1 - Math.exp(-dt * 6));
+    VEL = lerp(VEL, (SP - sp0) / Math.max(dt, 1e-3), 1 - Math.exp(-dt * 1.5));
+    if (!V.follow && !PTR.size && now - userAt > 10e3) { V.follow = true; $('follow').setAttribute('aria-pressed', 'true'); }
+    if (V.follow) { V.c = lerp(V.c, SP, 1 - Math.exp(-dt * 1.6)); if (!V.userR) V.r = lerp(V.r, fitR(), 1 - Math.exp(-dt * 1.2)); }
+    pool(dt); if (!reduced) stepStreaks(dt); stepWaves(dt);
+    drawBanks(); drawWater(); drawBars(); drawFoam(); drawWaterline(); drawLabels(); drawParts(dt);
+  } else { g.fillStyle = '#05090b'; g.fillRect(0, 0, W, H); }
+  requestAnimationFrame(frame);
+}
+
+/* ---- start ------------------------------------------------------------------------------------------------------------ */
+(async () => {
+  resize(); live.start(); liqFeeds();
+  requestAnimationFrame(frame);
+  site = await loadSite(); if (site) setData(site, 'site');
+  if (await loadLive()) setInterval(loadLive, 15e3);
+  else if (!site) { msg('GEEN DATA: BEURZEN EN ' + A.file.toUpperCase() + ' NIET BEREIKBAAR'); setInterval(async () => { if (await loadLive()) location.reload(); }, 30e3); }
+  else setInterval(loadLive, 30e3);
+  let seen = false; try { seen = localStorage.getItem('rivier-seen') === '1'; localStorage.setItem('rivier-seen', '1'); } catch (e) {}
+  if (!seen && D) setHelp(true);
+})();
+window.RIVIER = { get D() { return D; }, get ITEMS() { return ITEMS; }, get TG() { return TG; }, V, CMP, WAVES, PARTS, onPrice, realLiq, showRealLiq, live, TAKER, cross, wave };
+})();
+</script>
+</body>
+</html>

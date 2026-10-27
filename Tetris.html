@@ -869,20 +869,20 @@ function wireHeat(r, k, n = 1) {
 // a pulse from a left tile through the whole tube into a right tile
 function passRoute(r, kL, kR) { const a = wireRoute(r, kL, BW / 2), c = wireRoute(r, kR, BW / 2, true); return (u, out) => u < 0.5 ? a(u * 2, out) : c((u - 0.5) * 2, out); }
 // the light pattern on the wires: decoration, not data. Three figures take turns every 9 s: a wave that runs down the
-// tubes and back up with every tile firing into the same tube, a chase where one tile after another fires into every
-// tube, and crossings from a tile on the left through a tube into a tile on the right
+// tubes and back up with a few tiles firing into the same tube, a chase where one tile after another fires into every
+// fourth tube, and crossings from a tile on the left through a tube into a tile on the right
 const KEYS = Object.keys(EXN), PAT = { t: 0, beat: 0, mode: 0, mt: 0 };
 function firePat(r, k, delay) { bolt(regPos(k), null, REGS[k].col, delay, 0.8, () => { r.pulse = Math.min(1.5, r.pulse + 0.04); }, wireRoute(r, k, BW * (REGS[k].side < 0 ? rnd(0.12, 0.42) : rnd(0.58, 0.88))), 0.3); wireHeat(r, k, 0.6); }   // each lands in its own half, no pile-up in the middle
 function patternTick(dt) {
   const lv = liveRows().filter(r => r.bar && !r.cleared).sort((a, b) => b.yd - a.yd), n = lv.length; if (!n) return;
   if ((PAT.mt += dt) > 9) { PAT.mt = 0; PAT.mode = (PAT.mode + 1) % 3; PAT.beat = 0; }
   if ((PAT.t -= dt) > 0) return;
-  PAT.t = [0.16, 0.22, 0.32][PAT.mode] * (LOWP ? 1.6 : 1) * (RM ? 2.5 : 1);
+  PAT.t = [0.4, 0.5, 0.7][PAT.mode] * (LOWP ? 1.4 : 1) * (RM ? 2.5 : 1);   // calm: a few pulses at a time
   const b = PAT.beat++;
-  if (PAT.mode === 0) { const i = b % Math.max(1, 2 * n - 2), r = lv[i < n ? i : 2 * n - 2 - i]; for (const k of KEYS) firePat(r, k, 0); }
-  else if (PAT.mode === 1) { const k = KEYS[b % KEYS.length]; lv.forEach((r, i) => firePat(r, k, i * 0.025)); }
+  if (PAT.mode === 0) { const i = b % Math.max(1, 2 * n - 2), r = lv[i < n ? i : 2 * n - 2 - i]; for (let q = 0; q < 4; q++) firePat(r, KEYS[(b * 5 + q * 3) % KEYS.length], 0); }
+  else if (PAT.mode === 1) { const k = KEYS[b % KEYS.length]; lv.forEach((r, i) => { if ((i + b) % 4 === 0) firePat(r, k, i * 0.025); }); }
   else { const L = KEYS.filter(k => REGS[k].side < 0), R = KEYS.filter(k => REGS[k].side > 0);
-    for (let j = b % 3; j < n; j += 3) { const r = lv[j], kl = L[(b + j) % L.length], kr = R[(b + 2 * j) % R.length];
+    for (let j = b % 6; j < n; j += 6) { const r = lv[j], kl = L[(b + j) % L.length], kr = R[(b + 2 * j) % R.length];
       bolt(regPos(kl), null, REGS[kl].col.clone().lerp(REGS[kr].col, 0.5), 0, 1.4, null, passRoute(r, kl, kr), 0.3); wireHeat(r, kl, 0.6); wireHeat(r, kr, 0.6); } }
 }
 // the data still fills and empties the tubes, only without a visible pulse: the change lands after a moment

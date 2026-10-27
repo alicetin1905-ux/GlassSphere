@@ -630,9 +630,10 @@ function floatText(x, y, txt, css) {
 }
 
 /* ---------- the exchanges as cash registers behind the well; a blockchain on the wall behind them ---------- */
-const EXN = { binance: ['Binance', '#f3ba2f'], okx: ['OKX', '#e8eef0'], bybit: ['Bybit', '#ff9f1c'], bitget: ['Bitget', '#22e1e8'], gate: ['Gate', '#4d8dff'],
-  htx: ['HTX', '#3fa9f5'], hyperliquid: ['Hyperliquid', '#97fce4'], deribit: ['Deribit', '#2fd1a5'], bitmex: ['BitMEX', '#ff5a5f'], cryptocom: ['Crypto.com', '#7f96ff'],
-  dydx: ['dYdX', '#a78bfa'], model: ['Schatting', '#ffc857'] };
+// each exchange its own colour, far enough apart to tell the segments of a wall apart
+const EXN = { binance: ['Binance', '#f3ba2f'], okx: ['OKX', '#eef2f5'], bybit: ['Bybit', '#ff7a1a'], bitget: ['Bitget', '#00e1ff'], gate: ['Gate', '#2f6bff'],
+  htx: ['HTX', '#b6f03c'], hyperliquid: ['Hyperliquid', '#8dffd8'], deribit: ['Deribit', '#ff4fd8'], bitmex: ['BitMEX', '#ff4d4d'], cryptocom: ['Crypto.com', '#9db0ff'],
+  dydx: ['dYdX', '#a970ff'], model: ['Schatting', '#ffc857'] };
 const EXKEY = { OKX: 'okx', Binance: 'binance', Bybit: 'bybit' };
 const SHORT = { hyperliquid: 'Hyper', cryptocom: 'Crypto', model: 'Schat.' };
 const REGS = {};
@@ -758,21 +759,44 @@ function updateBolts(dt) {
   }
 }
 // a unit of an exchange's orders arrives at a bar
-function absorbAt(r, x) {
+const shares = per => { const sum = Object.values(per || {}).reduce((a, b) => a + b, 0) || 1; return Object.fromEntries(Object.entries(per || {}).map(([k, v]) => [k, v / sum])); };
+function segTex(r) {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 64; const t = new THREE.CanvasTexture(c); t.anisotropy = 4;
+  r.seg = { c, g: c.getContext('2d'), t, show: { ...r.shareT }, order: [], last: 0 }; drawSeg(r); return t;
+}
+function drawSeg(r) {
+  const { g, t, show } = r.seg, e = Object.entries(show).filter(([k, v]) => v > 0.002 && REGS[k]).sort((a, b) => b[1] - a[1]), sum = e.reduce((a, [, v]) => a + v, 0) || 1;
+  g.globalCompositeOperation = 'source-over'; g.fillStyle = '#0a0612'; g.fillRect(0, 0, 512, 64);
+  let x = 0; r.seg.order = [];
+  for (const [k, v] of e) { const w = v / sum * 512; g.fillStyle = REGS[k].css; g.fillRect(x + 1.5, 0, Math.max(0, w - 3), 64); r.seg.order.push([k, x / 512, (x + w) / 512]); x += w; }
+  g.globalCompositeOperation = 'multiply';   // the same light from above as the other bars
+  const gr = g.createLinearGradient(0, 0, 0, 64); gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.25, '#e4e4e4'); gr.addColorStop(0.65, '#a6a6a6'); gr.addColorStop(1, '#5c5c5c');
+  g.fillStyle = gr; g.fillRect(0, 0, 512, 64);
+  g.globalCompositeOperation = 'source-over'; g.fillStyle = 'rgba(255,255,255,.55)'; g.fillRect(0, 3, 512, 3); g.fillStyle = 'rgba(0,0,0,.5)'; g.fillRect(0, 60, 512, 4);
+  t.needsUpdate = true;
+}
+// where an exchange's segment lies on the bar, so its pulses strike there
+function segX(r, k) {
+  const o = r.seg && r.seg.order.find(q => q[0] === k);
+  if (!o || (o[2] - o[1]) * BW < 0.3) return rnd(0.5, BW - 0.5);
+  return rnd(o[1] * BW + 0.12, o[2] * BW - 0.12);
+}
+function absorbAt(r, x, col) {
   r.inbound = Math.max(0, r.inbound - 1);
   if (r.gone || r.cleared) return;
   r.units = Math.min(CAP, r.units + 1); r.pulse = Math.min(1.5, r.pulse + 0.45);
   emit(x, r.yd + r.thS / 2, 0.4, r.t.col, 6, 3); snd('zap');
-  const rc = r.t.col.clone().lerp(WHITE, 0.55); ripple(r, x, rc, -1, 9, 0.7, 1.3); ripple(r, x, rc, 1, 9, 0.7, 1.3);
+  const rc = (col || r.t.col).clone().lerp(WHITE, 0.45); ripple(r, x, rc, -1, 9, 0.7, 1.3); ripple(r, x, rc, 1, 9, 0.7, 1.3);
 }
 const barPt = (r, x) => { const v = new THREE.Vector3(); return () => v.set(x, r.yd, 0.35); };
 function zap(src, r, n, delay = 0) {   // n units of orders from a register to a bar
   r.inbound += n;
-  for (let k = 0; k < n; k++) { const x = rnd(0.5, BW - 0.5); bolt(regPos(src), barPt(r, x), (REGS[src] || REGS.model).col, delay + k * 0.07, rnd(0.28, 0.42), () => absorbAt(r, x)); }
+  const col = (REGS[src] || REGS.model).col;
+  for (let k = 0; k < n; k++) { const x = segX(r, src); bolt(regPos(src), barPt(r, x), col, delay + k * 0.07, rnd(0.28, 0.42), () => absorbAt(r, x, col)); }
 }
 function zapBack(r, dst, n, delay = 0) {   // n units pulled back from a bar into a register
-  for (let k = 0; k < n; k++) { const x = rnd(0.5, BW - 0.5);
-    emit(x, r.yd, 0.4, r.t.col, 4, 2);
+  for (let k = 0; k < n; k++) { const x = segX(r, dst);
+    emit(x, r.yd, 0.4, (REGS[dst] || REGS.model).col, 4, 2);
     bolt(new THREE.Vector3(x, r.yd, 0.35), regPos(dst), (REGS[dst] || REGS.model).col, delay + k * 0.07, rnd(0.3, 0.45), () => { const R = REGS[dst]; if (R) R.open = 1; snd('back'); }); }
 }
 // a block on its way from a to c in an arc: into a bar (absorb), back into a register (withdraw) or a burst
@@ -812,7 +836,9 @@ function makeRow(lv) {
   r.band = new THREE.Mesh(bandGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false })); r.band.position.z = -0.68; r.band.renderOrder = -3; scene.add(r.band);
   r.hit = new THREE.Mesh(new THREE.PlaneGeometry(RW, 0.98 * RS), new THREE.MeshBasicMaterial()); r.hit.visible = false; r.hit.userData.row = r; scene.add(r.hit);
   if (t.u !== 'pct') {
-    r.bar = new THREE.Mesh(barGeo, new THREE.MeshBasicMaterial({ map: barTex, vertexColors: true, color: t.col.clone(), transparent: true }));
+    const wall = lv.type === 'ask' || lv.type === 'bid';
+    if (wall) r.shareT = shares(lv.per);
+    r.bar = new THREE.Mesh(barGeo, new THREE.MeshBasicMaterial({ map: wall ? segTex(r) : barTex, vertexColors: true, color: wall ? WHITE.clone() : t.col.clone(), transparent: true }));
     r.bar.position.x = BW / 2; r.bar.scale.set(BW, 0.001, 0.001); scene.add(r.bar);
     r.edge = new THREE.LineSegments(barEdgeGeo, new THREE.LineBasicMaterial({ color: t.col, transparent: true, opacity: 0, blending: ADD }));
     r.edge.position.x = BW / 2; r.edge.scale.copy(r.bar.scale); scene.add(r.edge);
@@ -831,7 +857,8 @@ function makeRow(lv) {
 function disposeRow(r) {
   const objs = [r.lbl.m, r.sz.m, r.halo, r.hit]; if (r.gate) objs.push(r.gate.m, r.gate.e);
   for (const o of objs) { scene.remove(o); o.geometry.dispose(); if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
-  for (const o of [r.bar, r.edge, r.band]) if (o) { scene.remove(o); o.material.dispose(); }   // the geometry and texture are shared
+  for (const o of [r.bar, r.edge, r.band]) if (o) { scene.remove(o); o.material.dispose(); }
+  if (r.seg) r.seg.t.dispose();   // the geometry and texture are shared
 }
 function removeRow(r, quiet) {
   if (r.gone) return;
@@ -905,7 +932,7 @@ function applyLevels(L) {
     if (lv.per) { const o = r.per || {}, d = {};
       for (const k of new Set([...Object.keys(o), ...Object.keys(lv.per)])) d[k] = (lv.per[k] || 0) - (o[k] || 0);
       r.srcW = Object.fromEntries(Object.entries(d).filter(([, v]) => v > 0)); r.dstW = Object.fromEntries(Object.entries(d).filter(([, v]) => v < 0).map(([k, v]) => [k, -v])); }
-    r.per = lv.per || null;
+    r.per = lv.per || null; if (r.seg) r.shareT = shares(r.per);
     if (r.t.u === 'usd' && !r.cleared && Math.abs(r.val - old) >= Math.max(3e6, old * 0.15)) r.delta = r.val - old;
     if (r.cleared && (r.t.up ? p < r.price : p > r.price)) { r.cleared = false; r.isNew = true; }
   }
@@ -1632,11 +1659,19 @@ function render(rdt) {
       r.edge.position.copy(r.bar.position); r.edge.scale.copy(r.bar.scale);
       let br = 1 + 0.35 * Math.min(1, r.thS / 0.9) + 0.6 * Math.exp(-((y - scanY) ** 2) * 1.4) + 0.5 * r.pulse + 0.35 * r.hl + (exS > 0 ? 0.3 + exS : 0) + 0.9 * wb + (Math.abs(y - sy) < 1.2 * RS ? 0.2 : 0) + (fl ? 0.6 * Math.abs(Math.sin(t * 26)) : 0);
       if (r.glass) br *= 0.75 + 0.35 * Math.abs(Math.sin(t * 7 + y));
-      r.bar.material.color.copy(r.t.col).multiplyScalar(br);
+      if (r.seg) {   // segments glide to the new shares
+        let d = 0;
+        for (const k of new Set([...Object.keys(r.seg.show), ...Object.keys(r.shareT || {})])) {
+          const tv = (r.shareT || {})[k] || 0, cv = r.seg.show[k] || 0, nv = cv + (tv - cv) * Math.min(1, rdt * 3);
+          d = Math.max(d, Math.abs(nv - cv)); if (nv < 0.001 && !tv) delete r.seg.show[k]; else r.seg.show[k] = nv;
+        }
+        if (d > 0.0015 && clock - r.seg.last > 0.08) { r.seg.last = clock; drawSeg(r); }
+        r.bar.material.color.setScalar(Math.min(1.35, 0.9 + (br - 1) * 0.45));
+      } else r.bar.material.color.copy(r.t.col).multiplyScalar(br);
       const add = r.glass, m = r.bar.material;
       if (m.blending !== (add ? ADD : THREE.NormalBlending)) { m.blending = add ? ADD : THREE.NormalBlending; m.depthWrite = !add; m.needsUpdate = true; }
       m.opacity = (add ? 0.45 : 1) * fade;
-      r.edge.material.opacity = fade * Math.min(1, 0.35 + 0.35 * Math.min(1, r.thS / 0.9) + 0.4 * r.pulse + (add ? 0.35 : 0));
+      r.edge.material.opacity = fade * Math.min(1, 0.35 + (r.seg ? 0.3 : 0) + 0.35 * Math.min(1, r.thS / 0.9) + 0.4 * r.pulse + (add ? 0.35 : 0));
       r.bar.visible = r.edge.visible = r.thS > 0.01;
     }
     r.lbl.m.position.set(-3.6 - (1 - fadeL) * 1.4, y, r.gone ? -0.1 : 0.05); r.sz.m.position.set(r.endX + 0.25 + 1.8, y, 0.1); r.hit.position.set(RX, y, 0.5);

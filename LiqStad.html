@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>GlassSphere · Liquiditeitsstad</title>
+<meta name="theme-color" content="#05040d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@500;600;700;800&display=swap">
+<style>
+/* De liquiditeitsstad: the order book as a city at night. The price is an avenue running left (lower) to right (higher);
+   every price zone along it is a plot. The front row holds the order book (bid walls green, ask walls red), the middle row
+   the estimated stops, the back row the estimated liquidations; the size of each zone is the height of its building, so
+   dense liquidity stands as a wall of towers. The live price is a light on the avenue and drags a light trail over the
+   square in front (the last four hours, oldest at the bottom). Liquidity that leaves the book, or that the price runs
+   through, goes dark: the windows switch off, the building sinks and leaves its outline. The two targets are searchlights.
+   Stand-alone like Zee; the data part is copied from zee.html (which copies held.html and index.html). */
+:root{
+  color-scheme: dark;
+  --bg:#05040d; --line2:#262236; --txt:#eef1f8; --dim:#9a97b0; --faint:#5a5674;
+  --up:#35ffb4; --dn:#ff4f6d; --stop:#ffc35a; --liq:#ad8bff; --cy:#7fe9ff; --btc:#f7931a;
+  --mono:'JetBrains Mono','SF Mono',Consolas,monospace; --sans:'Inter',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow:hidden}
+#city{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:crosshair;outline:none}
+#city.hand{cursor:pointer}
+#city.grab{cursor:grabbing}
+#msg{position:fixed;inset:0;display:grid;place-items:center;text-align:center;font:500 12px var(--mono);letter-spacing:.12em;color:var(--dim);padding:24px;pointer-events:none}
+#msg[hidden]{display:none}
+
+.hud{position:fixed;top:calc(env(safe-area-inset-top,0px) + 12px);left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;justify-content:space-between;align-items:flex-start;gap:12px;pointer-events:none;text-shadow:0 1px 8px #05040d}
+.hud .k{font:600 10px var(--mono);letter-spacing:.2em;color:var(--dim);display:flex;align-items:center;gap:7px}
+.hud .k i{width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ffc56b,var(--btc) 60%,#9a5300);box-shadow:0 0 10px rgba(247,147,26,.6)}
+.hud .px{font:700 28px var(--mono);letter-spacing:-.02em;margin-top:2px;transition:color .4s}
+.hud .px.up{color:var(--up)} .hud .px.dn{color:var(--dn)}
+.hud .sub{font:500 11px var(--mono);color:var(--dim);margin-top:1px}
+.hud .r{text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+.goal{font:600 11px var(--mono);border:1px solid var(--c);color:var(--c);border-radius:999px;padding:3px 9px;background:rgba(5,4,13,.6);
+  box-shadow:0 0 12px -2px var(--c);white-space:nowrap}
+.goal em{font-style:normal;color:var(--txt);margin-left:6px}
+
+.tools{position:fixed;left:max(14px,env(safe-area-inset-left,0px));right:max(14px,env(safe-area-inset-right,0px));bottom:max(12px,env(safe-area-inset-bottom,0px));
+  display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.tools::-webkit-scrollbar{display:none}
+.tools a,.tools button{flex:none;font:600 11px var(--mono);color:var(--dim);text-decoration:none;border:1px solid var(--line2);border-radius:6px;padding:6px 10px;
+  background:rgba(5,4,13,.74);cursor:pointer;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.tools a:hover,.tools button:hover{color:var(--txt);border-color:#3b3550}
+.tools button[aria-pressed=true]{color:var(--txt);border-color:#4a4466}
+.tools button[data-layer][aria-pressed=false]{opacity:.45}
+.tools .dot{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:6px;vertical-align:0}
+
+#toast{position:fixed;right:max(16px,env(safe-area-inset-right,0px));top:calc(env(safe-area-inset-top,0px) + 96px);display:flex;flex-direction:column;gap:6px;
+  align-items:flex-end;pointer-events:none;max-width:min(360px,calc(100vw - 32px))}
+#toast div{font:500 11px var(--mono);background:rgba(8,6,20,.86);border:1px solid var(--line2);border-left:3px solid var(--c);border-radius:6px;padding:7px 12px 8px 10px;
+  display:flex;flex-direction:column;gap:2px;animation:tin .35s ease-out;transition:opacity .5s,transform .5s;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+#toast div b{color:var(--c);font-weight:700}
+#toast div span{color:var(--dim)}
+#toast div.out{opacity:0;transform:translateX(16px)}
+@keyframes tin{from{opacity:0;transform:translateX(16px)}}
+
+.panel{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:58px;width:330px;max-height:calc(100vh - 170px);overflow-y:auto;background:rgba(8,6,20,.92);
+  border:1px solid var(--line2);border-radius:10px;padding:14px 16px 16px;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);font-size:12.5px;line-height:1.5}
+.panel[hidden]{display:none}
+.panel .x{position:absolute;top:6px;right:8px;background:none;border:0;color:var(--dim);font:500 20px var(--sans);cursor:pointer;padding:2px 6px;line-height:1}
+.panel h3{font:700 15px var(--sans);margin:0 26px 8px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.panel dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font:500 12px var(--mono)}
+.panel dt{color:var(--dim)} .panel dd{text-align:right}
+.panel p{color:var(--dim);margin-top:9px}
+.panel p b{color:var(--txt);font-weight:600}
+.panel ul{list-style:none;display:flex;flex-direction:column;gap:9px;color:var(--dim)}
+.panel li b{color:var(--txt);font-weight:600}
+.panel li i{font-style:normal;color:var(--c)}
+.pill{display:inline-block;font:600 11.5px var(--sans);color:var(--c);border:1.5px solid var(--c);border-radius:999px;padding:2px 10px;
+  box-shadow:0 0 10px -3px var(--c),inset 0 0 8px -4px var(--c);text-shadow:0 0 8px color-mix(in srgb,var(--c) 50%,transparent);white-space:nowrap}
+
+#side{position:fixed;right:max(16px,env(safe-area-inset-right,0px));top:calc(env(safe-area-inset-top,0px) + 96px);bottom:58px;width:400px;background:rgba(8,6,20,.92);
+  border:1px solid var(--line2);border-radius:10px;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);display:flex;flex-direction:column;overflow:hidden}
+#side[hidden]{display:none}
+#side .x{position:absolute;top:6px;right:8px;background:none;border:0;color:var(--dim);font:500 20px var(--sans);cursor:pointer;padding:2px 6px;line-height:1;z-index:2}
+#side .hd,#lad li{display:grid;grid-template-columns:72px 66px 1fr auto;gap:8px;align-items:center;padding:0 14px}
+#side .hd{font:600 10px var(--mono);letter-spacing:.16em;color:var(--faint);height:34px;border-bottom:1px solid var(--line2);padding-right:40px}
+#lad{list-style:none;overflow-y:auto;flex:1;scrollbar-width:thin;scrollbar-color:#262236 transparent}
+#lad li{height:38px;border-bottom:1px solid rgba(38,34,54,.6);font:500 12.5px var(--mono);cursor:pointer}
+#lad li:hover{background:rgba(255,255,255,.03)}
+#lad li .g{text-align:right}
+#lad li.near{background:rgba(255,79,109,.12)}
+#lad li.now{height:46px;background:rgba(127,233,255,.06);border-top:1px solid rgba(127,233,255,.25);border-bottom:1px solid rgba(127,233,255,.25);cursor:default}
+#lad li.now b{font:700 16px var(--mono);color:var(--cy)}
+#lad li.now .pill{--c:#dfe6f0;font-weight:700;letter-spacing:.06em}
+#lad li.out{opacity:.45}
+#lad li.out .g:after{content:' · weg';color:var(--faint)}
+
+@media (max-width:639px){
+  .hud .px{font-size:24px}
+  #hg{display:none}
+  .panel{left:12px;right:12px;width:auto;bottom:54px;max-height:52vh}
+  #side{left:12px;right:12px;width:auto;top:auto;bottom:54px;height:min(62vh,560px)}
+  #side .hd,#lad li{grid-template-columns:62px 60px 1fr auto;gap:6px;padding:0 10px}
+  #side .hd{padding-right:34px}
+  #toast{top:auto;bottom:58px;left:12px;right:12px;max-width:none;align-items:stretch}
+  .long{display:none}
+}
+@media (prefers-reduced-motion:reduce){#toast div{animation:none}}
+</style>
+</head>
+<body>
+<canvas id="city" tabindex="0" aria-label="Het orderboek van BTC als stad: de avenue is de prijs, de voorste rij gebouwen het orderboek (koopmuren groen, verkoopmuren rood), de middelste rij de geschatte stops, de achterste rij de geschatte liquidaties. Hoe groter de liquiditeit, hoe hoger het gebouw. Het lichtspoor is de koers van de laatste vier uur. Tik op een gebouw voor details; slepen schuift, knijpen of scrollen zoomt."></canvas>
+<div class="hud">
+  <div>
+    <div class="k"><i></i>BTC<span class="long"> · LIQUIDITEITSSTAD</span></div>
+    <div class="px" id="hp">—</div>
+    <div class="sub" id="hs">&nbsp;</div>
+  </div>
+  <div class="r" id="hg"></div>
+</div>
+<div id="msg">STAD BOUWEN…</div>
+<div id="toast" aria-live="polite"></div>
+<div class="panel" id="card" hidden role="dialog"></div>
+<aside id="side" hidden aria-label="Alle niveaus">
+  <button class="x" type="button" aria-label="Sluiten">×</button>
+  <div class="hd"><span>PRIJS</span><span>AFSTAND</span><span>SOORT</span><span>GROOTTE</span></div>
+  <ol id="lad"></ol>
+</aside>
+<div class="tools">
+  <a href="./#btc">← <span class="long">GlassSphere</span></a>
+  <button id="follow" type="button" aria-pressed="true" title="De prijs volgen (0)">⌖ Volg</button>
+  <button id="sideb" type="button" aria-pressed="false">☰ Niveaus</button>
+  <button type="button" data-layer="wall" aria-pressed="true"><span class="dot" style="background:linear-gradient(90deg,var(--up) 50%,var(--dn) 50%)"></span>Muren</button>
+  <button type="button" data-layer="stop" aria-pressed="true"><span class="dot" style="background:var(--stop)"></span>Stops</button>
+  <button type="button" data-layer="liq" aria-pressed="true"><span class="dot" style="background:var(--liq)"></span>Liquidaties</button>
+  <button type="button" data-layer="goal" aria-pressed="true"><span class="dot" style="background:#fff"></span>Doelen</button>
+  <button type="button" data-layer="trail" aria-pressed="true"><span class="dot" style="background:var(--cy)"></span>Spoor</button>
+  <button id="help" type="button" aria-pressed="false">? Uitleg</button>
+</div>
+
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const msg = t => { $('msg').hidden = !t; if (t) $('msg').textContent = t; };
+
+/* =====================================================================================================================
+   DATA: copied from held.html, which copies index.html (asset, fetching, estimates, levels and targets), BTC only for now
+   ===================================================================================================================== */
+const A = { name: 'BTC', file: 'glasssphere-data.json', okx: 'BTC-USDT-SWAP', okxCt: 0.01, usdt: 'BTCUSDT', gate: 'BTC_USDT', gateMul: 1e-4, gateIv: '10',
+  htx: 'BTC-USDT', htxCt: 0.001, deribit: 'BTC-PERPETUAL', deribitUsd: true, bitmex: 'XBTUSD', cdc: 'BTCUSD-PERP', hl: 'BTC', hlSig: 3, dydx: 'BTC-USD',
+  bin: 10, histBin: 100, buckets: [25, 50, 100, 250, 500], auto: { 0.015: 50, 0.03: 100, 0.06: 250, 0.12: 500 }, dec: 0 };
+const digits = step => Math.max(0, -Math.floor(Math.log10(step))) + 3;
+const nice = x => { const m = 10 ** Math.floor(Math.log10(x));
+  return [1, 2, 2.5, 5, 10].map(c => c * m).reduce((a, b) => Math.abs(Math.log(x / b)) < Math.abs(Math.log(x / a)) ? b : a); };
+const LEV = [[5, .30], [10, .35], [25, .25], [50, .10]];
+const MAINT = 0.004, HALF_LIFE_H = 168, HZ_MIN = 0.3, HORIZON = 3;
+const fx = (x, d) => x.toFixed(d).replace('.', ',');
+const fmtP = p => p.toLocaleString('nl-NL', { minimumFractionDigits: A.dec, maximumFractionDigits: A.dec });
+const fmtUsd = v => v >= 1e9 ? '$' + fx(v / 1e9, 2) + ' mld' : v >= 1e6 ? '$' + fx(v / 1e6, 1) + ' mln' : v >= 1e3 ? '$' + fx(v / 1e3, 0) + 'K' : '$' + fx(v, 0);
+const pct = (p, ref) => { const v = (p / ref - 1) * 100; return (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2).replace('.', ',') + '%'; };
+
+async function getJSON(url, opts = {}) {
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 9000);
+  try { const r = await fetch(url, { ...opts, signal: ctl.signal }); if (!r.ok) throw new Error(r.status); return await r.json(); }
+  finally { clearTimeout(t); }
+}
+const hlPost = body => getJSON('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+function binLevels(rows, side) {
+  const m = {}, B = A.bin;
+  for (const [p, usd] of rows) {
+    if (!(usd > 0)) continue;
+    const k = +((side === 'b' ? Math.floor(p / B + 1e-9) : Math.ceil(p / B - 1e-9)) * B).toFixed(digits(B));
+    m[k] = (m[k] || 0) + usd;
+  }
+  return Object.entries(m).map(([k, v]) => [+k, Math.round(v)]);
+}
+const BOOKS = {
+  okx: async () => { const b = (await getJSON(`https://www.okx.com/api/v5/market/books-full?instId=${A.okx}&sz=5000`)).data[0];
+    const f = r => [+r[0], +r[1] * A.okxCt * +r[0]]; return { b: b.bids.map(f), a: b.asks.map(f) }; },
+  binance: async () => { const j = await getJSON(`https://fapi.binance.com/fapi/v1/depth?symbol=${A.usdt}&limit=1000`);
+    const f = r => [+r[0], +r[1] * +r[0]]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
+  deribit: async () => { const j = (await getJSON(`https://www.deribit.com/api/v2/public/get_order_book?instrument_name=${A.deribit}&depth=10000`)).result;
+    const f = A.deribitUsd ? r => r : r => [r[0], r[1] * r[0]]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
+  gate: async () => { const j = await getJSON(`https://api.gateio.ws/api/v4/futures/usdt/order_book?contract=${A.gate}&limit=300&interval=${A.gateIv}`);
+    const f = r => [+r.p, r.s * A.gateMul * +r.p]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
+  hyperliquid: async () => { const j = await hlPost({ type: 'l2Book', coin: A.hl, nSigFigs: A.hlSig });
+    const f = r => [+r.px, +r.sz * +r.px]; return { b: j.levels[0].map(f), a: j.levels[1].map(f) }; },
+  bybit: async () => { const r = (await getJSON(`https://api.bybit.com/v5/market/orderbook?category=linear&symbol=${A.usdt}&limit=500`)).result;
+    const f = x => [+x[0], +x[1] * +x[0]]; return { b: r.b.map(f), a: r.a.map(f) }; },
+  bitget: async () => { const d = (await getJSON(`https://api.bitget.com/api/v2/mix/market/merge-depth?productType=usdt-futures&symbol=${A.usdt}&limit=max&precision=scale2`)).data;
+    const f = x => [+x[0], +x[1] * +x[0]]; return { b: d.bids.map(f), a: d.asks.map(f) }; },
+  htx: async () => { const t = (await getJSON(`https://api.hbdm.com/linear-swap-ex/market/depth?contract_code=${A.htx}&type=step0`)).tick;
+    const f = x => [x[0], x[1] * A.htxCt * x[0]]; return { b: t.bids.map(f), a: t.asks.map(f) }; },
+  bitmex: async () => { const j = await getJSON(`https://www.bitmex.com/api/v1/orderBook/L2?symbol=${A.bitmex}&depth=0`);
+    const f = x => [x.price, x.size]; return { b: j.filter(x => x.side === 'Buy').map(f), a: j.filter(x => x.side === 'Sell').map(f) }; },
+  cryptocom: async () => { const d = (await getJSON(`https://api.crypto.com/exchange/v1/public/get-book?instrument_name=${A.cdc}&depth=150`)).result.data[0];
+    const f = x => [+x[0], +x[1] * +x[0]]; return { b: d.bids.map(f), a: d.asks.map(f) }; },
+  dydx: async () => { const j = await getJSON(`https://indexer.dydx.trade/v4/orderbooks/perpetualMarket/${A.dydx}`);
+    const f = x => [+x.price, +x.size * +x.price]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
+};
+const MARKET = {
+  okx: async () => { const [o, t] = await Promise.all([getJSON(`https://www.okx.com/api/v5/public/open-interest?instType=SWAP&instId=${A.okx}`),
+      getJSON(`https://www.okx.com/api/v5/market/ticker?instId=${A.okx}`)]);
+    return { oi: +o.data[0].oiUsd, vol: +t.data[0].volCcy24h * +t.data[0].last }; },
+  gate: async () => { const [t] = await getJSON(`https://api.gateio.ws/api/v4/futures/usdt/tickers?contract=${A.gate}`);
+    return { oi: +t.total_size * A.gateMul * +t.mark_price, vol: +t.volume_24h_quote }; },
+  bitget: async () => { const t = (await getJSON(`https://api.bitget.com/api/v2/mix/market/ticker?symbol=${A.usdt}&productType=usdt-futures`)).data[0];
+    return { oi: +t.holdingAmount * +t.lastPr, vol: +t.usdtVolume }; },
+  htx: async () => ({ vol: +(await getJSON(`https://api.hbdm.com/linear-swap-ex/market/detail/merged?contract_code=${A.htx}`)).tick.trade_turnover }),
+  deribit: async () => { const r = (await getJSON(`https://www.deribit.com/api/v2/public/get_book_summary_by_instrument?instrument_name=${A.deribit}`)).result[0];
+    return { oi: A.deribitUsd ? r.open_interest : r.open_interest * r.mark_price, vol: r.volume_usd }; },
+  cryptocom: async () => { const t = (await getJSON(`https://api.crypto.com/exchange/v1/public/get-tickers?instrument_name=${A.cdc}`)).result.data[0];
+    return { oi: +t.oi * +t.a, vol: +t.vv }; },
+  hyperliquid: async () => { const [m, c] = await hlPost({ type: 'metaAndAssetCtxs' });
+    const x = c[m.universe.findIndex(u => u.name === A.hl)]; return { oi: +x.openInterest * +x.markPx, vol: +x.dayNtlVlm }; },
+  dydx: async () => { const x = (await getJSON(`https://indexer.dydx.trade/v4/perpetualMarkets?ticker=${A.dydx}`)).markets[A.dydx];
+    return { oi: +x.openInterest * +x.oraclePrice, vol: +x.volume24H }; },
+  binance: async () => { const [o, t, f] = await Promise.all([getJSON(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${A.usdt}`),
+      getJSON(`https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=${A.usdt}`), getJSON(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${A.usdt}`)]);
+    return { oi: +o.openInterest * +f.markPrice, vol: +t.quoteVolume }; },
+  bybit: async () => { const t = (await getJSON(`https://api.bybit.com/v5/market/tickers?category=linear&symbol=${A.usdt}`)).result.list[0];
+    return { oi: +t.openInterestValue, vol: +t.turnover24h }; },
+  bitmex: async () => { const [x] = await getJSON(`https://www.bitmex.com/api/v1/instrument?symbol=${A.bitmex}`); return { oi: x.openInterest, vol: x.foreignNotional24h || 0 }; },
+};
+async function fetchAll(table, wrap) {
+  const out = {};
+  await Promise.all(Object.entries(table).map(async ([k, fn]) => { try { out[k] = wrap(await fn(), k); } catch (e) {} }));
+  return out;
+}
+const fetchBooks = () => fetchAll(BOOKS, r => ({ b: binLevels(r.b, 'b'), a: binLevels(r.a, 'a') }));
+const fetchMarket = () => fetchAll(MARKET, r => r);
+async function fetchSeries() {
+  const base = 'https://www.okx.com/api/v5/market/', toC = r => [+r[0], +r[1], +r[2], +r[3], +r[4], +r[7]];
+  const rows = (await getJSON(base + `candles?instId=${A.okx}&bar=1H&limit=300`)).data;
+  try { rows.push(...(await getJSON(base + `history-candles?instId=${A.okx}&bar=1H&limit=100&after=${rows[rows.length - 1][0]}`)).data); } catch (e) {}
+  const candles = rows.map(toC).sort((a, b) => a[0] - b[0]).slice(-400);
+  const st = await getJSON(`https://api.gateio.ws/api/v4/futures/usdt/contract_stats?contract=${A.gate}&interval=1h&from=${candles[0][0] / 1000}&limit=1000`);
+  return { candles, oi: st.map(r => [r.time * 1000, Math.round(r.open_interest_usd)]), taker: st.map(r => [r.time * 1000, r.lsr_taker / (1 + r.lsr_taker)]) };
+}
+// Stops: just beyond swing highs / lows that price has not traded through since.
+function estimateStops(candles, price, lo, hi) {
+  const out = [], n = candles.length, now = candles[n - 1][0];
+  const sufHi = new Float64Array(n + 1).fill(-Infinity), sufLo = new Float64Array(n + 1).fill(Infinity);
+  for (let i = n - 1; i >= 0; i--) { sufHi[i] = Math.max(sufHi[i + 1], candles[i][2]); sufLo[i] = Math.min(sufLo[i + 1], candles[i][3]); }
+  for (const [L, mult] of [[4, 1], [12, 2]]) {
+    for (let i = L; i < n - L; i++) {
+      const h = candles[i][2], l = candles[i][3];
+      let isH = true, isL = true;
+      for (let k = i - L; k <= i + L; k++) { if (k === i) continue; if (candles[k][2] >= h) isH = false; if (candles[k][3] <= l) isL = false; }
+      if (!isH && !isL) continue;
+      const rec = Math.pow(0.5, (now - candles[i][0]) / 3.6e6 / HALF_LIFE_H);
+      let vol = 0; for (let k = Math.max(0, i - 2); k <= Math.min(n - 1, i + 2); k++) vol += candles[k][5];
+      const w = vol * rec * mult;
+      if (isH && !(sufHi[i + 1] > h)) out.push({ p: h * 1.001, side: 'buy', w });
+      if (isL && !(sufLo[i + 1] < l)) out.push({ p: l * 0.999, side: 'sell', w });
+    }
+  }
+  const ws = out.map(o => o.w).sort((a, b) => a - b), med = ws.length ? ws[ws.length >> 1] : 1;
+  const rs = nice(price * 0.012);
+  for (let i = Math.ceil(lo / rs); i * rs <= hi; i++) {
+    const p = i * rs; out.push({ p: p > price ? p + rs * 0.05 : p - rs * 0.05, side: p > price ? 'buy' : 'sell', w: med * 0.25 });
+  }
+  return out.filter(o => (o.side === 'buy') === (o.p > price));
+}
+// Liquidations: OI added each hour at that hour's average price, split long/short, at the leverage mix that fit best.
+function estimateLiqs(candles, oi, taker) {
+  const oiAt = new Map(oi), tkAt = new Map(taker || []); let pos = [];
+  candles.forEach(([t, o, h, l, c]) => {
+    pos = pos.filter(q => q.side === 'long' ? l > q.p : h < q.p);
+    const a = oiAt.get(t), b = oiAt.get(t + 3.6e6), d = a != null && b != null ? b - a : null;
+    if (d != null && d < 0) { const r = b / a; pos.forEach(q => q.usd *= r); }
+    else if (d != null) {
+      let share = h > l ? (c - l) / (h - l) : 0.5;
+      const tk = tkAt.get(t); if (tk != null) share = 0.5 * share + 0.5 * tk;
+      const entry = (o + h + l + c) / 4;
+      for (const [L, w] of LEV) {
+        pos.push({ p: entry * (1 - 1 / L + MAINT), side: 'long', usd: d * share * w });
+        pos.push({ p: entry * (1 + 1 / L - MAINT), side: 'short', usd: d * (1 - share) * w });
+      }
+    }
+  });
+  return pos;
+}
+function volumeWeights(books, market, P) {
+  const depth = {};
+  for (const [ex, bk] of Object.entries(books)) {
+    let s = 0; for (const [p, v] of bk.b) if (p >= P * 0.99) s += v; for (const [p, v] of bk.a) if (p <= P * 1.01) s += v; depth[ex] = s;
+  }
+  const has = Object.keys(depth).filter(e => market[e]?.vol > 0);
+  const dT = has.reduce((s, e) => s + depth[e], 0), vT = has.reduce((s, e) => s + market[e].vol, 0);
+  const w = {};
+  for (const e of Object.keys(depth)) w[e] = has.includes(e) && dT && vT && depth[e] ? Math.min(1, (market[e].vol / vT) / (depth[e] / dT)) : 1;
+  return w;
+}
+function histEntry(books, weights, P, ts) {
+  const m = new Map(), HB = A.histBin;
+  for (const [ex, bk] of Object.entries(books)) {
+    const w = weights[ex] ?? 1;
+    [['b', 0], ['a', 1]].forEach(([side, i]) => { for (const [p, v] of bk[side]) {
+      if (p < P * 0.94 || p > P * 1.06) continue;
+      const k = +(Math.floor(p / HB + 1e-9) * HB).toFixed(digits(HB)), o = m.get(k) || [0, 0]; o[i] += v * w; m.set(k, o); } });
+  }
+  return { t: Math.floor(ts / 3.6e6) * 3.6e6, b: [...m].sort((x, y) => x[0] - y[0]).map(([k, [b, a]]) => [k, Math.round(b), Math.round(a)]) };
+}
+const READ = { range: 0.15 };
+function poolsOf(stops, liqs, P) {
+  const B = nice(P * 0.0012), lo = P * (1 - READ.range), hi = P * (1 + READ.range), bins = new Map();
+  const add = (p, kind, v) => { if (p < lo || p > hi) return; const k = Math.floor(p / B + 1e-9) * B;
+    const o = bins.get(k) || { stop: 0, liq: 0 }; o[kind] += v; bins.set(k, o); };
+  stops.forEach(s => add(s.p, 'stop', s.w)); liqs.forEach(q => add(q.p, 'liq', q.usd));
+  let mS = 1e-9, mL = 1e-9; for (const o of bins.values()) { if (o.stop > mS) mS = o.stop; if (o.liq > mL) mL = o.liq; }
+  return [...bins].map(([k, o]) => ({ p: k + B / 2, stop: o.stop / mS, liq: o.liq / mL, liqUsd: o.liq, v: o.stop / mS + o.liq / mL }));
+}
+function targetsOf(cs, pools, P, days) {
+  const n = cs.length, ranges = [];
+  for (let e = n; e >= 24 && ranges.length < 14; e -= 24) { let h = -Infinity, l = Infinity;
+    for (let k = e - 24; k < e; k++) { if (cs[k][2] > h) h = cs[k][2]; if (cs[k][3] < l) l = cs[k][3]; } ranges.push(h - l); }
+  const range24 = ranges.reduce((s, x) => s + x, 0) / ranges.length;
+  const rH = range24 * Math.sqrt(days), minD = HZ_MIN * rH;
+  const best = arr => arr.length ? arr.reduce((x, y) => y.v > x.v ? y : x) : undefined;
+  const tUp = best(pools.filter(q => q.p - P > minD && q.p - P <= rH));
+  const tDn = best(pools.filter(q => P - q.p > minD && P - q.p <= rH));
+  return { range24, rH, minD, tUp, tDn, pUp: tUp && tDn ? (P - tDn.p) / (tUp.p - tDn.p) : null };
+}
+
+// D: the data as the coin page holds it; LV: the levels of its "Alle niveaus" table; TG: its two targets
+let D = null, LV = [], TG = null, nBooks = 0, mode = '', updAt = 0, liveHist = [], exKey = '', exKeyPrev = '';
+function setData(raw, how) {
+  const price = raw.price, lo = price * 0.85, hi = price * 1.15, market = raw.market || {};
+  const weights = volumeWeights(raw.books, market, price);
+  const gateOi = raw.oi?.length ? raw.oi[raw.oi.length - 1][1] : 0, total = Object.values(market).reduce((s, m) => s + (m.oi || 0), 0);
+  const scale = gateOi && total > gateOi ? total / gateOi : 1;
+  const liqs = estimateLiqs(raw.candles, raw.oi || [], raw.taker).map(q => ({ ...q, usd: q.usd * scale }));
+  // the book history: the hourly file's, the hours seen live since, and now
+  const hist = new Map((raw.bookHist || []).map(e => [e.t, e])); for (const e of liveHist) hist.set(e.t, e);
+  const cur = histEntry(raw.books, weights, price, raw.ts); hist.set(cur.t, cur);
+  if (how === 'live') liveHist = [...liveHist.filter(x => x.t !== cur.t), cur].slice(-48);
+  D = { ...raw, market, weights, stops: estimateStops(raw.candles, price, lo, hi), liqs, bookHist: [...hist.values()].sort((a, b) => a.t - b.t).slice(-48) };
+  nBooks = Object.keys(raw.books).length; mode = how; updAt = raw.ts; exKeyPrev = exKey; exKey = Object.keys(raw.books).sort().join();
+  // targets, and the chance the upper one comes first (renderReading in index.html)
+  const r = targetsOf(D.candles, poolsOf(D.stops, D.liqs, price), price, HORIZON);
+  let prob = null, first = null;
+  if (r.pUp != null) { const upFirst = r.pUp >= 0.5; prob = upFirst ? r.pUp : 1 - r.pUp; first = upFirst ? r.tUp : r.tDn; }
+  TG = { up: r.tUp?.p, dn: r.tDn?.p, first: first?.p, prob };
+  // the view range ("Doelen") and its automatic bucket, then the four largest of each kind on each side (buildModel, renderLevels)
+  const far = Math.max(r.tUp ? r.tUp.p / price - 1 : 0, r.tDn ? 1 - r.tDn.p / price : 0);
+  const rg = far ? Math.max(0.012, Math.min(0.25, far * 1.22)) : 0.03, ks = Object.keys(A.auto).map(Number);
+  const B = A.auto[ks.reduce((a, b) => Math.abs(Math.log(b / rg)) < Math.abs(Math.log(a / rg)) ? b : a)];
+  const i0 = Math.floor(price * (1 - rg) / B), i1 = Math.ceil(price * (1 + rg) / B), N = i1 - i0 + 1;
+  const bid = new Float64Array(N), ask = new Float64Array(N), stop = new Float64Array(N), liq = new Float64Array(N);
+  const idx = p => Math.floor(p / B + 1e-9) - i0;
+  for (const [ex, bk] of Object.entries(D.books)) { const w = weights[ex] ?? 1;
+    for (const [side, arr] of [['b', bid], ['a', ask]]) for (const [p, v] of bk[side]) { const j = idx(p); if (j >= 0 && j < N) arr[j] += v * w; } }
+  for (const s of D.stops) { const j = idx(s.p); if (j >= 0 && j < N) stop[j] += s.w; }
+  for (const q of D.liqs) { const j = idx(q.p); if (j >= 0 && j < N) liq[j] += q.usd; }
+  // presence: in how many of the last 6 hours (before this one) the wall held at least half its size now
+  const HB = A.histBin, sub = Math.max(1, Math.round(HB / B)), hr = Math.floor(raw.ts / 3.6e6) * 3.6e6;
+  const prev = D.bookHist.filter(h => h.t < hr).slice(-6).map(e => { const sum = new Float64Array(N);
+    for (const [p, vb, va] of e.b) for (let q = 0; q < sub; q++) { const j = idx(p + (q + .5) * HB / sub); if (j >= 0 && j < N) sum[j] += (vb + va) / sub; }
+    return sum; });
+  const persist = j => { const w = bid[j] + ask[j]; return prev.length < 2 || !w ? null : [prev.filter(h => h[j] >= w * .5).length, prev.length]; };
+  const mx = a => { let m = 1e-9; for (const v of a) if (v > m) m = v; return m; };
+  const mB = mx([...bid, ...ask]), mS = mx(stop), mL = mx(liq);
+  const top = (arr, above, k) => { const out = [];
+    for (let j = 0; j < N; j++) { const mid = (i0 + j + .5) * B; if ((mid > price) === above && arr[j] > 0) out.push([mid, arr[j], j]); }
+    return out.sort((a, b) => b[1] - a[1]).slice(0, k); };
+  const rows = [];
+  for (const [k, arr, above, m, fmt] of [['ask', ask, true, mB, fmtUsd], ['bid', bid, false, mB, fmtUsd],
+    ['stop', stop, true, mS, v => 'score ' + Math.round(v / mS * 100)], ['stop', stop, false, mS, v => 'score ' + Math.round(v / mS * 100)],
+    ['liq', liq, true, mL, fmtUsd], ['liq', liq, false, mL, fmtUsd]])
+    for (const [p, v, j] of top(arr, above, 4)) rows.push({ key: k + '|' + p, k, p, s: v, rel: v / m, v: fmt(v), above, ps: k === 'bid' || k === 'ask' ? persist(j) : null });
+  LV = rows; D.B = B; D.range = rg;
+  onLevels();
+}
+async function loadSite() {
+  if (!/^https?:$/.test(location.protocol)) return null;
+  try { const r = await fetch(A.file, { cache: 'no-store' }); return r.ok ? await r.json() : null; } catch (e) { return null; }
+}
+let series = null, seriesAt = 0, market = null, site = null;
+async function loadLive() {
+  try {
+    if (!series || Date.now() - seriesAt > 5 * 60e3) {
+      const [se, mk] = await Promise.all([fetchSeries(), fetchMarket()]);
+      series = se; seriesAt = Date.now(); market = { ...(site?.market || {}), ...mk };
+    }
+    const books = await fetchBooks(); if (!Object.keys(books).length) throw new Error('no books');
+    const last = series.candles[series.candles.length - 1][4];
+    setData({ ts: Date.now(), price: live.fresh() || last, books, ...series, market, bookHist: D?.bookHist || site?.bookHist }, 'live');
+    return true;
+  } catch (e) { return false; }
+}
+// the live price: OKX's ticker stream (every trade), polling the ticker every 3 s while the stream is down
+const live = (() => {
+  let ws = null, px = null, at = 0, ping = 0, poll = 0, retry = 0;
+  function apply(p) { if (!(p > 0)) return; const prev = px; px = p; at = Date.now(); onPrice(prev, p); }
+  async function pollOnce() { try { apply(+(await getJSON(`https://www.okx.com/api/v5/market/ticker?instId=${A.okx}`)).data[0].last); } catch (e) {} }
+  function open() {
+    if (ws) return; let me; try { me = ws = new WebSocket('wss://ws.okx.com:8443/ws/v5/public'); } catch (e) { ws = null; return; }
+    me.onopen = () => { retry = 0; clearInterval(poll); poll = 0; me.send(JSON.stringify({ op: 'subscribe', args: [{ channel: 'tickers', instId: A.okx }, { channel: 'liquidation-orders', instType: 'SWAP' }, { channel: 'trades', instId: A.okx }] }));
+      ping = setInterval(() => me.readyState === 1 && me.send('ping'), 25e3); };
+    me.onmessage = e => { if (e.data === 'pong') return; try { const m = JSON.parse(e.data); if (!m.data?.[0]) return;
+      if (m.arg?.channel === 'liquidation-orders') { for (const d of m.data) if (d.instId === A.okx) for (const x of d.details || [])
+        realLiq('OKX', x.posSide === 'long' || (x.posSide !== 'short' && x.side === 'sell'), +x.bkPx, +x.sz * A.okxCt * +x.bkPx); }
+      else if (m.arg?.channel === 'trades') { for (const d of m.data) TAKER.add(d.side, +d.sz * A.okxCt * +d.px); apply(+m.data[m.data.length - 1].px); }
+      else apply(+m.data[0].last); } catch (er) {} };
+    me.onclose = () => { clearInterval(ping); if (ws !== me) return; ws = null; if (!poll) poll = setInterval(pollOnce, 3000); setTimeout(open, Math.min(30e3, 1000 * 2 ** retry++)); };
+    me.onerror = () => me.close();
+  }
+  return { start() { pollOnce(); open(); }, fresh: () => px && Date.now() - at < 10e3 ? px : null, get px() { return px; }, get at() { return at; } };
+})();
+// real liquidations, as the exchanges stream them: OKX (on the price stream above), Binance and Bybit
+function feed(url, hello, onMsg, pingMsg) {
+  let retry = 0;
+  const open = () => { let ws, ping = 0; try { ws = new WebSocket(url); } catch (e) { return; }
+    ws.onopen = () => { retry = 0; if (hello) ws.send(hello); if (pingMsg) ping = setInterval(() => ws.readyState === 1 && ws.send(pingMsg), 20e3); };
+    ws.onmessage = e => { try { onMsg(JSON.parse(e.data)); } catch (er) {} };
+    ws.onclose = () => { clearInterval(ping); setTimeout(open, Math.min(60e3, 2000 * 2 ** retry++)); };
+    ws.onerror = () => ws.close(); };
+  open();
+}
+function liqFeeds() {
+  feed(`wss://fstream.binance.com/ws/${A.usdt.toLowerCase()}@forceOrder`, null, m => { const o = m.o;      // S SELL: a long was closed
+    if (o?.s === A.usdt) { const p = +o.ap || +o.p; realLiq('Binance', o.S === 'SELL', p, p * (+o.z || +o.q)); } });
+  feed('wss://stream.bybit.com/v5/public/linear', JSON.stringify({ op: 'subscribe', args: [`allLiquidation.${A.usdt}`] }),
+    m => { for (const x of m.data || []) if (x.s === A.usdt) realLiq('Bybit', x.S === 'Buy', +x.p, +x.p * +x.v); }, JSON.stringify({ op: 'ping' }));   // S Buy: a long
+}
+
+/* =====================================================================================================================
+   CITY
+   ===================================================================================================================== */
+const COL = { bid: '#35ffb4', ask: '#ff4f6d', stop: '#ffc35a', liq: '#ad8bff', up: '#35ffb4', dn: '#ff4f6d', cy: '#7fe9ff', txt: '#eef1f8', dim: '#9a97b0', faint: '#5a5674', btc: '#f7931a' };
+const FD = "'Inter',system-ui,sans-serif", FM = "'JetBrains Mono','SF Mono',Consolas,monospace";
+const R = Math.random, PI = Math.PI;
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const ease = u => u < .5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+const hash = n => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+const rgba = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${n >> 8 & 255},${n & 255},${clamp(a, 0, 1)})`; };
+const nameOf = (k, above) => ({ ask: 'Verkoopmuur', bid: 'Koopmuur', stop: above ? 'Koopstops' : 'Verkoopstops', liq: above ? 'Short-liq.' : 'Long-liq.' })[k];
+const rowOf = k => k === 'bid' || k === 'ask' ? 'wall' : k;
+const sizeOf = b => b.k === 'stop' ? 'score ' + Math.round(Math.min(1, b.rel) * 100) : fmtUsd(b.v);
+const pctN = x => Math.round(x * 100) + '%';
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// layers, remembered per viewer
+const LAYERS = { wall: true, stop: true, liq: true, goal: true, trail: true };
+try { Object.assign(LAYERS, JSON.parse(localStorage.getItem('stad-layers') || '{}')); } catch (e) {}
+const shown = k => LAYERS[rowOf(k)];
+
+/* ---- the ground plan and the camera -------------------------------------------------------------------------------
+   World units: x is the price (0 is the middle of the view, ±HW its edges), y is up, z runs away from the viewer.
+   The camera looks level with a shifted lens, so verticals stay vertical and every front face is a rectangle. */
+const HW = 100, CAMZ = -62, AVE = { z0: 0, z1: 8, zc: 4 }, GOALZ = 86;
+const ROW = { wall: { z0: 13, z1: 23, f: .12, name: 'ORDERBOEK' }, stop: { z0: 35, z1: 43, f: .13, name: 'STOPS' }, liq: { z0: 57, z1: 69, f: .25, name: 'LIQUIDATIES' } };
+const cv = $('city'), g = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1, F = 1, CAMY = 1, HOR = 0, YAV = 0, phone = false, STARS = [], SKY = [];
+const sAt = z => F / (z - CAMZ);
+const PJ = (x, y, z) => { const s = F / (z - CAMZ); return [W / 2 + x * s, HOR + (CAMY - y) * s]; };
+function resize() {
+  DPR = Math.min(2, window.devicePixelRatio || 1); W = innerWidth; H = innerHeight;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  phone = W < 640; const port = H > W * 1.1;
+  HOR = H * (port ? .34 : .31); YAV = H * (port ? .67 : .69);
+  F = W / 2 * .94 * (AVE.zc - CAMZ) / HW; CAMY = (YAV - HOR) / sAt(AVE.zc);
+  for (const [k, r] of Object.entries(ROW)) r.hMax = r.f * H * (port ? k === 'liq' ? 1.35 : 1.15 : k === 'liq' ? 1.5 : 1.35) / sAt(r.z0);
+  STARS = Array.from({ length: 110 }, (_, i) => ({ x: hash(i) * W, y: hash(i + 300) * HOR * .92, r: .3 + hash(i + 600) * 1.1, tw: hash(i + 900) * 6 }));
+  SKY = []; for (let x = -10; x < W + 10;) { const i = SKY.length, w = 5 + hash(i + 70) * 14;
+    SKY.push({ x, w, h: 4 + Math.pow(hash(i + 90), 2.4) * H * .09, s: hash(i + 110) }); x += w + hash(i + 130) * 3; }
+}
+
+/* ---- the view: which prices the avenue shows ---------------------------------------------------------------------- */
+const V = { c: 0, r: 0, follow: true, anim: null, zt: 0 };
+const X = p => (p - V.c) / V.r * HW;
+const priceAt = (sx, z = AVE.zc) => V.c + (sx - W / 2) / sAt(z) / HW * V.r;
+const P0 = () => live.fresh() || D?.price || live.px || 0;
+const rMin = () => P0() * .0015, rMax = () => P0() * .1;
+const defR = () => { const P = P0(), far = TG ? Math.max(TG.up ? TG.up - P : 0, TG.dn ? P - TG.dn : 0) : 0;
+  return clamp(far ? far * 1.3 : P * .012, rMin(), rMax()); };
+function setFollow(on) { V.follow = on; $('follow').setAttribute('aria-pressed', String(on)); }
+function home() { setFollow(true); V.anim = { c0: V.c, c1: null, r0: V.r, r1: defR(), t0: T, d: .9 }; }
+function flyTo(p) { setFollow(false); V.anim = { c0: V.c, c1: p, r0: V.r, r1: Math.max(V.r, Math.abs(p - P0()) * 1.25), t0: T, d: .8 }; }
+function zoomAt(r, sx) { const pa = priceAt(sx); V.r = clamp(r, rMin(), rMax()); V.c = pa - (sx - W / 2) / sAt(AVE.zc) / HW * V.r; V.anim = null; V.zt = T;
+  if (Math.abs(sx - W / 2) > 30) setFollow(false); }
+
+/* ---- the light trail: one-minute closes of the last hours, then every tick ------------------------------------------ */
+const TRAIL = [], SPAN = 4 * 3600e3;
+async function loadTrail() {
+  try { const rows = (await getJSON(`https://www.okx.com/api/v5/market/candles?instId=${A.okx}&bar=1m&limit=300`)).data;
+    const first = TRAIL.length ? TRAIL[0][0] : Infinity, now = Date.now();
+    const old = rows.map(r => [Math.min(now, +r[0] + 60e3), +r[4]]).filter(q => q[0] < first).sort((a, b) => a[0] - b[0]);
+    TRAIL.unshift(...old); } catch (e) {}
+}
+function thinTrail() {
+  const now = Date.now(), out = []; let lastKept = 0;
+  for (const q of TRAIL) { if (now - q[0] > SPAN + 120e3) continue;
+    if (now - q[0] < 10 * 60e3 || q[0] - lastKept >= 15e3) { out.push(q); lastKept = q[0]; } }
+  TRAIL.length = 0; TRAIL.push(...out);
+}
+setInterval(thinTrail, 30e3);
+
+/* ---- the buildings -------------------------------------------------------------------------------------------------
+   Every price zone of the current bucket with enough on it is a building; its height is its size relative to the largest
+   of its kind within the reading range. A building that is no longer there on the next refresh (or that the price ran
+   through) goes dark ('out') and leaves a ruin, its outline on the ground. */
+let CITY = new Map(), CB = 0, built = false, T = 0, SEL = null, HOVB = null;
+const RUINS = [], SPARKS = [], FLARES = [], CONSUMED = [];
+const bucketFor = r => { const want = 2 * r / (phone ? 34 : 58);
+  return A.buckets.filter(b => b >= 50).reduce((a, b) => Math.abs(Math.log(b / want)) < Math.abs(Math.log(a / want)) ? b : a); };
+function build() {
+  if (!D) return;
+  const P = D.price, B = bucketFor(V.r || P * .012), i0 = Math.floor(P * .85 / B), N = Math.ceil(P * 1.15 / B) - i0 + 1;
+  const bid = new Float64Array(N), ask = new Float64Array(N), stop = new Float64Array(N), liq = new Float64Array(N);
+  const idx = p => Math.floor(p / B + 1e-9) - i0;
+  for (const [ex, bk] of Object.entries(D.books)) { const w = D.weights[ex] ?? 1;
+    for (const [side, arr] of [['b', bid], ['a', ask]]) for (const [p, v] of bk[side]) { const j = idx(p); if (j >= 0 && j < N) arr[j] += v * w; } }
+  for (const s of D.stops) { const j = idx(s.p); if (j >= 0 && j < N) stop[j] += s.w; }
+  for (const q of D.liqs) { const j = idx(q.p); if (j >= 0 && j < N) liq[j] += q.usd; }
+  // normalised within the reading range of the coin page, at this bucket
+  const nr = Math.max(D.range || .03, .015), ja = Math.max(0, idx(P * (1 - nr))), jb = Math.min(N - 1, idx(P * (1 + nr)));
+  const mx = (...as) => { let m = 1e-9; for (const a of as) for (let j = ja; j <= jb; j++) if (a[j] > m) m = a[j]; return m; };
+  const mB = mx(bid, ask), mS = mx(stop), mL = mx(liq), now = Date.now();
+  const gone = (k, p0, p1) => CONSUMED.some(c => c.k === k && now - c.t < 10 * 60e3 && c.p0 < p1 && c.p1 > p0);
+  const next = new Map();
+  for (const [k, arr, m, thr] of [['bid', bid, mB, .05], ['ask', ask, mB, .05], ['stop', stop, mS, .07], ['liq', liq, mL, .05]])
+    for (let j = 0; j < N; j++) { const v = arr[j], rel = v / m; if (!(rel >= thr)) continue;
+      const p = (i0 + j + .5) * B; if ((k === 'stop' || k === 'liq') && gone(k, p - B / 2, p + B / 2)) continue;
+      next.set(k + '|' + B + '|' + (i0 + j), { k, p, B, v, rel: Math.min(rel, 1.35), above: p > P, j: i0 + j }); }
+  const swap = B !== CB; CB = B;
+  for (const b of CITY.values()) if (!next.has(b.key) && b.st === 'live') { if (swap) { b.st = 'swap'; b.tOut = T; } else dim(b, 'niet meer in het boek'); }
+  for (const [key, n] of next) {
+    const b = CITY.get(key);
+    if (b && b.st === 'live') { b.v = n.v; b.ht = n.rel; b.above = n.above; continue; }
+    const delay = !built ? .15 + Math.abs(X(n.p)) / HW * .9 + hash(n.j) * .25 : swap ? hash(n.j) * .2 : 0;
+    CITY.set(key, { ...n, key, h: 0, ht: n.rel, st: 'live', t0: T + delay, seed: hash(n.j * 7.3 + n.k.length), born: built && !swap });
+    if (built && !swap && n.rel > .45 && shown(n.k) && Math.abs(n.p / P - 1) < nr)
+      note('new' + n.k, 'Nieuw: ' + nameOf(n.k, n.above).toLowerCase(), fmtP(n.p) + ' · ' + (n.k === 'stop' ? 'score ' + Math.round(n.rel * 100) : fmtUsd(n.v)), COL[n.k]);
+  }
+  built = true;
+}
+// goes dark: the windows switch off one by one, the neon flickers, then the building sinks and leaves its outline
+function dim(b, why) {
+  if (b.st !== 'live') return;
+  b.st = 'out'; b.tOut = T; b.why = why;
+  if (T < b.t0 || b.h < .02) { b.st = 'gone'; CITY.delete(b.key); return; }
+  RUINS.push({ k: b.k, p: b.p, B: b.B, t: T, rel: b.rel });
+  if (b.rel > .3 && shown(b.k) && why !== 'niet meer in het boek' || b.rel > .45 && shown(b.k))
+    note('out' + b.k, nameOf(b.k, b.above) + ' ' + fmtP(b.p) + ' gedoofd', sizeOf(b) + ' · ' + why, COL[b.k]);
+}
+// the price runs through a zone: the wall is eaten, the stops and liquidations go off
+function cross(prev, p) {
+  for (const b of CITY.values()) {
+    if (b.st !== 'live' || T < b.t0) continue;
+    const lo = b.p - b.B / 2, hi = b.p + b.B / 2;
+    let hit = false;
+    if (b.k === 'ask') hit = prev <= hi && p > hi;
+    else if (b.k === 'bid') hit = prev >= lo && p < lo;
+    else hit = (prev - b.p) * (p - b.p) <= 0 && prev !== p;
+    if (!hit) continue;
+    if (b.k === 'stop' || b.k === 'liq') CONSUMED.push({ k: b.k, p0: lo, p1: hi, t: Date.now() });
+    burst(b, b.k === 'liq' ? 40 : b.k === 'stop' ? 26 : 18);
+    dim(b, b.k === 'ask' || b.k === 'bid' ? 'opgegeten door de prijs' : 'geraakt door de prijs');
+  }
+  while (CONSUMED.length && Date.now() - CONSUMED[0].t > 10 * 60e3) CONSUMED.shift();
+}
+function burst(b, n) {
+  const r = ROW[rowOf(b.k)], x = X(b.p), y = b.h * r.hMax, z = (r.z0 + r.z1) / 2;
+  if (reduced) return;
+  for (let i = 0; i < n; i++) { const a = R() * PI * 2, sp = 6 + R() * 18;
+    SPARKS.push({ x, y: y * (.4 + R() * .6), z, vx: Math.cos(a) * sp * .6, vy: 8 + R() * 22, vz: Math.sin(a) * sp * .4, age: 0, life: .8 + R() * 1.1, col: COL[b.k] }); }
+}
+
+/* ---- the live price, real liquidations, notes ------------------------------------------------------------------------ */
+let PXS = 0, DIR = 0, tickT = 0;
+function onPrice(prev, p) {
+  const now = Date.now(), last = TRAIL[TRAIL.length - 1];
+  if (last && now - last[0] < 1000) last[1] = p; else TRAIL.push([now, p]);
+  if (prev && p !== prev) { DIR = p > prev ? 1 : -1; tickT = T; }
+  if (!PXS) PXS = p;
+  if (prev && D && built) cross(prev, p);
+}
+function realLiq(ex, long, p, usd) {
+  if (!(p > 0) || !(usd >= 20e3)) return;
+  FLARES.push({ p, long, usd, t: T });
+  if (usd >= 100e3) note('real', `${ex}: ${long ? 'long' : 'short'} geliquideerd`, `${fmtUsd(usd)} op ${fmtP(p)}`, long ? COL.dn : COL.up, true);
+}
+// OKX trades, buy and sell volume per second (the price stream in the data part counts them here)
+const TAKER = (() => {
+  const sec = new Map();
+  return { add(side, usd) { const k = Math.floor(Date.now() / 1000), b = sec.get(k) || sec.set(k, { b: 0, s: 0 }).get(k); if (side === 'buy') b.b += usd; else b.s += usd;
+    for (const t of sec.keys()) if (t < k - 60) sec.delete(t); } };
+})();
+const NOTED = {};
+function note(kind, title, sub, col, always) {
+  const now = Date.now(); if (!always && now - (NOTED[kind] || 0) < 4000) return; NOTED[kind] = now;
+  const box = $('toast'), d = document.createElement('div');
+  d.style.setProperty('--c', col); d.innerHTML = `<b></b><span></span>`; d.firstChild.textContent = title; d.lastChild.textContent = sub;
+  box.prepend(d); while (box.children.length > (phone ? 2 : 4)) box.lastChild.remove();
+  setTimeout(() => { d.classList.add('out'); setTimeout(() => d.remove(), 500); }, 5200);
+}
+
+/* ---- drawing helpers ------------------------------------------------------------------------------------------------- */
+function txt(s, x, y, font, col, align = 'left', base = 'alphabetic') { g.font = font; g.fillStyle = col; g.textAlign = align; g.textBaseline = base; g.fillText(s, x, y); }
+function rrect(x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function quad(a, b, c, d) { g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.lineTo(c[0], c[1]); g.lineTo(d[0], d[1]); g.closePath(); }
+const gridStep = () => nice(2 * V.r / (phone ? 4 : 7));
+const zNear = () => CAMZ + CAMY * F / (H + 4 - HOR);        // where the ground leaves the bottom of the screen
+
+function drawSky() {
+  const sky = g.createLinearGradient(0, 0, 0, HOR);
+  sky.addColorStop(0, '#04030b'); sky.addColorStop(.6, '#0b0720'); sky.addColorStop(1, '#1d0f38');
+  g.fillStyle = sky; g.fillRect(0, 0, W, HOR + 1);
+  for (const s of STARS) { g.globalAlpha = .25 + .35 * (.5 + .5 * Math.sin(T * .7 + s.tw)); g.fillStyle = '#cfd6ff'; g.fillRect(s.x, s.y, s.r, s.r); }
+  g.globalAlpha = 1;
+  // the glow of the city on the clouds
+  const glow = g.createRadialGradient(W / 2, HOR, 0, W / 2, HOR, Math.max(W, H) * .6);
+  glow.addColorStop(0, 'rgba(173,139,255,.20)'); glow.addColorStop(.35, 'rgba(255,79,109,.06)'); glow.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = glow; g.fillRect(0, 0, W, HOR + 1);
+  // the far skyline: just scenery, it shifts a little with the view
+  const off = ((V.c / (V.r || 1)) * 6) % 40;
+  g.fillStyle = '#0c0919';
+  for (const b of SKY) g.fillRect(b.x - off, HOR - b.h, b.w, b.h + 1);
+  g.fillStyle = 'rgba(255,214,150,.35)';
+  for (const b of SKY) { if (b.s < .55) continue; for (let y = HOR - b.h + 3; y < HOR - 2; y += 4) for (let x = b.x - off + 2; x < b.x - off + b.w - 2; x += 3)
+    if (hash(x * 3.1 + y * 7.7) > .86) g.fillRect(x, y, 1, 1.2); }
+  // the ground
+  const gr = g.createLinearGradient(0, HOR, 0, H);
+  gr.addColorStop(0, '#0d0820'); gr.addColorStop(.25, '#08061a'); gr.addColorStop(1, '#04030c');
+  g.fillStyle = gr; g.fillRect(0, HOR, W, H - HOR);
+  const hz = g.createLinearGradient(0, HOR - 6, 0, HOR + 26);
+  hz.addColorStop(0, 'rgba(173,139,255,0)'); hz.addColorStop(.3, 'rgba(173,139,255,.22)'); hz.addColorStop(1, 'rgba(173,139,255,0)');
+  g.fillStyle = hz; g.fillRect(0, HOR - 6, W, 32);
+}
+function drawGround() {
+  const zn = zNear(), zf = GOALZ + 14, st = gridStep(), P = PXS || P0();
+  // the plots of each row, faintly tinted
+  for (const [k, r] of Object.entries(ROW)) {
+    if (!LAYERS[k]) continue;
+    const y0 = PJ(0, 0, r.z1)[1], y1 = PJ(0, 0, r.z0)[1], col = k === 'wall' ? '#7fe9ff' : COL[k];
+    const gg = g.createLinearGradient(0, y0, 0, y1); gg.addColorStop(0, rgba(col, .015)); gg.addColorStop(1, rgba(col, .05));
+    g.fillStyle = gg; g.fillRect(0, y0, W, y1 - y0);
+    g.fillStyle = rgba(col, .16); g.fillRect(0, y1, W, 1);
+  }
+  // the price grid: lines of equal price run into the distance
+  g.lineWidth = 1;
+  for (let p = Math.ceil(priceAt(-W, zn) / st) * st; p <= priceAt(2 * W, zn); p += st) {
+    const a = PJ(X(p), 0, zn), b = PJ(X(p), 0, zf);
+    g.strokeStyle = 'rgba(127,233,255,.07)'; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+  }
+  for (let z = AVE.z1 + 8; z < zf; z += 8) { const y = PJ(0, 0, z)[1]; g.fillStyle = 'rgba(127,233,255,.035)'; g.fillRect(0, y, W, 1); }
+  // ruins: the outline of what went dark, for a minute and a half
+  for (let i = RUINS.length - 1; i >= 0; i--) {
+    const u = (T - RUINS[i].t) / 90; if (u > 1) { RUINS.splice(i, 1); continue; }
+    const q = RUINS[i]; if (!shown(q.k)) continue;
+    const r = ROW[rowOf(q.k)], x0 = X(q.p - q.B / 2), x1 = X(q.p + q.B / 2);
+    g.setLineDash([3, 3]); g.strokeStyle = rgba(COL[q.k], .55 * (1 - u)); quad(PJ(x0, 0, r.z0), PJ(x1, 0, r.z0), PJ(x1, 0, r.z1), PJ(x0, 0, r.z1)); g.stroke(); g.setLineDash([]);
+  }
+  // the avenue: the price axis
+  const ya = PJ(0, 0, AVE.z1)[1], yb = PJ(0, 0, AVE.z0)[1];
+  const av = g.createLinearGradient(0, ya, 0, yb); av.addColorStop(0, '#120c26'); av.addColorStop(1, '#1a1233');
+  g.fillStyle = av; g.fillRect(0, ya, W, yb - ya);
+  g.fillStyle = 'rgba(127,233,255,.55)'; g.fillRect(0, ya, W, 1); g.fillRect(0, yb, W, 1.5);
+  g.fillStyle = 'rgba(127,233,255,.07)'; g.fillRect(0, yb + 1.5, W, 6);
+  const yc = PJ(0, 0, AVE.zc)[1], dash = 18 * sAt(AVE.zc) / 3;
+  g.strokeStyle = 'rgba(255,214,150,.35)'; g.setLineDash([dash, dash]); g.lineDashOffset = -(V.c / V.r * HW * sAt(AVE.zc)) % (2 * dash);
+  g.beginPath(); g.moveTo(0, yc); g.lineTo(W, yc); g.stroke(); g.setLineDash([]); g.lineDashOffset = 0;
+  // prices along the front of the avenue
+  for (let p = Math.ceil(priceAt(0, AVE.z0) / st) * st; p <= priceAt(W, AVE.z0); p += st) {
+    const [x] = PJ(X(p), 0, AVE.z0);
+    g.fillStyle = 'rgba(127,233,255,.5)'; g.fillRect(x - .5, yb, 1, 5);
+    if (P && Math.abs(x - PJ(X(P), 0, AVE.z0)[0]) < (phone ? 62 : 70)) continue;
+    txt(fmtP(p), x, yb + 16, `500 ${phone ? 9.5 : 10.5}px ${FM}`, 'rgba(200,210,235,.62)', 'center');
+  }
+  // the light of the price, across all rows
+  if (P) { const a = PJ(X(P), 0, AVE.zc), b = PJ(X(P), 0, zf), col = DIR > 0 ? COL.up : DIR < 0 ? COL.dn : COL.cy;
+    g.globalCompositeOperation = 'lighter';
+    const lg = g.createLinearGradient(0, a[1], 0, b[1]); lg.addColorStop(0, rgba(col, .55)); lg.addColorStop(1, rgba(col, .05));
+    g.strokeStyle = lg; g.lineWidth = 1.5; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke(); g.lineWidth = 1;
+    g.globalCompositeOperation = 'source-over'; }
+}
+function drawRowNames() {
+  for (const [k, r] of Object.entries(ROW)) {
+    if (!LAYERS[k]) continue;
+    const y = PJ(0, 0, r.z0)[1], f = `600 ${phone ? 8.5 : 9.5}px ${FM}`, col = k === 'wall' ? '#cfe9f5' : COL[k];
+    g.font = f; const w = g.measureText(r.name).width + 12;
+    rrect(8, y - 7, w, 14, 3); g.fillStyle = 'rgba(5,4,13,.78)'; g.fill(); g.strokeStyle = rgba(col, .3); g.lineWidth = 1; g.stroke();
+    txt(r.name, 14, y + .5, f, rgba(col, .8), 'left', 'middle');
+  }
+}
+// the plaza in front of the avenue: time runs towards the viewer, the oldest light at the bottom of the screen
+function trailXY(t, p, now) {
+  const age = (now - t) / SPAN, y = YAV + age * (H + 6 - YAV), s = (y - HOR) / CAMY;
+  return [W / 2 + X(p) * s, y];
+}
+function drawTrail() {
+  if (!LAYERS.trail || TRAIL.length < 2) return;
+  const now = Date.now();
+  // hour marks
+  for (let h = 1; h <= 4; h++) { const y = YAV + h * 3600e3 / SPAN * (H + 6 - YAV); if (y > H - 4) break;
+    g.fillStyle = 'rgba(127,233,255,.06)'; g.fillRect(0, y, W, 1);
+    txt('−' + h + 'u', 12, y - 4, `500 ${phone ? 9 : 10}px ${FM}`, 'rgba(154,151,176,.55)'); }
+  const pts = []; for (const [t, p] of TRAIL) if (now - t <= SPAN) pts.push(trailXY(t, p, now));
+  pts.push(trailXY(now, PXS || TRAIL[TRAIL.length - 1][1], now));
+  if (pts.length < 2) return;
+  const path = () => { g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]); };
+  g.save(); g.globalCompositeOperation = 'lighter'; g.lineJoin = 'round'; g.lineCap = 'round';
+  const grad = a => { const gg = g.createLinearGradient(0, YAV, 0, H); gg.addColorStop(0, `rgba(190,245,255,${a})`); gg.addColorStop(.35, `rgba(127,233,255,${a * .7})`);
+    gg.addColorStop(1, `rgba(173,139,255,${a * .12})`); return gg; };
+  path(); g.strokeStyle = grad(.07); g.lineWidth = 12; g.stroke();
+  path(); g.strokeStyle = grad(.22); g.lineWidth = 4.5; g.stroke();
+  path(); g.strokeStyle = grad(.95); g.lineWidth = 1.4; g.stroke();
+  if (!reduced) { path(); g.setLineDash([2, 40]); g.lineDashOffset = T * 60; g.strokeStyle = grad(.8); g.lineWidth = 2.2; g.stroke(); }
+  g.restore();
+}
+// the light of the price itself: a glowing car on the avenue, its headlights the way it last moved
+function drawCar() {
+  const P = PXS; if (!P) return;
+  const [x, y] = PJ(X(P), 1, AVE.zc), s = sAt(AVE.zc), col = DIR > 0 ? COL.up : DIR < 0 ? COL.dn : COL.cy, k = clamp(1 - (T - tickT) / 6, 0, 1);
+  g.save(); g.globalCompositeOperation = 'lighter';
+  if (DIR) { const d = DIR, beam = g.createLinearGradient(x, y, x + d * 70, y);
+    beam.addColorStop(0, rgba('#ffffff', .25 + .25 * k)); beam.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = beam; g.beginPath(); g.moveTo(x, y - 2); g.lineTo(x + d * 70, y - 10); g.lineTo(x + d * 70, y + 8); g.lineTo(x, y + 2); g.closePath(); g.fill(); }
+  const r = 26 + 6 * Math.sin(T * 3), gl = g.createRadialGradient(x, y, 0, x, y, r);
+  gl.addColorStop(0, rgba('#ffffff', .95)); gl.addColorStop(.15, rgba(col, .8)); gl.addColorStop(1, rgba(col, 0));
+  g.fillStyle = gl; g.beginPath(); g.arc(x, y, r, 0, PI * 2); g.fill();
+  const up = g.createLinearGradient(0, y, 0, y - 90); up.addColorStop(0, rgba(col, .35)); up.addColorStop(1, rgba(col, 0));
+  g.fillStyle = up; g.fillRect(x - 1, y - 90, 2, 90);
+  g.restore();
+  g.fillStyle = '#ffffff'; g.beginPath(); g.ellipse(x, y, Math.max(3, s * 1.1), Math.max(1.6, s * .45), 0, 0, PI * 2); g.fill();
+  // the price on a sign above it
+  const label = fmtP(P); g.font = `700 ${phone ? 11 : 12}px ${FM}`; const w = g.measureText(label).width + 14;
+  const bx = clamp(x - w / 2, 6, W - w - 6), by = y + 22;
+  rrect(bx, by, w, 20, 10); g.fillStyle = 'rgba(5,4,13,.85)'; g.fill(); g.strokeStyle = rgba(col, .8); g.lineWidth = 1; g.stroke();
+  txt(label, bx + w / 2, by + 14, g.font, '#ffffff', 'center');
+}
+// a building: front, side and roof; glass with neon edges and lit windows
+const HITS = [];
+function life(b) {          // 0..1: how much light is left in it, and the window fraction still on
+  if (b.st === 'live') return { L: 1, win: 1, sink: 0 };
+  if (b.st === 'swap') { const u = clamp((T - b.tOut) / .45, 0, 1); return { L: 1 - u, win: 1 - u, sink: u }; }
+  const u = (T - b.tOut) / 2.4;
+  if (u < 1) { const fl = reduced ? 1 : hash(Math.floor(T * 18) + b.seed * 99) < 1 - u * .75 ? 1 : .2; return { L: (1 - u * .55) * fl, win: 1 - u, sink: 0 }; }
+  const v = clamp((T - b.tOut - 2.4) / 1.4, 0, 1); return { L: .45 * (1 - v), win: 0, sink: ease(v) };
+}
+function drawBuilding(b) {
+  const r = ROW[rowOf(b.k)], lf = life(b), hW = b.h * (1 - lf.sink) * r.hMax;
+  if (hW < .4) return;
+  const w = b.B / V.r * HW, gap = Math.min(w * .14, w > 3 ? 1.2 : w * .14), x0 = X(b.p) - w / 2 + gap / 2, x1 = x0 + w - gap;
+  const z0 = r.z0, z1 = z0 + Math.min(r.z1 - r.z0, Math.max(2.5, (x1 - x0) * (1.1 + .7 * b.seed)));
+  const fb0 = PJ(x0, 0, z0), fb1 = PJ(x1, 0, z0), ft0 = PJ(x0, hW, z0), ft1 = PJ(x1, hW, z0);
+  if (fb1[0] < -40 || fb0[0] > W + 40) return;
+  const bt0 = PJ(x0, hW, z1), bt1 = PJ(x1, hW, z1), col = COL[b.k], L = lf.L, sel = SEL?.b === b, hov = HOVB === b;
+  // the side that faces the middle of the view
+  if (x1 < 0 || x0 > 0) { const xs = x1 < 0 ? x1 : x0, a = PJ(xs, 0, z0), bb = PJ(xs, 0, z1), c = PJ(xs, hW, z1), d = PJ(xs, hW, z0);
+    quad(a, bb, c, d); g.fillStyle = `rgba(10,8,24,${.55 + .25 * L})`; g.fill(); g.fillStyle = rgba(col, .06 * L); g.fill();
+    g.strokeStyle = rgba(col, .22 * L); g.lineWidth = 1; g.beginPath(); g.moveTo(c[0], c[1]); g.lineTo(d[0], d[1]); g.stroke(); }
+  // the roof, when the camera is above it
+  if (hW < CAMY) { quad(ft0, ft1, bt1, bt0); g.fillStyle = rgba(col, (.10 + .14 * b.rel) * L); g.fill(); g.fillStyle = 'rgba(10,8,24,.35)'; g.fill(); }
+  // the front: dark glass with a tint of its kind
+  const fw = fb1[0] - fb0[0], fh = fb0[1] - ft0[1];
+  const fg = g.createLinearGradient(0, ft0[1], 0, fb0[1]);
+  fg.addColorStop(0, rgba(col, (.16 + .14 * b.rel) * L)); fg.addColorStop(.5, `rgba(14,10,30,${.62 + .2 * L})`); fg.addColorStop(1, `rgba(8,6,18,${.8 + .15 * L})`);
+  g.fillStyle = fg; g.fillRect(fb0[0], ft0[1], fw, fh);
+  // windows, counted from the ground so they stay put while the building rises
+  const s = sAt(z0), cw = clamp(s * 1.5, 4, 9), ch = cw * 1.3, cols = Math.floor((fw - 2) / cw), rows = Math.floor((fh - 3) / ch);
+  if (cols >= 1 && rows >= 1 && lf.win > 0) {
+    const ww = Math.max(1, cw * .5), wh = Math.max(1, ch * .45), ox = fb0[0] + (fw - cols * cw) / 2 + (cw - ww) / 2, lit = (.25 + .6 * Math.min(1, b.rel)) * lf.win;
+    const step = cols * rows > 900 ? 2 : 1;
+    g.fillStyle = rgba(col, .75 * L);
+    for (let i = 0; i < rows; i += step) for (let j = 0; j < cols; j += step) {
+      const hsh = hash(b.seed * 1000 + i * 31 + j * 7); if (hsh > lit) continue;
+      g.fillRect(ox + j * cw, fb0[1] - 3 - (i + 1) * ch + (ch - wh), ww, wh); }
+    g.fillStyle = `rgba(255,246,225,${.8 * L})`;
+    for (let i = 0; i < rows; i += step) for (let j = 0; j < cols; j += step) {
+      const hsh = hash(b.seed * 1000 + i * 31 + j * 7); if (hsh > lit * .22) continue;
+      g.fillRect(ox + j * cw, fb0[1] - 3 - (i + 1) * ch + (ch - wh), ww, wh); }
+  }
+  // neon edges, brighter when it was just built
+  const fresh = b.born ? clamp(1 - (T - b.t0) / 1.6, 0, 1) : 0, edge = sel || hov ? '#ffffff' : fresh > 0 ? '#ffffff' : col;
+  g.strokeStyle = rgba(edge, (sel ? 1 : .55 + .35 * b.rel) * L); g.lineWidth = sel ? 2 : 1;
+  g.beginPath(); g.moveTo(fb0[0], fb0[1]); g.lineTo(ft0[0], ft0[1]); g.lineTo(ft1[0], ft1[1]); g.lineTo(fb1[0], fb1[1]);
+  if (hW < CAMY) { g.moveTo(ft0[0], ft0[1]); g.lineTo(bt0[0], bt0[1]); g.lineTo(bt1[0], bt1[1]); g.lineTo(ft1[0], ft1[1]); }
+  g.stroke();
+  if (b.rel > .35 && L > .3) { g.save(); g.globalCompositeOperation = 'lighter'; g.strokeStyle = rgba(col, .18 * L * b.rel); g.lineWidth = 4;
+    g.beginPath(); g.moveTo(ft0[0], ft0[1]); g.lineTo(ft1[0], ft1[1]); g.stroke(); g.restore(); }
+  // the wet street mirrors it a little
+  const rh = Math.min(fh * .35, 26); if (rh > 2) { const rg = g.createLinearGradient(0, fb0[1], 0, fb0[1] + rh);
+    rg.addColorStop(0, rgba(col, .16 * L)); rg.addColorStop(1, rgba(col, 0)); g.fillStyle = rg; g.fillRect(fb0[0], fb0[1] + 1, fw, rh); }
+  // a beacon on the tall ones
+  if (b.rel > .62 && L > .5 && fw > 2) { const bl = .5 + .5 * Math.sin(T * 2.4 + b.seed * 9), bx = (ft0[0] + ft1[0]) / 2;
+    g.save(); g.globalCompositeOperation = 'lighter'; const bg = g.createRadialGradient(bx, ft0[1] - 2, 0, bx, ft0[1] - 2, 9);
+    bg.addColorStop(0, rgba(col, .9 * bl)); bg.addColorStop(1, rgba(col, 0)); g.fillStyle = bg; g.fillRect(bx - 9, ft0[1] - 11, 18, 18); g.restore();
+    g.fillStyle = rgba(col, .9 * L); g.fillRect(bx - .75, ft0[1] - 6, 1.5, 6); }
+  HITS.push({ b, x0: Math.min(fb0[0], ft0[0]), x1: Math.max(fb1[0], ft1[0]), y0: Math.min(ft0[1], bt0[1]), y1: fb0[1] });
+}
+function drawCity() {
+  HITS.length = 0;
+  const groups = { liq: [], stop: [], wall: [] };
+  for (const b of CITY.values()) if (T >= b.t0 && shown(b.k)) groups[rowOf(b.k)].push(b);
+  for (const k of ['liq', 'stop', 'wall']) {
+    groups[k].sort((a, b) => Math.abs(X(b.p)) - Math.abs(X(a.p)));
+    for (const b of groups[k]) drawBuilding(b);
+  }
+}
+// the two targets: searchlights behind the city
+function drawGoals(labels) {
+  if (!LAYERS.goal || !TG) return;
+  for (const [p, up] of [[TG.up, true], [TG.dn, false]]) {
+    if (!p) continue;
+    const [x, y] = PJ(X(p), 0, GOALZ), col = up ? COL.up : COL.dn, first = TG.first === p;
+    if (x < -60 || x > W + 60) continue;
+    if (!labels) {
+      g.save(); g.globalCompositeOperation = 'lighter';
+      const sway = reduced ? 0 : Math.sin(T * .6 + (up ? 0 : 2)) * 16;
+      const bg = g.createLinearGradient(0, y, 0, 0); bg.addColorStop(0, rgba(col, first ? .38 : .24)); bg.addColorStop(1, rgba(col, 0));
+      g.fillStyle = bg; g.beginPath(); g.moveTo(x - 3, y); g.lineTo(x + sway - 26, 0); g.lineTo(x + sway + 26, 0); g.lineTo(x + 3, y); g.closePath(); g.fill();
+      g.fillStyle = rgba(col, .8); g.fillRect(x - .75, 0, 1.5, y);
+      const rg = g.createRadialGradient(x, y, 0, x, y, 30); rg.addColorStop(0, rgba(col, .7)); rg.addColorStop(1, rgba(col, 0));
+      g.fillStyle = rg; g.beginPath(); g.ellipse(x, y, 30, 8, 0, 0, PI * 2); g.fill();
+      g.restore();
+    } else {
+      const l1 = `${up ? '▲' : '▼'} ${fmtP(p)}` + (TG.prob != null ? ' · ' + pctN(first ? TG.prob : 1 - TG.prob) : '');
+      g.font = `700 ${phone ? 10 : 11}px ${FM}`; const w = g.measureText(l1).width + 14, by = HOR - (phone ? 46 : 54);
+      const bx = clamp(x - w / 2, 6, W - w - 6);
+      rrect(bx, by, w, 20, 10); g.fillStyle = 'rgba(5,4,13,.82)'; g.fill(); g.strokeStyle = rgba(col, first ? 1 : .6); g.lineWidth = first ? 1.5 : 1; g.stroke();
+      txt(l1, bx + w / 2, by + 14, g.font, col, 'center');
+      PLACED.push([bx, by, w, 20]);
+    }
+  }
+}
+// labels on the largest of each kind, the levels of the coin page's table
+const PLACED = [];
+function drawTags() {
+  if (!LV.length) return;
+  const max = phone ? 7 : 14; let n = 0;
+  const cand = LV.filter(L => shown(L.k)).sort((a, b) => b.rel - a.rel);
+  for (const L of cand) {
+    if (n >= max) break;
+    let best = null; const tol = Math.max(CB, D.B) * .75;
+    for (const b of CITY.values()) if (b.k === L.k && b.st === 'live' && T >= b.t0 && Math.abs(b.p - L.p) <= tol && (!best || b.h > best.h)) best = b;
+    if (!best) continue;
+    const r = ROW[rowOf(best.k)], [x, y] = PJ(X(best.p), best.h * r.hMax, r.z0);
+    if (x < 0 || x > W) continue;
+    const l1 = `${nameOf(L.k, L.above)} ${fmtP(L.p)}`, l2 = L.v, col = COL[L.k];
+    g.font = `600 ${phone ? 9.5 : 10.5}px ${FM}`;
+    const w = Math.max(g.measureText(l1).width, g.measureText(l2).width) + 12, h = 30, bx = clamp(x - w / 2, 4, W - w - 4);
+    let by = y - h - 14; if (by < HOR - 30) by = Math.max(HOR - 30, 70);
+    if (PLACED.some(q => bx < q[0] + q[2] + 4 && bx + w + 4 > q[0] && by < q[1] + q[3] + 4 && by + h + 4 > q[1])) continue;
+    PLACED.push([bx, by, w, h]); n++;
+    g.strokeStyle = rgba(col, .55); g.lineWidth = 1; g.beginPath(); g.moveTo(x, y - 2); g.lineTo(x, by + h); g.stroke();
+    rrect(bx, by, w, h, 5); g.fillStyle = 'rgba(6,5,15,.84)'; g.fill(); g.strokeStyle = rgba(col, .7); g.stroke();
+    txt(l1, bx + 6, by + 12, g.font, col); txt(l2, bx + 6, by + 25, `500 ${phone ? 9.5 : 10.5}px ${FM}`, COL.txt);
+  }
+}
+// real liquidations: lightning into the back row; sparks of what went off
+function drawFx(dt) {
+  g.save(); g.globalCompositeOperation = 'lighter';
+  for (let i = FLARES.length - 1; i >= 0; i--) {
+    const f = FLARES[i], u = (T - f.t) / 1.8; if (u > 1) { FLARES.splice(i, 1); continue; }
+    if (!LAYERS.liq) continue;
+    const r = ROW.liq, z = (r.z0 + r.z1) / 2, [x, y] = PJ(X(f.p), 0, z); if (x < -40 || x > W + 40) continue;
+    const a = (1 - u) * clamp(Math.log10(f.usd / 1e4) / 2.5, .35, 1), col = f.long ? COL.dn : COL.up;
+    g.strokeStyle = rgba('#e8dcff', a); g.lineWidth = 1.6; g.beginPath(); let yy = 0, xx = x + (hash(f.t) - .5) * 30; g.moveTo(xx, 0);
+    while (yy < y) { yy += 14 + hash(yy + f.t) * 18; xx = x + (hash(yy * 1.7 + f.t) - .5) * 18 * (1 - yy / y); g.lineTo(xx, Math.min(y, yy)); } g.stroke();
+    g.strokeStyle = rgba(COL.liq, a * .35); g.lineWidth = 6; g.stroke();
+    const rr = 10 + u * 70; g.strokeStyle = rgba(col, a); g.lineWidth = 1.5; g.beginPath(); g.ellipse(x, y, rr, rr * .22, 0, 0, PI * 2); g.stroke();
+  }
+  for (let i = SPARKS.length - 1; i >= 0; i--) {
+    const s = SPARKS[i]; s.age += dt; if (s.age > s.life) { SPARKS.splice(i, 1); continue; }
+    s.vy -= 26 * dt; s.x += s.vx * dt; s.y = Math.max(0, s.y + s.vy * dt); s.z += s.vz * dt;
+    const [x, y] = PJ(s.x, s.y, s.z), a = 1 - s.age / s.life; g.fillStyle = rgba(s.col, a); g.fillRect(x - 1, y - 1, 2.2, 2.2);
+  }
+  g.restore();
+}
+
+/* ---- the frame ------------------------------------------------------------------------------------------------------ */
+let lastTs = 0;
+function step(dt) {
+  const P = live.fresh() || D?.price; if (!P) return;
+  PXS = PXS ? PXS + (P - PXS) * Math.min(1, dt * 7) : P;
+  if (!V.r) { V.r = defR(); V.c = P; }
+  if (V.anim) { const a = V.anim, u = clamp((T - a.t0) / a.d, 0, 1), k = ease(u);
+    if (a.c1 != null) V.c = lerp(a.c0, a.c1, k); else V.c = lerp(a.c0, PXS, k);
+    V.r = lerp(a.r0, a.r1, k); if (u >= 1) V.anim = null; }
+  else if (V.follow) V.c += (PXS - V.c) * Math.min(1, dt * 2.2);
+  if (D && bucketFor(V.r) !== CB && T - V.zt > .3 && !pinch) build();
+  for (const b of CITY.values()) {
+    if (T < b.t0) continue;
+    if (b.st === 'live') b.h += (b.ht - b.h) * Math.min(1, dt * (b.h < b.ht * .98 ? 2.6 : 1.5));
+    else if (b.st === 'swap' && T - b.tOut > .45 || b.st === 'out' && T - b.tOut > 3.8) CITY.delete(b.key);
+  }
+}
+function draw(dt) {
+  drawSky();
+  drawGoals(false);
+  drawGround();
+  drawTrail();
+  drawCity();
+  drawFx(dt);
+  drawCar();
+  drawRowNames();
+  PLACED.length = 0; drawGoals(true); drawTags();
+  if (SEL && !SEL.b) { const [x, y] = PJ(X(SEL.p), 0, AVE.zc); g.strokeStyle = 'rgba(255,255,255,.7)'; g.setLineDash([3, 4]); g.beginPath();
+    g.moveTo(x, y); g.lineTo(PJ(X(SEL.p), 0, GOALZ)[0], PJ(0, 0, GOALZ)[1]); g.stroke(); g.setLineDash([]); }
+}
+function frame(ts) {
+  const dt = Math.min(.05, lastTs ? (ts - lastTs) / 1000 : .016); lastTs = ts; T = ts / 1000;
+  step(dt);
+  if (W) { if (D || live.px) draw(dt); else drawSky(); }
+  requestAnimationFrame(frame);
+}
+
+/* ---- the HUD, the table of levels, the cards ------------------------------------------------------------------------ */
+function renderHud() {
+  const P = live.fresh() || D?.price; if (!P) return;
+  const hp = $('hp'); hp.textContent = fmtP(P); hp.className = 'px' + (T - tickT < 1.2 ? DIR > 0 ? ' up' : DIR < 0 ? ' dn' : '' : '');
+  if (D) { const cs = D.candles, ref = cs.length > 24 ? cs[cs.length - 25][4] : cs[0][1];
+    const age = Math.round((Date.now() - updAt) / 1000);
+    $('hs').textContent = `${pct(P, ref)} 24u · ${nBooks} beurzen` + (phone ? '' : ` · zones $${CB}`) + ` · ${mode === 'live' ? age < 60 ? 'live' : age + 's' : 'site'}`; }
+  const gl = []; if (TG) for (const [p, up] of [[TG.up, true], [TG.dn, false]]) { if (!p) continue;
+    const first = TG.first === p, pr = TG.prob != null ? first ? 'eerst · ' + pctN(TG.prob) : pctN(1 - TG.prob) : '';
+    gl.push(`<div class="goal" style="--c:${up ? COL.up : COL.dn}">Doel ${up ? '▲' : '▼'} ${fmtP(p)}<em>${pr}</em></div>`); }
+  const html = gl.join(''); if ($('hg').innerHTML !== html) $('hg').innerHTML = html;
+}
+setInterval(renderHud, 250);
+function pillOf(k, above) { const c = { ask: COL.dn, bid: COL.up, stop: COL.stop, liq: COL.liq, gu: COL.up, gd: COL.dn }[k];
+  const t = k === 'gu' ? 'Doel ▲' : k === 'gd' ? 'Doel ▼' : nameOf(k, above); return `<span class="pill" style="--c:${c}">${t}</span>`; }
+function renderSide() {
+  if ($('side').hidden || !D) return;
+  const P = live.fresh() || D.price, rows = LV.map(L => ({ p: L.p, k: L.k, above: L.above, v: L.v, L }));
+  if (TG?.up) rows.push({ p: TG.up, k: 'gu', v: TG.prob == null ? '' : TG.first === TG.up ? 'eerst · ' + pctN(TG.prob) : pctN(1 - TG.prob) });
+  if (TG?.dn) rows.push({ p: TG.dn, k: 'gd', v: TG.prob == null ? '' : TG.first === TG.dn ? 'eerst · ' + pctN(TG.prob) : pctN(1 - TG.prob) });
+  rows.sort((a, b) => b.p - a.p);
+  const ab = rows.filter(r => r.p > P), be = rows.filter(r => r.p <= P);
+  const alive = r => { if (!r.L) return true; const tol = Math.max(CB, D.B) * .75;
+    for (const b of CITY.values()) if (b.k === r.k && b.st === 'live' && Math.abs(b.p - r.p) <= tol) return true; return false; };
+  const li = (r, near) => `<li data-p="${r.p}" class="${near ? 'near' : ''}${alive(r) ? '' : ' out'}"><span>${fmtP(r.p)}</span><span>${pct(r.p, P).replace('−', '-')}</span><span>${pillOf(r.k, r.above)}</span><span class="g">${r.v}</span></li>`;
+  const html = ab.map((r, i) => li(r, i === ab.length - 1 && r.k === 'ask')).join('') +
+    `<li class="now"><b>${fmtP(P)}</b><span>0,00%</span><span><span class="pill">● HUIDIGE PRIJS</span></span><span></span></li>` + be.map(r => li(r)).join('');
+  const lad = $('lad'); if (lad.innerHTML !== html) { const st = lad.scrollTop, first = !lad.children.length; lad.innerHTML = html;
+    if (first) { const n = lad.querySelector('.now'); lad.scrollTop = n.offsetTop - lad.clientHeight / 2 + 23; } else lad.scrollTop = st; }
+}
+setInterval(renderSide, 1000);
+$('lad').addEventListener('click', e => { const li = e.target.closest('li[data-p]'); if (!li) return; const p = +li.dataset.p; flyTo(p);
+  let best = null; for (const b of CITY.values()) if (b.st === 'live' && Math.abs(b.p - p) <= CB && (!best || b.h > best.h)) best = b;
+  if (best && shown(best.k)) { SEL = { b: best, p: best.p }; openCard(); } if (phone) setSide(false); });
+function setSide(on) { $('side').hidden = !on; $('sideb').setAttribute('aria-pressed', String(on)); if (on) { closeCard(); renderSide(); } }
+$('sideb').onclick = () => setSide($('side').hidden);
+$('side').querySelector('.x').onclick = () => setSide(false);
+
+function exchangesAt(p0, p1) {
+  const out = []; for (const [ex, bk] of Object.entries(D.books)) { const w = D.weights[ex] ?? 1; let s = 0;
+    for (const side of ['b', 'a']) for (const [p, v] of bk[side]) if (p >= p0 && p < p1) s += v * w; if (s > 0) out.push([ex, s]); }
+  const tot = out.reduce((a, x) => a + x[1], 0); return out.sort((a, b) => b[1] - a[1]).slice(0, 3).map(([ex, s]) => `${ex} ${Math.round(s / tot * 100)}%`).join(' · ');
+}
+function presenceAt(p0, p1, now) {
+  const HB = A.histBin, hr = Math.floor(D.ts / 3.6e6) * 3.6e6, prev = (D.bookHist || []).filter(h => h.t < hr).slice(-6);
+  if (prev.length < 2 || !(now > 0)) return null;
+  const held = prev.filter(e => { let s = 0; for (const [p, vb, va] of e.b) { const a = Math.max(p, p0), b = Math.min(p + HB, p1); if (b > a) s += (vb + va) * (b - a) / HB; } return s >= now * .5; }).length;
+  return [held, prev.length];
+}
+function openCard(kind) {
+  const c = $('card'); c.hidden = false; c.dataset.kind = kind || 'sel';
+  if (kind === 'legend') {
+    c.innerHTML = `<button class="x" type="button" aria-label="Sluiten">×</button><h3>De liquiditeitsstad</h3><ul>
+      <li><b>De avenue is de prijs</b>: links lager, rechts hoger. Het licht erop is de huidige prijs; het <i style="--c:${COL.cy}">lichtspoor</i> op het plein ervoor is de koers van de laatste vier uur, het oudste onderaan.</li>
+      <li><b>Elke prijszone is een gebouw</b> (nu $${CB} breed); hoe meer liquiditeit, hoe hoger. Waar veel aaneengesloten ligt, staat een muur van gebouwen.</li>
+      <li><b>Voorste rij, orderboek</b> (${nBooks} beurzen): <i style="--c:${COL.bid}">koopmuren</i> onder de prijs, <i style="--c:${COL.ask}">verkoopmuren</i> erboven.</li>
+      <li><b>Middelste rij</b>: geschatte <i style="--c:${COL.stop}">stops</i>, net voorbij toppen en bodems waar de prijs nog niet doorheen ging.</li>
+      <li><b>Achterste rij</b>: geschatte <i style="--c:${COL.liq}">liquidaties</i>; erboven shorts, eronder longs.</li>
+      <li><b>Zoeklichten</b> zijn de twee doelen, met de kans welke eerst geraakt wordt.</li>
+      <li><b>Verdwijnt liquiditeit</b> uit het boek, of loopt de prijs erdoorheen, dan <b>dooft het gebouw uit</b>: de ramen gaan uit, het zakt weg en laat een omtrek achter. Een nieuw gebouw rijst op met een witte rand.</li>
+      <li><b>Bliksem</b> in de achterste rij is een echte liquidatie (OKX, Binance, Bybit).</li>
+      <li>Tik op een gebouw voor details. Slepen schuift, knijpen of scrollen zoomt, dubbeltik of <b>⌖ Volg</b> brengt je terug.</li></ul>`;
+  } else if (SEL?.b) {
+    const b = SEL.b, P = live.fresh() || D.price, lo = b.p - b.B / 2, hi = b.p + b.B / 2, col = COL[b.k];
+    const ps = b.k === 'bid' || b.k === 'ask' ? presenceAt(lo, hi, b.v) : null;
+    const what = { bid: 'Openstaande kooporders in deze zone, opgeteld over alle beurzen (gewogen naar wat er echt verhandeld wordt).',
+      ask: 'Openstaande verkooporders in deze zone, opgeteld over alle beurzen (gewogen naar wat er echt verhandeld wordt).',
+      stop: b.above ? 'Geschatte stops van shorts boven een top waar de prijs nog niet doorheen ging: geraakt worden het kooporders.' : 'Geschatte stops van longs onder een bodem waar de prijs nog niet doorheen ging: geraakt worden het verkooporders.',
+      liq: b.above ? 'Geschatte liquidatieprijzen van shorts, uit de open interest die erbij kwam en een mix van 5× tot 50× hefboom.' : 'Geschatte liquidatieprijzen van longs, uit de open interest die erbij kwam en een mix van 5× tot 50× hefboom.' }[b.k];
+    c.innerHTML = `<button class="x" type="button" aria-label="Sluiten">×</button><h3>${pillOf(b.k, b.above)} ${fmtP(b.p)}</h3><dl>
+      <dt>Zone</dt><dd>${fmtP(lo)} – ${fmtP(hi)}</dd><dt>Afstand</dt><dd>${pct(b.p, P)}</dd><dt>Grootte</dt><dd style="color:${col}">${sizeOf(b)}</dd>
+      <dt>Hoogte</dt><dd>${Math.round(Math.min(1, b.rel) * 100)}% van de grootste</dd>
+      ${ps ? `<dt>Aanwezig</dt><dd>${ps[0]} van de ${ps[1]} uur</dd>` : ''}
+      ${b.k === 'bid' || b.k === 'ask' ? `<dt>Beurzen</dt><dd>${exchangesAt(lo, hi) || '—'}</dd>` : ''}
+      ${b.st !== 'live' ? `<dt>Status</dt><dd style="color:${COL.faint}">gedoofd · ${b.why || ''}</dd>` : ''}</dl><p>${what}</p>`;
+  } else if (SEL) {
+    const P = live.fresh() || D.price, near = {};
+    for (const b of CITY.values()) { if (b.st !== 'live' || !shown(b.k)) continue; const k = b.k, d = Math.abs(b.p - SEL.p);
+      if (d <= Math.max(CB * 4, V.r * .06) && (!near[k] || b.v > near[k].v)) near[k] = b; }
+    const ls = Object.values(near).map(b => `<dt>${nameOf(b.k, b.above)}</dt><dd style="color:${COL[b.k]}">${sizeOf(b)} · ${fmtP(b.p)}</dd>`).join('');
+    c.innerHTML = `<button class="x" type="button" aria-label="Sluiten">×</button><h3>${fmtP(SEL.p)} <span style="font:500 12px var(--mono);color:var(--dim)">${pct(SEL.p, P)}</span></h3>
+      <dl>${ls || '<dt>Hier staat weinig</dt><dd></dd>'}</dl><p>De grootste gebouwen in de buurt, per soort.</p>`;
+  }
+  c.querySelector('.x').onclick = closeCard;
+}
+function closeCard() { $('card').hidden = true; SEL = null; $('help').setAttribute('aria-pressed', 'false'); }
+$('help').onclick = () => { if (!$('card').hidden && $('card').dataset.kind === 'legend') return closeCard(); SEL = null; setSide(false); openCard('legend'); $('help').setAttribute('aria-pressed', 'true'); };
+setInterval(() => { if (!$('card').hidden && $('card').dataset.kind === 'sel' && SEL) openCard(); }, 2000);
+$('follow').onclick = () => home();
+document.querySelectorAll('[data-layer]').forEach(bt => {
+  const k = bt.dataset.layer; bt.setAttribute('aria-pressed', String(LAYERS[k]));
+  bt.onclick = () => { LAYERS[k] = !LAYERS[k]; bt.setAttribute('aria-pressed', String(LAYERS[k]));
+    try { localStorage.setItem('stad-layers', JSON.stringify(LAYERS)); } catch (e) {} if (SEL?.b && !shown(SEL.b.k)) closeCard(); };
+});
+
+function onLevels() {
+  if (!built) msg('');
+  build(); renderSide(); renderHud();
+}
+
+/* ---- input ------------------------------------------------------------------------------------------------------------ */
+const ptrs = new Map(); let drag = null, pinch = null, lastTap = 0;
+function pick(x, y) {
+  for (let i = HITS.length - 1; i >= 0; i--) { const h = HITS[i]; if (x >= h.x0 - 2 && x <= h.x1 + 2 && y >= h.y0 - 2 && y <= h.y1 + 2) return h.b; }
+  return null;
+}
+function tap(x, y) {
+  const now = performance.now(); if (now - lastTap < 300) { lastTap = 0; home(); return; } lastTap = now;
+  if (y < HOR - 40) return;
+  const b = pick(x, y); setSide(false);
+  SEL = b ? { b, p: b.p } : { b: null, p: priceAt(x) };
+  openCard('sel');
+}
+cv.addEventListener('pointerdown', e => {
+  cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (ptrs.size === 1) drag = { x0: e.clientX, y0: e.clientY, c: V.c, moved: false };
+  else if (ptrs.size === 2 && D) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.max(20, Math.abs(a.x - b.x)), r: V.r, mid: (a.x + b.x) / 2 }; pinch.p = priceAt(pinch.mid); if (drag) drag.moved = true; }
+});
+cv.addEventListener('pointermove', e => {
+  if (e.pointerType === 'mouse' && !ptrs.size) { HOVB = pick(e.clientX, e.clientY); cv.classList.toggle('hand', !!HOVB); }
+  if (!ptrs.has(e.pointerId) || !D) return; ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch && ptrs.size >= 2) { const [a, b] = [...ptrs.values()], d = Math.max(20, Math.abs(a.x - b.x)), mid = (a.x + b.x) / 2;
+    V.r = clamp(pinch.r * pinch.d / d, rMin(), rMax()); V.c = pinch.p - (mid - W / 2) / sAt(AVE.zc) / HW * V.r; V.anim = null; V.zt = T; setFollow(false); return; }
+  if (drag) { const dx = e.clientX - drag.x0; if (!drag.moved && Math.hypot(dx, e.clientY - drag.y0) > 7) { drag.moved = true; cv.classList.add('grab'); setFollow(false); V.anim = null; }
+    if (drag.moved) V.c = drag.c - dx / sAt(AVE.zc) / HW * V.r; }
+});
+const up = e => {
+  if (!ptrs.has(e.pointerId)) return; ptrs.delete(e.pointerId);
+  if (ptrs.size < 2) pinch = null;
+  if (!ptrs.size) { if (drag && !drag.moved && D) tap(e.clientX, e.clientY); drag = null; cv.classList.remove('grab'); }
+  else if (drag) { const [p] = [...ptrs.values()]; drag = { x0: p.x, y0: p.y, c: V.c, moved: true }; }
+};
+cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); pinch = null; drag = null; });
+cv.addEventListener('pointerleave', () => { HOVB = null; });
+cv.addEventListener('wheel', e => { if (!D) return; e.preventDefault();
+  if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) { V.c += e.deltaX / sAt(AVE.zc) / HW * V.r; setFollow(false); V.anim = null; }
+  else zoomAt(V.r * Math.exp(e.deltaY * .0015), e.clientX); }, { passive: false });
+cv.addEventListener('keydown', e => {
+  if (!D) return; const k = e.key;
+  if (k === 'ArrowLeft' || k === 'ArrowRight') { V.c += (k === 'ArrowLeft' ? -1 : 1) * V.r * .15; setFollow(false); V.anim = null; }
+  else if (k === '+' || k === '=') zoomAt(V.r / 1.25, W / 2); else if (k === '-' || k === '_') zoomAt(V.r * 1.25, W / 2);
+  else if (k === '0') home(); else if (k === 'Escape') { closeCard(); setSide(false); }
+  else return;
+  e.preventDefault();
+});
+addEventListener('resize', resize);
+
+/* ---- start ------------------------------------------------------------------------------------------------------------ */
+(async () => {
+  resize(); live.start(); liqFeeds(); loadTrail();
+  requestAnimationFrame(frame);
+  site = await loadSite(); if (site) setData(site, 'site');
+  if (await loadLive()) setInterval(loadLive, 15e3);
+  else if (!site) { msg('GEEN DATA: BEURZEN EN ' + A.file.toUpperCase() + ' NIET BEREIKBAAR'); setInterval(async () => { if (await loadLive()) location.reload(); }, 30e3); }
+  else setInterval(loadLive, 30e3);
+  let seen = false; try { seen = localStorage.getItem('stad-seen') === '1'; localStorage.setItem('stad-seen', '1'); } catch (e) {}
+  if (!seen && D) openCard('legend');
+})();
+window.STAD = { get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, V, CITY: () => CITY, realLiq, onPrice, cross, live, dim, build, get CB() { return CB; } };
+})();
+</script>
+</body>
+</html>

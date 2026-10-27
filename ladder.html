@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>GlassSphere · Ladder</title>
+<meta name="theme-color" content="#05090b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ladder">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@500;600;700;800&display=swap">
+<style>
+/* Ladder: the "Alle niveaus" table of the coin page, alive. The live price is a lift that climbs and drops through the
+   rungs: the air above and below it shrinks as it nears the next level, and a level it passes slides through it to the
+   other side with a burst in its colour. Every trade sparks off the lift (green up for buyers, red down for sellers),
+   real liquidations ring out in purple, levels glow as the price comes close, and every 15 s the book is read again:
+   sizes count over, bars grow or shrink, new levels slide in and gone ones fade out.
+   Stand-alone like Zee; the data part is copied from zee.html, so it computes exactly what the coin page shows. */
+:root{
+  color-scheme: dark;
+  --bg:#05090b; --row:#0d1417; --row2:#111a1e; --line:#1a252a; --line2:#21313a; --txt:#eef4f0; --dim:#8aa0a6; --faint:#4a5d63;
+  --up:#35ffb4; --dn:#ff4f6d; --stop:#ffc35a; --liq:#ad8bff; --btc:#f7931a;
+  --mono:'JetBrains Mono','SF Mono',Consolas,monospace; --sans:'Inter',system-ui,sans-serif;
+  --rh:52px; --nh:78px; --top:calc(env(safe-area-inset-top,0px) + 74px);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow:hidden}
+body{background:radial-gradient(120% 60% at 50% 50%,#0b1418 0%,var(--bg) 70%)}
+#top{position:fixed;top:0;left:0;right:0;z-index:5;padding:calc(env(safe-area-inset-top,0px) + 10px) 16px 10px;
+  background:#05090b;display:flex;flex-direction:column;align-items:center}
+#top:after{content:'';position:absolute;left:0;right:0;top:100%;height:22px;background:linear-gradient(#05090b,#05090b00);pointer-events:none}
+.tools:before{content:'';position:fixed;left:0;right:0;bottom:0;height:calc(max(12px,env(safe-area-inset-bottom,0px)) + 58px);z-index:-1;
+  background:linear-gradient(#05090b00,#05090bd9 60%);pointer-events:none}
+#top .in{width:100%;max-width:620px;display:flex;align-items:center;gap:10px}
+.coin{width:26px;height:26px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffc46b,var(--btc) 55%,#b8640a);flex:none;
+  box-shadow:0 0 18px -2px rgba(247,147,26,.6);display:grid;place-items:center;font:800 14px var(--sans);color:#3a1d00}
+#tp{font:700 20px var(--mono);letter-spacing:-.01em;transition:color .5s}
+#tp.u{color:var(--up);transition:none} #tp.d{color:var(--dn);transition:none}
+#tc{font:600 12px var(--mono);color:var(--dim)}
+#verd{margin-left:auto;font:700 12px var(--mono);text-align:right;line-height:1.25}
+#verd small{display:block;font:500 10px var(--mono);color:var(--faint);letter-spacing:.04em}
+.flow{width:100%;max-width:620px;margin-top:9px;display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;font:600 10px var(--mono);color:var(--dim)}
+.flow .b{height:5px;border-radius:3px;background:var(--dn);overflow:hidden;box-shadow:0 0 10px -2px rgba(255,79,109,.5)}
+.flow .b i{display:block;height:100%;width:50%;background:var(--up);box-shadow:0 0 10px var(--up);transition:width .6s cubic-bezier(.3,.7,.3,1)}
+#sc{position:fixed;inset:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none;outline:none}
+#sc::-webkit-scrollbar{display:none}
+#lad{position:relative;max-width:620px;margin:calc(var(--top) + 38vh) auto 50vh;padding:0 12px}
+#lad .frame{position:absolute;left:12px;right:12px;top:-1px;bottom:-1px;border:1px solid var(--line2);border-radius:14px;pointer-events:none;
+  box-shadow:0 0 0 1px rgba(0,0,0,.4),0 30px 80px -30px rgba(0,0,0,.8)}
+#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:3}
+.r{position:absolute;left:12px;right:12px;top:0;height:var(--rh);display:grid;grid-template-columns:1fr .95fr 1.45fr 1.1fr;align-items:center;
+  padding:0 18px 0 22px;border-bottom:1px solid var(--line);font:500 15px var(--mono);color:#dfe8e4;will-change:transform,opacity;
+  --g:0;--cr:238,244,240;overflow:hidden;
+  background:linear-gradient(90deg,rgba(var(--cr),calc(var(--g)*.26)),rgba(var(--cr),calc(var(--g)*.06)) 55%,rgba(var(--cr),0)),var(--row)}
+.r>*{position:relative;z-index:1;white-space:nowrap}
+.r .v{text-align:right}
+.r .m{position:absolute;z-index:0;top:0;bottom:0;right:0;width:0;background:linear-gradient(270deg,rgba(var(--cr),.2),rgba(var(--cr),0));
+  transition:width 1.1s cubic-bezier(.3,.7,.3,1)}
+.r .m:after{content:'';position:absolute;right:0;top:0;bottom:0;width:2px;background:rgba(var(--cr),.55)}
+.pill{justify-self:start;display:inline-flex;align-items:center;gap:6px;font:600 13.5px var(--sans);padding:3px 13px 4px;border-radius:20px;
+  border:1.5px solid rgba(var(--cr),.55);color:rgb(var(--cr));background:rgba(255,255,255,.03);
+  box-shadow:0 0 calc(6px + var(--g)*18px) calc(-3px + var(--g)*2px) rgba(var(--cr),calc(.45 + var(--g)*.5))}
+.r.near .pill{animation:breathe var(--bt,1.4s) ease-in-out infinite}
+@keyframes breathe{50%{transform:scale(1.06);border-color:rgba(var(--cr),1)}}
+.r.x{color:var(--faint)}
+.r.x .pill{opacity:.55;text-decoration:line-through;text-decoration-thickness:1.5px}
+.r.x .v:after{content:' ✓';color:rgb(var(--cr))}
+.r.hit{animation:hit 1.1s ease-out}
+@keyframes hit{0%{box-shadow:inset 0 0 0 999px rgba(var(--cr),.55)}100%{box-shadow:inset 0 0 0 999px rgba(var(--cr),0)}}
+.r.real .pill{animation:realp .9s ease-out 2}
+@keyframes realp{30%{transform:scale(1.15);box-shadow:0 0 26px 2px rgba(var(--cr),.9)}}
+.r.grow .v{animation:grow 1.2s ease-out} .r.shrink .v{animation:shrink 1.2s ease-out}
+@keyframes grow{0%{color:var(--up);text-shadow:0 0 10px var(--up)}} @keyframes shrink{0%{color:var(--dn);text-shadow:0 0 10px var(--dn)}}
+.r:first-of-type{border-radius:13px 13px 0 0}
+/* the lift */
+.now{position:absolute;left:4px;right:4px;top:0;height:var(--nh);z-index:2;display:grid;grid-template-columns:1fr .95fr 1.45fr 1.1fr;align-items:center;
+  padding:0 18px 0 26px;border-radius:12px;will-change:transform;
+  background:linear-gradient(90deg,rgba(238,244,240,.17),rgba(110,200,255,.07) 60%,rgba(238,244,240,.03)),#141d21;
+  border:1px solid rgba(238,244,240,.28);box-shadow:0 0 0 1px rgba(0,0,0,.5),0 10px 40px -8px rgba(0,0,0,.9),0 0 34px -10px rgba(238,244,240,.35)}
+.now .p{font:700 25px var(--mono);letter-spacing:-.01em;text-shadow:0 0 14px rgba(238,244,240,.35);transition:color .6s}
+.now .p.u{color:var(--up);transition:none} .now .p.d{color:var(--dn);transition:none}
+.now .c{font:700 15px var(--mono);color:#dfe8e4}
+.nowlbl{justify-self:start;display:inline-flex;align-items:center;gap:9px;font:700 13px var(--sans);letter-spacing:.05em;text-transform:uppercase;
+  border:1.5px solid rgba(238,244,240,.4);border-radius:20px;padding:5px 15px 6px;background:rgba(255,255,255,.04)}
+.nowlbl i{width:8px;height:8px;border-radius:50%;background:var(--up);box-shadow:0 0 9px var(--up);animation:dot 1.6s ease-in-out infinite}
+@keyframes dot{50%{opacity:.35;transform:scale(.7)}}
+.now .mv{text-align:right;font:600 12px var(--mono);color:var(--dim);line-height:1.35}
+.now .mv b{display:block;font-size:13px}
+.now .pulse{position:absolute;inset:-1px;border-radius:12px;pointer-events:none;border:2px solid transparent}
+.now .pulse.u{animation:pu .7s ease-out} .now .pulse.d{animation:pd .7s ease-out}
+@keyframes pu{0%{border-color:var(--up);box-shadow:0 0 30px var(--up)}} @keyframes pd{0%{border-color:var(--dn);box-shadow:0 0 30px var(--dn)}}
+/* the air between the lift and the next rung, with the distance still to go */
+.gap{position:absolute;left:12px;right:12px;top:0;display:flex;align-items:center;justify-content:center;pointer-events:none;overflow:hidden;
+  font:600 11px var(--mono);color:var(--faint);background:rgba(5,9,11,.75);will-change:transform,height}
+.gap:before{content:'';position:absolute;left:50%;top:0;bottom:0;border-left:1px dashed var(--line2)}
+.gap span{position:relative;background:var(--bg);padding:1px 8px;border-radius:8px;border:1px solid var(--line)}
+.gap.up span{color:var(--up)} .gap.dn span{color:var(--dn)}
+.enter{animation:enter .7s cubic-bezier(.2,.8,.3,1) both}
+@keyframes enter{from{opacity:0;clip-path:inset(0 0 0 100%)}}
+.leave{opacity:0;transition:opacity .5s}
+#toast{position:fixed;left:0;right:0;top:calc(var(--top) + 6px);z-index:6;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none;padding:0 16px}
+#toast div{width:100%;max-width:440px;background:rgba(8,14,17,.92);border:1px solid var(--line2);border-left:3px solid;padding:8px 14px 9px 12px;border-radius:8px;
+  animation:tin .35s cubic-bezier(.2,.8,.3,1);transition:opacity .5s,transform .5s;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+#toast b{display:block;font:800 13px var(--sans);letter-spacing:.06em}
+#toast span{font:500 11px var(--mono);color:var(--dim)}
+@keyframes tin{from{opacity:0;transform:translateY(-14px) scale(.96)}}
+.tools{position:fixed;left:0;right:0;bottom:max(12px,env(safe-area-inset-bottom,0px));z-index:6;display:flex;justify-content:center;gap:6px;pointer-events:none}
+.tools a,.tools button{pointer-events:auto;font:600 11px var(--mono);color:var(--dim);text-decoration:none;border:1px solid var(--line2);border-radius:8px;padding:8px 12px;
+  background:rgba(5,9,11,.8);cursor:pointer;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.tools a:hover,.tools button:hover{color:var(--txt)}
+.tools button[aria-pressed="true"]{color:var(--txt);border-color:#4d6670}
+.tools a:focus-visible,.tools button:focus-visible,.panel button:focus-visible{outline:2px solid var(--up);outline-offset:2px}
+#msg{position:fixed;inset:0;display:grid;place-items:center;text-align:center;font:500 12px var(--mono);letter-spacing:.1em;color:var(--dim);padding:24px;pointer-events:none;z-index:4}
+#msg[hidden]{display:none}
+.panel{position:fixed;left:12px;right:12px;bottom:calc(max(12px,env(safe-area-inset-bottom,0px)) + 48px);z-index:7;max-width:460px;margin:0 auto;max-height:62vh;overflow:auto;
+  background:rgba(8,14,17,.95);border:1px solid var(--line2);border-radius:12px;padding:16px 18px;font-size:12.5px;line-height:1.55;color:#cfdad6;
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.panel[hidden]{display:none}
+.panel .x{position:absolute;top:6px;right:8px;background:none;border:0;color:var(--dim);font:500 22px var(--sans);cursor:pointer;padding:2px 8px;line-height:1}
+.panel h2{font:800 14px var(--sans);letter-spacing:.04em;margin-bottom:8px;color:var(--txt)}
+.panel ul{list-style:none;display:grid;gap:8px;margin:10px 0}
+.panel li{display:grid;grid-template-columns:14px 1fr;gap:10px}
+.panel li i{width:10px;height:10px;border-radius:50%;margin-top:5px}
+.panel p{color:var(--dim)}
+@media (max-width:520px){
+  :root{--rh:46px;--nh:70px}
+  .r{font-size:13px;padding:0 12px 0 14px;grid-template-columns:1fr .95fr 1.5fr 1.15fr}
+  .pill{font-size:12px;padding:2px 10px 3px}
+  .now{padding:0 12px 0 16px;grid-template-columns:1.25fr .8fr 1.6fr .6fr}
+  .now .p{font-size:20px} .now .c{font-size:13px}
+  .nowlbl{font-size:11px;padding:4px 10px 5px;gap:7px}
+  .now .mv{font-size:10.5px} .now .mv b{font-size:11px}
+  #lad{padding:0 8px} .r,.gap,#lad .frame{left:8px;right:8px} .now{left:2px;right:2px}
+}
+@media (prefers-reduced-motion:reduce){.r.near .pill,.nowlbl i,.enter,.r.hit,.r.real .pill,#toast div{animation:none}}
+</style>
+</head>
+<body>
+<div id="sc" tabindex="0" aria-label="Prijsladder van BTC met de live prijs">
+  <div id="lad"><div class="frame"></div></div>
+</div>
+<canvas id="fx" aria-hidden="true"></canvas>
+<header id="top">
+  <div class="in">
+    <div class="coin">₿</div>
+    <div><div id="tp">—</div><div id="tc">BTC · live</div></div>
+    <div id="verd">—<small>binnen 3 dagen</small></div>
+  </div>
+  <div class="flow" title="Wie er nu agressief koopt of verkoopt (OKX, laatste 10 s)"><span id="fb">kopers —</span><div class="b"><i id="fbar"></i></div><span id="fs">— verkopers</span></div>
+</header>
+<div id="msg">LADDER LADEN…</div>
+<div id="toast" aria-live="polite"></div>
+<div class="panel" id="help" hidden role="dialog" aria-label="Uitleg">
+  <button class="x" type="button" aria-label="Sluiten">×</button>
+  <h2>De ladder</h2>
+  <p>De tabel “Alle niveaus” van de muntpagina, levend. De prijs is een lift die door de sporten klimt en zakt.</p>
+  <ul>
+    <li><i style="background:#eef4f0"></i><span><b>Huidige prijs</b> · de ruimte erboven en eronder krimpt naarmate de prijs het volgende niveau nadert; het getal is de afstand nog.</span></li>
+    <li><i style="background:var(--dn)"></i><span><b>Verkoopmuur / Koopmuur</b> · grote orders in het boek, volume-gewogen over alle beurzen.</span></li>
+    <li><i style="background:var(--stop)"></i><span><b>Koopstops / Verkoopstops</b> · geschatte stops net voorbij oude toppen en bodems (score 0–100).</span></li>
+    <li><i style="background:var(--liq)"></i><span><b>Short-liq. / Long-liq.</b> · geschatte liquidaties; een echte liquidatie laat ze paars oplichten.</span></li>
+    <li><i style="background:var(--up)"></i><span><b>Doel ▲ / ▼</b> · de twee doelen, met de kans welke eerst komt.</span></li>
+  </ul>
+  <p>Vonken: elke trade op OKX (groen omhoog = kopers, rood omlaag = verkopers). Een niveau dat de prijs passeert schuift erdoorheen en spat uiteen; het blijft doorgestreept tot de volgende meting (elke 15 s). Scrollen kan; na 8 s volgt de ladder de prijs weer.</p>
+</div>
+<div class="tools">
+  <a href="./#btc">← GlassSphere</a>
+  <button id="follow" type="button" aria-pressed="true">⌖ Volg</button>
+  <button id="helpb" type="button" aria-pressed="false">? Uitleg</button>
+</div>
+
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const msg = t => { $('msg').hidden = !t; if (t) $('msg').textContent = t; };
+
+/* =====================================================================================================================
+   DATA: copied from zee.html (which copies held.html and index.html): asset, fetching, estimates, levels and targets, BTC
+   ===================================================================================================================== */
+const A = { name: 'BTC', file: 'glasssphere-data.json', okx: 'BTC-USDT-SWAP', okxCt: 0.01, usdt: 'BTCUSDT', gate: 'BTC_USDT', gateMul: 1e-4, gateIv: '10',
+  htx: 'BTC-USDT', htxCt: 0.001, deribit: 'BTC-PERPETUAL', deribitUsd: true, bitmex: 'XBTUSD', cdc: 'BTCUSD-PERP', hl: 'BTC', hlSig: 3, dydx: 'BTC-USD',
+  bin: 10, histBin: 100, buckets: [25, 50, 100, 250, 500], auto: { 0.015: 50, 0.03: 100, 0.06: 250, 0.12: 500 }, dec: 0 };
+const digits = step => Math.max(0, -Math.floor(Math.log10(step))) + 3;
+const nice = x => { const m = 10 ** Math.floor(Math.log10(x));
+  return [1, 2, 2.5, 5, 10].map(c => c * m).reduce((a, b) => Math.abs(Math.log(x / b)) < Math.abs(Math.log(x / a)) ? b : a); };
+const LEV = [[5, .30], [10, .35], [25, .25], [50, .10]];
+const MAINT = 0.004, HALF_LIFE_H = 168, HZ_MIN = 0.3, HORIZON = 3;
+const fx = (x, d) => x.toFixed(d).replace('.', ',');
+const fmtP = p => p.toLocaleString('nl-NL', { minimumFractionDigits: A.dec, maximumFractionDigits: A.dec });
+const fmtUsd = v => v >= 1e9 ? '$' + fx(v / 1e9, 2) + ' mld' : v >= 1e6 ? '$' + fx(v / 1e6, 1) + ' mln' : v >= 1e3 ? '$' + fx(v / 1e3, 0) + 'K' : '$' + fx(v, 0);
+const pct = (p, ref) => { const v = (p / ref - 1) * 100; return (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2).replace('.', ',') + '%'; };
+
+async function getJSON(url, opts = {}) {
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 9000);
+  try { const r = await fetch(url, { ...opts, signal: ctl.signal }); if (!r.ok) throw new Error(r.status); return await r.json(); }
+  finally { clearTimeout(t); }
+}
+const hlPost = body => getJSON('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+function binLevels(rows, side) {
+  const m = {}, B = A.bin;
+  for (const [p, usd] of rows) {
+    if (!(usd > 0)) continue;
+    const k = +((side === 'b' ? Math.floor(p / B + 1e-9) : Math.ceil(p / B - 1e-9)) * B).toFixed(digits(B));
+    m[k] = (m[k] || 0) + usd;
+  }
+  return Object.entries(m).map(([k, v]) => [+k, Math.round(v)]);
+}
+const BOOKS = {
+  okx: async () => { const b = (await getJSON(`https://www.okx.com/api/v5/market/books-full?instId=${A.okx}&sz=5000`)).data[0];
+    const f = r => [+r[0], +r[1] * A.okxCt * +r[0]]; return { b: b.bids.map(f), a: b.asks.map(f) }; },
+  binance: async () => { const j = await getJSON(`https://fapi.binance.com/fapi/v1/depth?symbol=${A.usdt}&limit=1000`);
+    const f = r => [+r[0], +r[1] * +r[0]]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
+  deribit: async () => { const j = (await getJSON(`https://www.deribit.com/api/v2/public/get_order_book?instrument_name=${A.deribit}&depth=10000`)).result;
+    const f = A.deribitUsd ? r => r : r => [r[0], r[1] * r[0]]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
+  gate: async () => { const j = await getJSON(`https://api.gateio.ws/api/v4/futures/usdt/order_book?contract=${A.gate}&limit=300&interval=${A.gateIv}`);
+    const f = r => [+r.p, r.s * A.gateMul * +r.p]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
+  hyperliquid: async () => { const j = await hlPost({ type: 'l2Book', coin: A.hl, nSigFigs: A.hlSig });
+    const f = r => [+r.px, +r.sz * +r.px]; return { b: j.levels[0].map(f), a: j.levels[1].map(f) }; },
+  bybit: async () => { const r = (await getJSON(`https://api.bybit.com/v5/market/orderbook?category=linear&symbol=${A.usdt}&limit=500`)).result;
+    const f = x => [+x[0], +x[1] * +x[0]]; return { b: r.b.map(f), a: r.a.map(f) }; },
+  bitget: async () => { const d = (await getJSON(`https://api.bitget.com/api/v2/mix/market/merge-depth?productType=usdt-futures&symbol=${A.usdt}&limit=max&precision=scale2`)).data;
+    const f = x => [+x[0], +x[1] * +x[0]]; return { b: d.bids.map(f), a: d.asks.map(f) }; },
+  htx: async () => { const t = (await getJSON(`https://api.hbdm.com/linear-swap-ex/market/depth?contract_code=${A.htx}&type=step0`)).tick;
+    const f = x => [x[0], x[1] * A.htxCt * x[0]]; return { b: t.bids.map(f), a: t.asks.map(f) }; },
+  bitmex: async () => { const j = await getJSON(`https://www.bitmex.com/api/v1/orderBook/L2?symbol=${A.bitmex}&depth=0`);
+    const f = x => [x.price, x.size]; return { b: j.filter(x => x.side === 'Buy').map(f), a: j.filter(x => x.side === 'Sell').map(f) }; },
+  cryptocom: async () => { const d = (await getJSON(`https://api.crypto.com/exchange/v1/public/get-book?instrument_name=${A.cdc}&depth=150`)).result.data[0];
+    const f = x => [+x[0], +x[1] * +x[0]]; return { b: d.bids.map(f), a: d.asks.map(f) }; },
+  dydx: async () => { const j = await getJSON(`https://indexer.dydx.trade/v4/orderbooks/perpetualMarket/${A.dydx}`);
+    const f = x => [+x.price, +x.size * +x.price]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
+};
+const MARKET = {
+  okx: async () => { const [o, t] = await Promise.all([getJSON(`https://www.okx.com/api/v5/public/open-interest?instType=SWAP&instId=${A.okx}`),
+      getJSON(`https://www.okx.com/api/v5/market/ticker?instId=${A.okx}`)]);
+    return { oi: +o.data[0].oiUsd, vol: +t.data[0].volCcy24h * +t.data[0].last }; },
+  gate: async () => { const [t] = await getJSON(`https://api.gateio.ws/api/v4/futures/usdt/tickers?contract=${A.gate}`);
+    return { oi: +t.total_size * A.gateMul * +t.mark_price, vol: +t.volume_24h_quote }; },
+  bitget: async () => { const t = (await getJSON(`https://api.bitget.com/api/v2/mix/market/ticker?symbol=${A.usdt}&productType=usdt-futures`)).data[0];
+    return { oi: +t.holdingAmount * +t.lastPr, vol: +t.usdtVolume }; },
+  htx: async () => ({ vol: +(await getJSON(`https://api.hbdm.com/linear-swap-ex/market/detail/merged?contract_code=${A.htx}`)).tick.trade_turnover }),
+  deribit: async () => { const r = (await getJSON(`https://www.deribit.com/api/v2/public/get_book_summary_by_instrument?instrument_name=${A.deribit}`)).result[0];
+    return { oi: A.deribitUsd ? r.open_interest : r.open_interest * r.mark_price, vol: r.volume_usd }; },
+  cryptocom: async () => { const t = (await getJSON(`https://api.crypto.com/exchange/v1/public/get-tickers?instrument_name=${A.cdc}`)).result.data[0];
+    return { oi: +t.oi * +t.a, vol: +t.vv }; },
+  hyperliquid: async () => { const [m, c] = await hlPost({ type: 'metaAndAssetCtxs' });
+    const x = c[m.universe.findIndex(u => u.name === A.hl)]; return { oi: +x.openInterest * +x.markPx, vol: +x.dayNtlVlm }; },
+  dydx: async () => { const x = (await getJSON(`https://indexer.dydx.trade/v4/perpetualMarkets?ticker=${A.dydx}`)).markets[A.dydx];
+    return { oi: +x.openInterest * +x.oraclePrice, vol: +x.volume24H }; },
+  binance: async () => { const [o, t, f] = await Promise.all([getJSON(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${A.usdt}`),
+      getJSON(`https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=${A.usdt}`), getJSON(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${A.usdt}`)]);
+    return { oi: +o.openInterest * +f.markPrice, vol: +t.quoteVolume }; },
+  bybit: async () => { const t = (await getJSON(`https://api.bybit.com/v5/market/tickers?category=linear&symbol=${A.usdt}`)).result.list[0];
+    return { oi: +t.openInterestValue, vol: +t.turnover24h }; },
+  bitmex: async () => { const [x] = await getJSON(`https://www.bitmex.com/api/v1/instrument?symbol=${A.bitmex}`); return { oi: x.openInterest, vol: x.foreignNotional24h || 0 }; },
+};
+async function fetchAll(table, wrap) {
+  const out = {};
+  await Promise.all(Object.entries(table).map(async ([k, fn]) => { try { out[k] = wrap(await fn(), k); } catch (e) {} }));
+  return out;
+}
+const fetchBooks = () => fetchAll(BOOKS, r => ({ b: binLevels(r.b, 'b'), a: binLevels(r.a, 'a') }));
+const fetchMarket = () => fetchAll(MARKET, r => r);
+async function fetchSeries() {
+  const base = 'https://www.okx.com/api/v5/market/', toC = r => [+r[0], +r[1], +r[2], +r[3], +r[4], +r[7]];
+  const rows = (await getJSON(base + `candles?instId=${A.okx}&bar=1H&limit=300`)).data;
+  try { rows.push(...(await getJSON(base + `history-candles?instId=${A.okx}&bar=1H&limit=100&after=${rows[rows.length - 1][0]}`)).data); } catch (e) {}
+  const candles = rows.map(toC).sort((a, b) => a[0] - b[0]).slice(-400);
+  const st = await getJSON(`https://api.gateio.ws/api/v4/futures/usdt/contract_stats?contract=${A.gate}&interval=1h&from=${candles[0][0] / 1000}&limit=1000`);
+  return { candles, oi: st.map(r => [r.time * 1000, Math.round(r.open_interest_usd)]), taker: st.map(r => [r.time * 1000, r.lsr_taker / (1 + r.lsr_taker)]) };
+}
+// Stops: just beyond swing highs / lows that price has not traded through since.
+function estimateStops(candles, price, lo, hi) {
+  const out = [], n = candles.length, now = candles[n - 1][0];
+  const sufHi = new Float64Array(n + 1).fill(-Infinity), sufLo = new Float64Array(n + 1).fill(Infinity);
+  for (let i = n - 1; i >= 0; i--) { sufHi[i] = Math.max(sufHi[i + 1], candles[i][2]); sufLo[i] = Math.min(sufLo[i + 1], candles[i][3]); }
+  for (const [L, mult] of [[4, 1], [12, 2]]) {
+    for (let i = L; i < n - L; i++) {
+      const h = candles[i][2], l = candles[i][3];
+      let isH = true, isL = true;
+      for (let k = i - L; k <= i + L; k++) { if (k === i) continue; if (candles[k][2] >= h) isH = false; if (candles[k][3] <= l) isL = false; }
+      if (!isH && !isL) continue;
+      const rec = Math.pow(0.5, (now - candles[i][0]) / 3.6e6 / HALF_LIFE_H);
+      let vol = 0; for (let k = Math.max(0, i - 2); k <= Math.min(n - 1, i + 2); k++) vol += candles[k][5];
+      const w = vol * rec * mult;
+      if (isH && !(sufHi[i + 1] > h)) out.push({ p: h * 1.001, side: 'buy', w });
+      if (isL && !(sufLo[i + 1] < l)) out.push({ p: l * 0.999, side: 'sell', w });
+    }
+  }
+  const ws = out.map(o => o.w).sort((a, b) => a - b), med = ws.length ? ws[ws.length >> 1] : 1;
+  const rs = nice(price * 0.012);
+  for (let i = Math.ceil(lo / rs); i * rs <= hi; i++) {
+    const p = i * rs; out.push({ p: p > price ? p + rs * 0.05 : p - rs * 0.05, side: p > price ? 'buy' : 'sell', w: med * 0.25 });
+  }
+  return out.filter(o => (o.side === 'buy') === (o.p > price));
+}
+// Liquidations: OI added each hour at that hour's average price, split long/short, at the leverage mix that fit best.
+function estimateLiqs(candles, oi, taker) {
+  const oiAt = new Map(oi), tkAt = new Map(taker || []); let pos = [];
+  candles.forEach(([t, o, h, l, c]) => {
+    pos = pos.filter(q => q.side === 'long' ? l > q.p : h < q.p);
+    const a = oiAt.get(t), b = oiAt.get(t + 3.6e6), d = a != null && b != null ? b - a : null;
+    if (d != null && d < 0) { const r = b / a; pos.forEach(q => q.usd *= r); }
+    else if (d != null) {
+      let share = h > l ? (c - l) / (h - l) : 0.5;
+      const tk = tkAt.get(t); if (tk != null) share = 0.5 * share + 0.5 * tk;
+      const entry = (o + h + l + c) / 4;
+      for (const [L, w] of LEV) {
+        pos.push({ p: entry * (1 - 1 / L + MAINT), side: 'long', usd: d * share * w });
+        pos.push({ p: entry * (1 + 1 / L - MAINT), side: 'short', usd: d * (1 - share) * w });
+      }
+    }
+  });
+  return pos;
+}
+function volumeWeights(books, market, P) {
+  const depth = {};
+  for (const [ex, bk] of Object.entries(books)) {
+    let s = 0; for (const [p, v] of bk.b) if (p >= P * 0.99) s += v; for (const [p, v] of bk.a) if (p <= P * 1.01) s += v; depth[ex] = s;
+  }
+  const has = Object.keys(depth).filter(e => market[e]?.vol > 0);
+  const dT = has.reduce((s, e) => s + depth[e], 0), vT = has.reduce((s, e) => s + market[e].vol, 0);
+  const w = {};
+  for (const e of Object.keys(depth)) w[e] = has.includes(e) && dT && vT && depth[e] ? Math.min(1, (market[e].vol / vT) / (depth[e] / dT)) : 1;
+  return w;
+}
+function histEntry(books, weights, P, ts) {
+  const m = new Map(), HB = A.histBin;
+  for (const [ex, bk] of Object.entries(books)) {
+    const w = weights[ex] ?? 1;
+    [['b', 0], ['a', 1]].forEach(([side, i]) => { for (const [p, v] of bk[side]) {
+      if (p < P * 0.94 || p > P * 1.06) continue;
+      const k = +(Math.floor(p / HB + 1e-9) * HB).toFixed(digits(HB)), o = m.get(k) || [0, 0]; o[i] += v * w; m.set(k, o); } });
+  }
+  return { t: Math.floor(ts / 3.6e6) * 3.6e6, b: [...m].sort((x, y) => x[0] - y[0]).map(([k, [b, a]]) => [k, Math.round(b), Math.round(a)]) };
+}
+const READ = { range: 0.15 };
+function poolsOf(stops, liqs, P) {
+  const B = nice(P * 0.0012), lo = P * (1 - READ.range), hi = P * (1 + READ.range), bins = new Map();
+  const add = (p, kind, v) => { if (p < lo || p > hi) return; const k = Math.floor(p / B + 1e-9) * B;
+    const o = bins.get(k) || { stop: 0, liq: 0 }; o[kind] += v; bins.set(k, o); };
+  stops.forEach(s => add(s.p, 'stop', s.w)); liqs.forEach(q => add(q.p, 'liq', q.usd));
+  let mS = 1e-9, mL = 1e-9; for (const o of bins.values()) { if (o.stop > mS) mS = o.stop; if (o.liq > mL) mL = o.liq; }
+  return [...bins].map(([k, o]) => ({ p: k + B / 2, stop: o.stop / mS, liq: o.liq / mL, liqUsd: o.liq, v: o.stop / mS + o.liq / mL }));
+}
+function targetsOf(cs, pools, P, days) {
+  const n = cs.length, ranges = [];
+  for (let e = n; e >= 24 && ranges.length < 14; e -= 24) { let h = -Infinity, l = Infinity;
+    for (let k = e - 24; k < e; k++) { if (cs[k][2] > h) h = cs[k][2]; if (cs[k][3] < l) l = cs[k][3]; } ranges.push(h - l); }
+  const range24 = ranges.reduce((s, x) => s + x, 0) / ranges.length;
+  const rH = range24 * Math.sqrt(days), minD = HZ_MIN * rH;
+  const best = arr => arr.length ? arr.reduce((x, y) => y.v > x.v ? y : x) : undefined;
+  const tUp = best(pools.filter(q => q.p - P > minD && q.p - P <= rH));
+  const tDn = best(pools.filter(q => P - q.p > minD && P - q.p <= rH));
+  return { range24, rH, minD, tUp, tDn, pUp: tUp && tDn ? (P - tDn.p) / (tUp.p - tDn.p) : null };
+}
+
+// D: the data as the coin page holds it; LV: the levels of its "Alle niveaus" table; TG: its two targets
+let D = null, LV = [], TG = null, nBooks = 0, mode = '', updAt = 0, liveHist = [], exKey = '', exKeyPrev = '';
+function setData(raw, how) {
+  const price = raw.price, lo = price * 0.85, hi = price * 1.15, market = raw.market || {};
+  const weights = volumeWeights(raw.books, market, price);
+  const gateOi = raw.oi?.length ? raw.oi[raw.oi.length - 1][1] : 0, total = Object.values(market).reduce((s, m) => s + (m.oi || 0), 0);
+  const scale = gateOi && total > gateOi ? total / gateOi : 1;
+  const liqs = estimateLiqs(raw.candles, raw.oi || [], raw.taker).map(q => ({ ...q, usd: q.usd * scale }));
+  // the book history: the hourly file's, the hours seen live since, and now
+  const hist = new Map((raw.bookHist || []).map(e => [e.t, e])); for (const e of liveHist) hist.set(e.t, e);
+  const cur = histEntry(raw.books, weights, price, raw.ts); hist.set(cur.t, cur);
+  if (how === 'live') liveHist = [...liveHist.filter(x => x.t !== cur.t), cur].slice(-48);
+  D = { ...raw, market, weights, stops: estimateStops(raw.candles, price, lo, hi), liqs, bookHist: [...hist.values()].sort((a, b) => a.t - b.t).slice(-48) };
+  nBooks = Object.keys(raw.books).length; mode = how; updAt = raw.ts; exKeyPrev = exKey; exKey = Object.keys(raw.books).sort().join();
+  // targets, and the chance the upper one comes first (renderReading in index.html)
+  const r = targetsOf(D.candles, poolsOf(D.stops, D.liqs, price), price, HORIZON);
+  let prob = null, first = null;
+  if (r.pUp != null) { const upFirst = r.pUp >= 0.5; prob = upFirst ? r.pUp : 1 - r.pUp; first = upFirst ? r.tUp : r.tDn; }
+  TG = { up: r.tUp?.p, dn: r.tDn?.p, first: first?.p, prob };
+  // the view range ("Doelen") and its automatic bucket, then the four largest of each kind on each side (buildModel, renderLevels)
+  const far = Math.max(r.tUp ? r.tUp.p / price - 1 : 0, r.tDn ? 1 - r.tDn.p / price : 0);
+  const rg = far ? Math.max(0.012, Math.min(0.25, far * 1.22)) : 0.03, ks = Object.keys(A.auto).map(Number);
+  const B = A.auto[ks.reduce((a, b) => Math.abs(Math.log(b / rg)) < Math.abs(Math.log(a / rg)) ? b : a)];
+  const i0 = Math.floor(price * (1 - rg) / B), i1 = Math.ceil(price * (1 + rg) / B), N = i1 - i0 + 1;
+  const bid = new Float64Array(N), ask = new Float64Array(N), stop = new Float64Array(N), liq = new Float64Array(N);
+  const idx = p => Math.floor(p / B + 1e-9) - i0;
+  for (const [ex, bk] of Object.entries(D.books)) { const w = weights[ex] ?? 1;
+    for (const [side, arr] of [['b', bid], ['a', ask]]) for (const [p, v] of bk[side]) { const j = idx(p); if (j >= 0 && j < N) arr[j] += v * w; } }
+  for (const s of D.stops) { const j = idx(s.p); if (j >= 0 && j < N) stop[j] += s.w; }
+  for (const q of D.liqs) { const j = idx(q.p); if (j >= 0 && j < N) liq[j] += q.usd; }
+  // presence: in how many of the last 6 hours (before this one) the wall held at least half its size now
+  const HB = A.histBin, sub = Math.max(1, Math.round(HB / B)), hr = Math.floor(raw.ts / 3.6e6) * 3.6e6;
+  const prev = D.bookHist.filter(h => h.t < hr).slice(-6).map(e => { const sum = new Float64Array(N);
+    for (const [p, vb, va] of e.b) for (let q = 0; q < sub; q++) { const j = idx(p + (q + .5) * HB / sub); if (j >= 0 && j < N) sum[j] += (vb + va) / sub; }
+    return sum; });
+  const persist = j => { const w = bid[j] + ask[j]; return prev.length < 2 || !w ? null : [prev.filter(h => h[j] >= w * .5).length, prev.length]; };
+  const mx = a => { let m = 1e-9; for (const v of a) if (v > m) m = v; return m; };
+  const mB = mx([...bid, ...ask]), mS = mx(stop), mL = mx(liq);
+  const top = (arr, above, k) => { const out = [];
+    for (let j = 0; j < N; j++) { const mid = (i0 + j + .5) * B; if ((mid > price) === above && arr[j] > 0) out.push([mid, arr[j], j]); }
+    return out.sort((a, b) => b[1] - a[1]).slice(0, k); };
+  const rows = [];
+  for (const [k, arr, above, m, fmt] of [['ask', ask, true, mB, fmtUsd], ['bid', bid, false, mB, fmtUsd],
+    ['stop', stop, true, mS, v => 'score ' + Math.round(v / mS * 100)], ['stop', stop, false, mS, v => 'score ' + Math.round(v / mS * 100)],
+    ['liq', liq, true, mL, fmtUsd], ['liq', liq, false, mL, fmtUsd]])
+    for (const [p, v, j] of top(arr, above, 4)) rows.push({ key: k + '|' + p, k, p, s: v, rel: v / m, v: fmt(v), above, ps: k === 'bid' || k === 'ask' ? persist(j) : null });
+  LV = rows; D.B = B; D.range = rg;
+  onLevels();
+}
+async function loadSite() {
+  if (!/^https?:$/.test(location.protocol)) return null;
+  try { const r = await fetch(A.file, { cache: 'no-store' }); return r.ok ? await r.json() : null; } catch (e) { return null; }
+}
+let series = null, seriesAt = 0, market = null, site = null;
+async function loadLive() {
+  try {
+    if (!series || Date.now() - seriesAt > 5 * 60e3) {
+      const [se, mk] = await Promise.all([fetchSeries(), fetchMarket()]);
+      series = se; seriesAt = Date.now(); market = { ...(site?.market || {}), ...mk };
+    }
+    const books = await fetchBooks(); if (!Object.keys(books).length) throw new Error('no books');
+    const last = series.candles[series.candles.length - 1][4];
+    setData({ ts: Date.now(), price: live.fresh() || last, books, ...series, market, bookHist: D?.bookHist || site?.bookHist }, 'live');
+    return true;
+  } catch (e) { return false; }
+}
+// the live price: OKX's ticker stream (every trade), polling the ticker every 3 s while the stream is down
+const live = (() => {
+  let ws = null, px = null, at = 0, ping = 0, poll = 0, retry = 0;
+  function apply(p) { if (!(p > 0)) return; const prev = px; px = p; at = Date.now(); onPrice(prev, p); }
+  async function pollOnce() { try { apply(+(await getJSON(`https://www.okx.com/api/v5/market/ticker?instId=${A.okx}`)).data[0].last); } catch (e) {} }
+  function open() {
+    if (ws) return; let me; try { me = ws = new WebSocket('wss://ws.okx.com:8443/ws/v5/public'); } catch (e) { ws = null; return; }
+    me.onopen = () => { retry = 0; clearInterval(poll); poll = 0; me.send(JSON.stringify({ op: 'subscribe', args: [{ channel: 'tickers', instId: A.okx }, { channel: 'liquidation-orders', instType: 'SWAP' }, { channel: 'trades', instId: A.okx }] }));
+      ping = setInterval(() => me.readyState === 1 && me.send('ping'), 25e3); };
+    me.onmessage = e => { if (e.data === 'pong') return; try { const m = JSON.parse(e.data); if (!m.data?.[0]) return;
+      if (m.arg?.channel === 'liquidation-orders') { for (const d of m.data) if (d.instId === A.okx) for (const x of d.details || [])
+        realLiq('OKX', x.posSide === 'long' || (x.posSide !== 'short' && x.side === 'sell'), +x.bkPx, +x.sz * A.okxCt * +x.bkPx); }
+      else if (m.arg?.channel === 'trades') { for (const d of m.data) TAKER.add(d.side, +d.sz * A.okxCt * +d.px); apply(+m.data[m.data.length - 1].px); }
+      else apply(+m.data[0].last); } catch (er) {} };
+    me.onclose = () => { clearInterval(ping); if (ws !== me) return; ws = null; if (!poll) poll = setInterval(pollOnce, 3000); setTimeout(open, Math.min(30e3, 1000 * 2 ** retry++)); };
+    me.onerror = () => me.close();
+  }
+  return { start() { pollOnce(); open(); }, fresh: () => px && Date.now() - at < 10e3 ? px : null, get px() { return px; }, get at() { return at; } };
+})();
+// real liquidations, as the exchanges stream them: OKX (on the price stream above), Binance and Bybit
+function feed(url, hello, onMsg, pingMsg) {
+  let retry = 0;
+  const open = () => { let ws, ping = 0; try { ws = new WebSocket(url); } catch (e) { return; }
+    ws.onopen = () => { retry = 0; if (hello) ws.send(hello); if (pingMsg) ping = setInterval(() => ws.readyState === 1 && ws.send(pingMsg), 20e3); };
+    ws.onmessage = e => { try { onMsg(JSON.parse(e.data)); } catch (er) {} };
+    ws.onclose = () => { clearInterval(ping); setTimeout(open, Math.min(60e3, 2000 * 2 ** retry++)); };
+    ws.onerror = () => ws.close(); };
+  open();
+}
+function liqFeeds() {
+  feed(`wss://fstream.binance.com/ws/${A.usdt.toLowerCase()}@forceOrder`, null, m => { const o = m.o;      // S SELL: a long was closed
+    if (o?.s === A.usdt) { const p = +o.ap || +o.p; realLiq('Binance', o.S === 'SELL', p, p * (+o.z || +o.q)); } });
+  feed('wss://stream.bybit.com/v5/public/linear', JSON.stringify({ op: 'subscribe', args: [`allLiquidation.${A.usdt}`] }),
+    m => { for (const x of m.data || []) if (x.s === A.usdt) realLiq('Bybit', x.S === 'Buy', +x.p, +x.p * +x.v); }, JSON.stringify({ op: 'ping' }));   // S Buy: a long
+}
+// aggressive buying and selling on OKX, per second (as in Zee)
+const TAKER = (() => {
+  const sec = new Map(); let avg = 0, seen = false;
+  return { add(side, usd) { const k = Math.floor(Date.now() / 1000), b = sec.get(k) || sec.set(k, { b: 0, s: 0 }).get(k); if (side === 'buy') b.b += usd; else b.s += usd; seen = true; },
+    now() { if (!seen) return { buy: .5, sell: .5, act: 1, seen }; const k = Math.floor(Date.now() / 1000); let bb = 0, ss = 0;
+      for (const [t, v] of sec) { if (t < k - 60) { sec.delete(t); continue; } if (t > k - 10) { bb += v.b; ss += v.s; } }
+      const tot = bb + ss; avg = avg ? avg + (tot - avg) * .002 : tot; return { buy: tot ? bb / tot : .5, sell: tot ? ss / tot : .5, act: avg ? tot / avg : 1, seen }; } };
+})();
+
+/* =====================================================================================================================
+   LADDER
+   ===================================================================================================================== */
+const RGB = { ask: '255,79,109', bid: '53,255,180', stop: '255,195,90', liq: '173,139,255', up: '53,255,180', dn: '255,79,109', now: '238,244,240' };
+const ORDER = { ask: 0, bid: 0, stop: 1, liq: 2, tgt: 3 };
+const nameOf = (k, above) => ({ ask: 'Verkoopmuur', bid: 'Koopmuur', stop: above ? 'Koopstops' : 'Verkoopstops', liq: above ? 'Short-liq.' : 'Long-liq.' })[k];
+const R = Math.random, PI = Math.PI;
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const ease = u => 1 - Math.pow(1 - u, 3);
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const sc = $('sc'), lad = $('lad'), cv = $('fx'), g = cv.getContext('2d');
+let RH = 52, NH = 78, W = 0, H = 0, DPR = 1;
+function resize() {
+  const cs = getComputedStyle(document.documentElement);
+  RH = parseFloat(cs.getPropertyValue('--rh')) || 52; NH = parseFloat(cs.getPropertyValue('--nh')) || 78;
+  DPR = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+}
+addEventListener('resize', resize);
+
+// the rows of the ladder, kept from one reading to the next by key (kind and price)
+const ROWS = new Map();
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const NOW = { el: el('div', 'now', '<span class="p">—</span><span class="c">0,00%</span><span class="nowlbl"><i></i>Huidige prijs</span><span class="mv"></span><div class="pulse"></div>'), y: null };
+const GAP = { up: el('div', 'gap up', '<span></span>'), dn: el('div', 'gap dn', '<span></span>') };
+lad.append(GAP.up, GAP.dn, NOW.el);
+const nowP = NOW.el.querySelector('.p'), nowMv = NOW.el.querySelector('.mv'), nowPulse = NOW.el.querySelector('.pulse');
+let SP = null, PX = null, ready = false, C24 = null;
+
+function items() {
+  const out = LV.map(L => ({ key: L.key, k: L.k, p: L.p, above: L.above, rel: L.rel, name: nameOf(L.k, L.above), cr: RGB[L.k],
+    num: L.k === 'stop' ? L.rel * 100 : L.s, fmt: L.k === 'stop' ? n => 'score ' + Math.round(n) : fmtUsd, big: L.rel >= .6 }));
+  if (TG?.prob != null) for (const [p, up] of [[TG.up, true], [TG.dn, false]]) if (p) {
+    const first = TG.first === p, ch = first ? TG.prob : 1 - TG.prob;
+    out.push({ key: 'tgt|' + (up ? 'u' : 'd'), k: 'tgt', p, above: up, rel: ch, name: up ? 'Doel ▲' : 'Doel ▼', cr: up ? RGB.up : RGB.dn,
+      num: ch * 100, fmt: n => (first ? 'eerst · ' : '') + Math.round(n) + '%', big: true });
+  }
+  return out;
+}
+function makeRow(it) {
+  const e = el('div', 'r enter', '<span class="pp"></span><span class="c"></span><span class="pill"></span><span class="v"></span><div class="m"></div>');
+  e.addEventListener('animationend', ev => { if (ev.animationName === 'enter') e.classList.remove('enter'); });
+  lad.insertBefore(e, GAP.up);
+  const [pp, c, pill, v, m] = e.children;
+  return { el: e, pp, c, pill, v, m, it, y: null, ty: 0, val: { a: it.num, b: it.num, t0: 0 }, g: -1, x: null, pct: '' };
+}
+function onLevels() {
+  const list = items(), seen = new Set();
+  for (const it of list) {
+    let r = ROWS.get(it.key);
+    if (r?.leaving) { r.el.remove(); ROWS.delete(it.key); r = null; }
+    if (!r) { r = makeRow(it); ROWS.set(it.key, r); if (ready) r.fresh = true; }
+    else if (r.it.num && Math.abs(it.num / r.it.num - 1) > .03) {          // the size changed: count over, green when it grew, red when it shrank
+      const cur = r.val.b === r.val.a ? r.val.b : lerp(r.val.a, r.val.b, ease(clamp((performance.now() - r.val.t0) / 900, 0, 1)));
+      r.val = { a: cur, b: it.num, t0: performance.now() };
+      r.el.classList.remove('grow', 'shrink'); void r.el.offsetWidth; r.el.classList.add(it.num > r.it.num ? 'grow' : 'shrink');
+    } else r.val = { a: it.num, b: it.num, t0: 0 };
+    r.it = it; seen.add(it.key);
+    r.el.style.setProperty('--cr', it.cr); r.pp.textContent = fmtP(it.p); r.pill.textContent = it.name;
+    if (r.fresh) { void r.m.offsetWidth; r.fresh = false; }
+    r.m.style.width = (Math.max(.04, it.rel) * 46).toFixed(1) + '%';
+  }
+  for (const [k, r] of ROWS) if (!seen.has(k) && !r.leaving) {
+    r.leaving = true; r.el.classList.add('leave');
+    setTimeout(() => { if (ROWS.get(k) === r) { r.el.remove(); ROWS.delete(k); } }, 520);
+  }
+  const cs = D.candles, n = cs.length; C24 = n > 25 ? cs[n - 25][4] : null;
+  if (TG?.prob != null) {
+    const upFirst = TG.first === TG.up, pc = Math.round(TG.prob * 100), lab = pc < 60 ? 'Neutraal' : upFirst ? 'Eerst omhoog' : 'Eerst omlaag';
+    $('verd').innerHTML = `<span style="color:${pc < 60 ? 'var(--dim)' : upFirst ? 'var(--up)' : 'var(--dn)'}">${lab} ${pc}%</span><small>binnen 3 dagen</small>`;
+  }
+  if (!ready) { ready = true; SP = PX = live.fresh() || D.price; layout(1, true); sc.scrollTop = scrollTarget(); }
+  msg('');
+}
+
+// the lift: rows above the price sit at the top, rows below under it; the air between the lift and the next rung
+// shrinks as the price nears it, so the lift moves continuously and a passed rung slides through it
+let nowTy = 0, airUp = 0, airDn = 0, pA = null, pB = null;
+function layout(dt, snap) {
+  const act = [...ROWS.values()].filter(r => !r.leaving)
+    .sort((a, b) => b.it.p - a.it.p || ORDER[a.it.k] - ORDER[b.it.k]);
+  let nA = 0; while (nA < act.length && act[nA].it.p > SP) nA++;
+  pA = act[nA - 1]?.it.p ?? null; pB = act[nA]?.it.p ?? null;
+  let f = .5;
+  if (pA != null && pB != null && pA > pB) f = clamp((SP - pB) / (pA - pB), 0, 1);
+  else if (pA != null) f = clamp(1 - (pA - SP) / (SP * .01), 0, 1);
+  else if (pB != null) f = clamp((SP - pB) / (SP * .01), 0, 1);
+  airUp = RH * (1 - f); airDn = RH * f;
+  act.forEach((r, i) => r.ty = i < nA ? i * RH : nA * RH + RH + NH + (i - nA) * RH);
+  nowTy = nA * RH + airUp;
+  lad.style.height = (act.length * RH + RH + NH) + 'px';
+  const k = snap ? 1 : 1 - Math.exp(-dt * 11);
+  for (const r of ROWS.values()) {
+    if (r.leaving) continue;
+    r.y = r.y == null ? r.ty : Math.abs(r.ty - r.y) < .3 ? r.ty : lerp(r.y, r.ty, k);
+    r.el.style.transform = `translateY(${r.y.toFixed(1)}px)`;
+  }
+  NOW.y = nowTy; NOW.el.style.transform = `translateY(${nowTy.toFixed(1)}px)`;
+  GAP.up.style.transform = `translateY(${nA * RH}px)`; GAP.up.style.height = airUp.toFixed(1) + 'px';
+  GAP.dn.style.transform = `translateY(${nowTy + NH}px)`; GAP.dn.style.height = airDn.toFixed(1) + 'px';
+}
+const scrollTarget = () => lad.offsetTop + (NOW.y || 0) + NH / 2 - ($('top').offsetHeight + H) / 2;
+
+// what changes with every tick: the distances, the glow of the levels close by, crossed levels, the air labels
+let lastTxt = 0;
+function paintRows(now) {
+  const P = PX, txt = now - lastTxt > 90; if (txt) lastTxt = now;
+  for (const r of ROWS.values()) {
+    if (r.leaving) continue;
+    const it = r.it, d = Math.abs(it.p - P) / P;
+    const x = it.above !== (it.p > P);
+    if (x !== r.x) { r.x = x; r.el.classList.toggle('x', x); }
+    let gl = x ? 0 : Math.pow(clamp(1 - d / .007, 0, 1), 1.6);
+    if (Math.abs(gl - r.g) > .01) {
+      r.g = gl; r.el.style.setProperty('--g', gl.toFixed(3));
+      r.el.classList.toggle('near', gl > .35 && !reduced); r.el.style.setProperty('--bt', (.55 + (1 - gl) * 1.3).toFixed(2) + 's');
+    }
+    if (txt) {
+      const s = pct(it.p, P); if (s !== r.pct) { r.pct = s; r.c.textContent = s; }
+      const v = r.val, n = v.t0 ? lerp(v.a, v.b, ease(clamp((now - v.t0) / 900, 0, 1))) : v.b, vs = it.fmt(n);
+      if (vs !== r.vs) { r.vs = vs; r.v.textContent = vs; }
+    }
+  }
+  if (!txt) return;
+  const lab = (gp, p, up) => { const sp = gp.firstChild, h = up ? airUp : airDn;
+    sp.style.opacity = p == null || h < 19 ? 0 : clamp((h - 19) / 10, 0, 1);
+    if (p != null) sp.textContent = `${up ? '▲' : '▼'} ${fmtP(Math.abs(p - P))} · ${pct(p, P).slice(1)}`; };
+  lab(GAP.up, pA, true); lab(GAP.dn, pB, false);
+}
+
+/* ---- the price ---------------------------------------------------------------------------------------------------- */
+const HIST = []; let pulseP = null, flashT = 0;
+function flash(e, up) { e.classList.remove('u', 'd'); void e.offsetWidth; e.classList.add(up ? 'u' : 'd'); }
+function onPrice(prev, p) {
+  PX = p; if (SP == null) SP = p;
+  const t = Date.now(); if (!HIST.length || t - HIST[HIST.length - 1][0] > 250) HIST.push([t, p]); while (HIST.length && t - HIST[0][0] > 65e3) HIST.shift();
+  if (prev > 0 && p !== prev && t - flashT > 120) {
+    flashT = t; const up = p > prev; flash($('tp'), up); flash(nowP, up);
+    setTimeout(() => { $('tp').classList.remove('u', 'd'); nowP.classList.remove('u', 'd'); }, 140);
+    if (pulseP == null || Math.abs(p - pulseP) >= p * .0003) { if (pulseP != null) flash(nowPulse, p > pulseP); pulseP = p; }
+  }
+  $('tp').textContent = nowP.textContent = fmtP(p);
+  if (!D || !(prev > 0)) return;
+  const lo = Math.min(prev, p), hi = Math.max(prev, p); if (hi <= lo) return;
+  for (const r of ROWS.values()) if (!r.leaving && r.it.p > lo && r.it.p <= hi) cross(r, p > prev);
+}
+const CROSSED = new Map();
+function cross(r, rising) {
+  const t = Date.now(), it = r.it; if (t - (CROSSED.get(it.key) || 0) < 120e3) return; CROSSED.set(it.key, t);
+  r.el.classList.remove('hit'); void r.el.offsetWidth; r.el.classList.add('hit');
+  if (!document.hidden) burst(r, rising);
+  const sub = `${it.name} · ${it.fmt(it.num)} · ${fmtP(it.p)}`;
+  const head = { ask: 'MUUR DOORBROKEN', bid: 'MUUR DOORBROKEN', stop: 'STOPS GERAAKT', liq: 'LIQUIDATIECLUSTER BEREIKT', tgt: 'DOEL BEREIKT' }[it.k];
+  if (it.big) toast(head, sub, it.cr);
+}
+
+/* ---- trades and real liquidations ----------------------------------------------------------------------------------- */
+const add0 = TAKER.add; const SPK = { buy: 0, sell: 0, n: 0 };
+TAKER.add = (side, usd) => { add0(side, usd); if (side === 'buy') SPK.buy += usd; else SPK.sell += usd; SPK.n++; };
+const liqBurst = { long: null, short: null };
+function realLiq(ex, long, p, usd) {
+  if (!(usd > 0) || !(p > 0) || !D) return;
+  const k = long ? 'long' : 'short', b = liqBurst[k] || (liqBurst[k] = { usd: 0, pw: 0, ex: new Set(), at: Date.now() });
+  b.usd += usd; b.pw += p * usd; b.ex.add(ex);
+  if (!b.timer) b.timer = setTimeout(() => { liqBurst[k] = null; showRealLiq(long, b.pw / b.usd, b.usd, [...b.ex]); }, 1500);
+}
+function showRealLiq(long, p, usd, ex) {
+  // the estimated cluster close by lights up: here it actually happens; else the ring comes from the lift
+  let at = null;
+  for (const r of ROWS.values()) if (!r.leaving && r.it.k === 'liq' && r.it.above === !long && Math.abs(r.it.p - p) <= D.B * 2) {
+    at = r; r.el.classList.remove('real'); void r.el.offsetWidth; r.el.classList.add('real'); }
+  const big = clamp(Math.log10(Math.max(1, usd / 1e4)) / 2.5, 0, 1);
+  if (!document.hidden && !reduced) {
+    const y = at ? at.y + RH / 2 : (NOW.y || 0) + NH / 2, cx = lad.clientWidth / 2;
+    ring(cx, y, RGB.liq, 60 + big * 260, 1.1 + big * .6, 2 + big * 3);
+    if (big > .3) ring(cx, y, RGB.liq, 40 + big * 180, 1.4, 1.5, .25);
+    if (usd >= 25e3) PARTS.push({ t: 'txt', x: cx + (R() - .5) * 120, y: (NOW.y || 0) + (long ? NH + 8 : -8), vy: long ? 34 : -34, age: 0, life: 2.4,
+      s: `${long ? 'LONG' : 'SHORT'}-LIQ ${fmtUsd(usd)}`, col: RGB.liq, f: 11 + big * 6 });
+  }
+  if (usd >= 250e3) toast('ECHTE LIQUIDATIE', `${long ? 'Longs' : 'Shorts'} · ${fmtUsd(usd)} · ${ex.join(' + ')} · ${fmtP(p)}`, RGB.liq);
+}
+
+/* ---- particles ------------------------------------------------------------------------------------------------------ */
+const PARTS = [];
+const ring = (x, y, col, r1, life, w, delay = 0) => PARTS.push({ t: 'ring', x, y, r1, age: -delay, life, w, col });
+function burst(r, rising) {
+  if (reduced) return;
+  const cx = lad.clientWidth / 2, y = r.y + RH / 2, col = r.it.cr, k = r.it.k, wall = k === 'ask' || k === 'bid';
+  ring(cx, y, col, k === 'tgt' ? 320 : 200, 1, 3); if (k === 'tgt' || k === 'liq') ring(cx, y, col, 260, 1.3, 2, .18);
+  const n = k === 'tgt' ? 46 : 30, dir = rising ? -1 : 1;
+  for (let i = 0; i < n; i++) {
+    const x = 24 + R() * (lad.clientWidth - 48), a = R() * PI * 2, sp = 60 + R() * 260;
+    PARTS.push(wall
+      ? { t: 'shard', x, y: y + (R() - .5) * RH * .7, vx: Math.cos(a) * sp * .6, vy: dir * (40 + R() * 220) - 60, rot: R() * PI, vr: (R() - .5) * 10, w: 4 + R() * 12, h: 2 + R() * 4, age: 0, life: .9 + R() * .8, col, gr: 380 }
+      : { t: 'dot', x, y: y + (R() - .5) * RH * .5, vx: Math.cos(a) * sp * .5, vy: Math.sin(a) * sp * .6 + dir * 60, r: 1.4 + R() * 2.6, age: 0, life: .7 + R() * 1, col, gr: k === 'stop' ? 260 : 0 });
+  }
+}
+function emitSparks(dt) {
+  if (document.hidden || reduced || NOW.y == null) { SPK.buy = SPK.sell = SPK.n = 0; return; }
+  const wd = lad.clientWidth;
+  for (const [side, usd] of [['buy', SPK.buy], ['sell', SPK.sell]]) {
+    if (!(usd > 0)) continue;
+    const up = side === 'buy', mag = clamp(Math.log10(usd / 1e3) / 3.4, 0, 1), n = Math.min(6, 1 + Math.floor(mag * 6));
+    for (let i = 0; i < n; i++) PARTS.push({ t: 'dot', x: 30 + R() * (wd - 60), y: NOW.y + (up ? 2 : NH - 2), vx: (R() - .5) * 30,
+      vy: (up ? -1 : 1) * (70 + R() * 140 + mag * 160), r: .8 + mag * 2.6 + R(), age: 0, life: .7 + R() * .7 + mag * .6, col: up ? RGB.up : RGB.dn, gr: 0, tr: 1 });
+    if (usd >= 250e3 && performance.now() - (SPK[side + 'At'] || 0) > 900) SPK[side + 'At'] = performance.now(), PARTS.push({ t: 'txt', x: 40 + R() * (wd - 80), y: NOW.y + (up ? -6 : NH + 14), vy: up ? -40 : 40, age: 0, life: 1.8,
+      s: `${up ? 'KOOP' : 'VERKOOP'} ${fmtUsd(usd)}`, col: up ? RGB.up : RGB.dn, f: 11 + mag * 4 });
+  }
+  SPK.buy = SPK.sell = SPK.n = 0;
+  if (PARTS.length > 700) PARTS.splice(0, PARTS.length - 700);
+}
+function drawParts(dt) {
+  g.setTransform(DPR, 0, 0, DPR, 0, 0); g.clearRect(0, 0, W, H);
+  if (!PARTS.length) return;
+  const b = lad.getBoundingClientRect(), ox = b.left, oy = b.top;
+  g.globalCompositeOperation = 'lighter';
+  for (let i = PARTS.length - 1; i >= 0; i--) {
+    const q = PARTS[i]; q.age += dt; if (q.age >= q.life) { PARTS.splice(i, 1); continue; } if (q.age < 0) continue;
+    const u = q.age / q.life, a = 1 - u;
+    if (q.t === 'ring') {
+      const rr = q.r1 * ease(u); g.strokeStyle = `rgba(${q.col},${a * .8})`; g.lineWidth = q.w * a + .5;
+      g.beginPath(); g.ellipse(ox + q.x, oy + q.y, rr * 1.6, rr * .55, 0, 0, PI * 2); g.stroke(); continue;
+    }
+    if (q.t === 'txt') { q.y += q.vy * dt; q.vy *= Math.exp(-dt * .8);
+      g.globalCompositeOperation = 'source-over'; g.font = `800 ${q.f}px ${"'JetBrains Mono',monospace"}`; g.textAlign = 'center';
+      g.fillStyle = `rgba(${q.col},${Math.min(1, a * 1.6)})`; g.shadowColor = `rgba(${q.col},.8)`; g.shadowBlur = 10;
+      g.fillText(q.s, ox + q.x, oy + q.y); g.shadowBlur = 0; g.globalCompositeOperation = 'lighter'; continue; }
+    const px0 = q.x, py0 = q.y;
+    q.vx *= Math.exp(-dt * 1.4); q.vy = q.vy * Math.exp(-dt * 1.4) + (q.gr || 0) * dt; q.x += q.vx * dt; q.y += q.vy * dt;
+    if (q.t === 'shard') { q.rot += q.vr * dt;
+      g.save(); g.translate(ox + q.x, oy + q.y); g.rotate(q.rot); g.fillStyle = `rgba(${q.col},${a})`; g.fillRect(-q.w / 2, -q.h / 2, q.w, q.h); g.restore(); continue; }
+    if (q.tr) { g.strokeStyle = `rgba(${q.col},${a * .45})`; g.lineWidth = q.r * .9; g.beginPath(); g.moveTo(ox + px0 - q.vx * .05, oy + py0 - q.vy * .05); g.lineTo(ox + q.x, oy + q.y); g.stroke(); }
+    g.fillStyle = `rgba(${q.col},${a})`; g.beginPath(); g.arc(ox + q.x, oy + q.y, q.r * (.6 + a * .4), 0, PI * 2); g.fill();
+  }
+  g.globalCompositeOperation = 'source-over';
+}
+
+/* ---- header, toasts, follow, help --------------------------------------------------------------------------------- */
+function paintHead() {
+  if (PX && C24) { const v = (PX / C24 - 1) * 100; $('tc').innerHTML = `BTC · 24u <span style="color:${v >= 0 ? 'var(--up)' : 'var(--dn)'}">${pct(PX, C24)}</span>`; }
+  const tk = TAKER.now();
+  if (tk.seen) { const b = Math.round(tk.buy * 100); $('fbar').style.width = b + '%'; $('fb').textContent = `kopers ${b}%`; $('fs').textContent = `${100 - b}% verkopers`; }
+  const old = HIST.find(h => Date.now() - h[0] <= 61e3);
+  if (old && PX) { const d = PX - old[1], s = (d >= 0 ? '+' : '−') + fmtP(Math.abs(d));
+    nowMv.innerHTML = `<b style="color:${d > 0 ? 'var(--up)' : d < 0 ? 'var(--dn)' : 'var(--dim)'}">${s}</b>1 min`; }
+}
+setInterval(paintHead, 500);
+function toast(head, sub, col) {
+  const d = el('div'); d.style.borderLeftColor = `rgb(${col})`;
+  d.innerHTML = `<b style="color:rgb(${col})">${head}</b><span>${sub}</span>`;
+  const box = $('toast'); box.prepend(d); while (box.children.length > 3) box.lastChild.remove();
+  setTimeout(() => { d.style.opacity = 0; d.style.transform = 'translateY(-8px)'; setTimeout(() => d.remove(), 520); }, 5200);
+}
+let follow = true, userAt = 0, touching = false;
+const setFollow = on => { follow = on; $('follow').setAttribute('aria-pressed', String(on)); };
+const user = () => { userAt = performance.now(); if (follow) setFollow(false); };
+sc.addEventListener('wheel', user, { passive: true });
+sc.addEventListener('touchstart', () => { touching = true; user(); }, { passive: true });
+sc.addEventListener('touchend', () => { touching = false; userAt = performance.now(); }, { passive: true });
+sc.addEventListener('scroll', () => { if (!follow) userAt = performance.now(); }, { passive: true });
+sc.addEventListener('keydown', e => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(e.key)) user(); });
+$('follow').addEventListener('click', () => setFollow(true));
+const setHelp = on => { $('help').hidden = !on; $('helpb').setAttribute('aria-pressed', String(on)); };
+$('helpb').addEventListener('click', () => setHelp($('help').hidden));
+$('help').querySelector('.x').addEventListener('click', () => setHelp(false));
+addEventListener('keydown', e => { if (e.key === 'Escape') setHelp(false); else if (e.key === '0') setFollow(true); });
+
+/* ---- the frame ---------------------------------------------------------------------------------------------------- */
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  if (ready) {
+    PX = live.px || PX || D.price;
+    SP = Math.abs(PX - SP) < PX * 1e-7 ? PX : lerp(SP, PX, 1 - Math.exp(-dt * 6));
+    layout(dt); paintRows(now);
+    if (!follow && !touching && now - userAt > 8000) setFollow(true);
+    if (follow) { const t = scrollTarget(), c = sc.scrollTop; if (Math.abs(t - c) > .5) sc.scrollTop = lerp(c, t, 1 - Math.exp(-dt * 7)); }
+    emitSparks(dt);
+  }
+  drawParts(dt);
+  requestAnimationFrame(frame);
+}
+
+/* ---- start ------------------------------------------------------------------------------------------------------------ */
+(async () => {
+  resize(); live.start(); liqFeeds();
+  requestAnimationFrame(frame);
+  site = await loadSite(); if (site) setData(site, 'site');
+  if (await loadLive()) setInterval(loadLive, 15e3);
+  else if (!site) { msg('GEEN DATA: BEURZEN EN ' + A.file.toUpperCase() + ' NIET BEREIKBAAR'); setInterval(async () => { if (await loadLive()) location.reload(); }, 30e3); }
+  else setInterval(loadLive, 30e3);
+  let seen = false; try { seen = localStorage.getItem('ladder-seen') === '1'; localStorage.setItem('ladder-seen', '1'); } catch (e) {}
+  if (!seen && D) setHelp(true);
+})();
+window.LADDER = { get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, setData, onPrice, realLiq, showRealLiq, live, ROWS, TAKER, PARTS };
+})();
+</script>
+</body>
+</html>

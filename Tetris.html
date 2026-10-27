@@ -521,13 +521,6 @@ const gMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), new 
 gMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); gMesh.setColorAt(0, new THREE.Color(1, 1, 1)); gMesh.frustumCulled = false; scene.add(gMesh);
 const glMesh = new THREE.InstancedMesh(bGeo, new THREE.MeshBasicMaterial({ map: blockTex, vertexColors: true, transparent: true, opacity: 0.42, blending: ADD, depthWrite: false }), 300);
 glMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); glMesh.setColorAt(0, new THREE.Color(1, 1, 1)); glMesh.frustumCulled = false; scene.add(glMesh);
-// price trail on the back wall: the last 15 minutes, newest at the right
-const TRN = 900, trPos = new Float32Array(TRN * 3), trCol = new Float32Array(TRN * 3), trail = [];
-const trGeo = new THREE.BufferGeometry();
-trGeo.setAttribute('position', new THREE.BufferAttribute(trPos, 3).setUsage(THREE.DynamicDrawUsage));
-trGeo.setAttribute('color', new THREE.BufferAttribute(trCol, 3).setUsage(THREE.DynamicDrawUsage));
-const trPts = new THREE.Points(trGeo, new THREE.PointsMaterial({ size: 0.26, map: dotTex, vertexColors: true, transparent: true, depthWrite: false, blending: ADD }));
-trPts.frustumCulled = false; scene.add(trPts);
 
 // backdrop: table row lines, the well wall, drifting dust
 const floor = new THREE.Mesh(new THREE.BoxGeometry(BW + 1.4, 0.1, 1.2), new THREE.MeshBasicMaterial({ color: 0x2f6b58, transparent: true, opacity: 0.6, blending: ADD }));
@@ -1310,18 +1303,9 @@ async function loadLive() {
     return true;
   } catch (e) { return false; }
 }
-async function seedTrail() {
-  try {
-    const d = (await getJSON(`https://www.okx.com/api/v5/market/candles?instId=${A.okx}&bar=1m&limit=16`)).data.map(r => [+r[0], +r[4]]).sort((a, b) => a[0] - b[0]);
-    const pts = [];
-    for (let i = 0; i < d.length - 1; i++) for (let k = 0; k < 60; k += 5) pts.push({ t: d[i][0] + 60e3 + k * 1e3, p: d[i][1] + (d[i + 1][1] - d[i][1]) * k / 60 });
-    const first = trail.length ? trail[0].t : Infinity;
-    trail.unshift(...pts.filter(x => x.t < first && x.t > Date.now() - 900e3));
-  } catch (e) {}
-}
 async function startLive() {
   const g = ++liveGen; mode = 'live'; armed = false;
-  tick.start(); liqWs.start(); seedTrail();
+  tick.start(); liqWs.start();
   status('', 'laden…', 'orderboeken ophalen…');
   site = await loadSite(); if (g !== liveGen) return;
   if (site) { applyLevels(levelsOf(site)); status('site', `uurdata · ${hhmmss(site.ts)}`, 'Data van het laatste uur · live data laden…'); }
@@ -1343,7 +1327,7 @@ function selectCoin(k) {
   for (const r of liveRows()) removeRow(r, true);
   for (const q of bolts) q.onHit = null;
   site = series = market = null; lastRaw = null; firstApply = true; armed = false; mode = 'live';
-  p = pS = shown = 0; nCleared = eaten = liqTot = 0; combo = 0; trail.length = 0; trades.length = 0; lastPx = 0; tagDir = 0; slabStr = ''; ref24 = 0;
+  p = pS = shown = 0; nCleared = eaten = liqTot = 0; combo = 0; trades.length = 0; lastPx = 0; tagDir = 0; slabStr = ''; ref24 = 0;
   for (const R of Object.values(REGS)) { R.tot = 0; R.on = false; R.str = ''; R.hist = []; }
   $('px').textContent = '—'; $('chg').textContent = ''; selRow = null; selEx = null; tip.hidden = true;
   startLive();
@@ -1380,7 +1364,7 @@ function demoLevels() {
   return { P: P0, ts: Date.now(), rows: rowsD, B: 50, ref24: 0, ex };
 }
 function startDemo() {
-  liveGen++; clearInterval(liveTimer); clearInterval(fastTimer); tick.stop(); liqWs.stop(); mode = 'demo'; trail.length = 0;
+  liveGen++; clearInterval(liveTimer); clearInterval(fastTimer); tick.stop(); liqWs.stop(); mode = 'demo';
   for (const r of liveRows()) removeRow(r, true);
   firstApply = true; armed = true; p = P0; pv = 0; boost = 0; anchorOff = 0; tm.demo = 4; ref24 = 0;
   applyLevels(demoLevels());
@@ -1704,8 +1688,7 @@ function update(dt) {
   $('s-clr').textContent = nCleared; $('s-eat').textContent = eaten ? fmtUsd(eaten).replace(' mln', 'M').replace(' mld', 'B') : '$0';
   $('s-liq').textContent = liqTot ? fmtUsd(liqTot).replace(' mln', 'M').replace(' mld', 'B') : '$0'; $('s-cmb').textContent = '×' + (T - lastClearT < 4.5 ? combo : 0);
   if ((tm.dist -= dt) <= 0) { tm.dist = 1; for (const r of liveRows()) drawLabel(r);
-    checkNear();
-    const now = Date.now(); trail.push({ t: now, p: pS }); while (trail.length && (trail.length > TRN || now - trail[0].t > 900e3)) trail.shift(); }
+    checkNear(); }
   drawSlab();
 }
 
@@ -1719,15 +1702,6 @@ function render(rdt) {
   laserGlow.material.opacity = 0.28 + 0.35 * tagFlash; laserGlow.scale.y = 1 + 0.6 * tagFlash;
   tagFlash = Math.max(0, tagFlash - rdt * 2.5); slabL.m.scale.setScalar(1 + 0.05 * tagFlash);
   const scanY = 15 * RS - ((t * 5 * RS) % (34 * RS));
-  { const now = Date.now(), lim = 13.4 * RS, tc = new THREE.Color(0x7ff0d0);
-    for (let i = 0; i < TRN; i++) {
-      const e = trail[i], j = i * 3;
-      if (!e) { trCol[j] = trCol[j + 1] = trCol[j + 2] = 0; continue; }
-      const age = (now - e.t) / 900e3, f = 0.3 + 0.9 * (1 - age) ** 2;
-      trPos[j] = (BW + 3.4) * (1 - age); trPos[j + 1] = Math.max(-lim, Math.min(lim, yOf(e.p))); trPos[j + 2] = -0.5;
-      trCol[j] = tc.r * f; trCol[j + 1] = tc.g * f; trCol[j + 2] = tc.b * f;
-    }
-    trGeo.attributes.position.needsUpdate = true; trGeo.attributes.color.needsUpdate = true; }
   beam.position.y = scanY;
 
   for (const k in REGS) { const R = REGS[k];

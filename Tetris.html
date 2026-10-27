@@ -27,7 +27,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
 .app{height:100%;display:flex;flex-direction:column}
 .band{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .hud{padding-block:10px 8px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#0b110f,var(--bg))}
-.tick{display:flex;align-items:baseline;gap:10px;min-width:0}
+.tick{display:flex;align-items:baseline;gap:10px;min-width:0;flex:1}
 .coin{width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ffd27a,#f7931a 60%,#a85c00);box-shadow:0 0 12px #f7931a88;align-self:center}
 .tick .sym{font-family:var(--mono);font-weight:700;color:var(--dim);font-size:13px;letter-spacing:.06em}
 #px{font-family:var(--mono);font-weight:800;font-size:22px;font-variant-numeric:tabular-nums;transition:color .25s,text-shadow .25s}
@@ -70,16 +70,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
 .tip .r{display:flex;justify-content:space-between;gap:14px;color:var(--dim)}
 .tip .r b{color:var(--txt);font-weight:600}
 .note{position:absolute;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));bottom:8px;margin:0;font-family:var(--mono);font-size:10px;color:var(--faint);pointer-events:none}
-.ctl{padding-block:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-top:1px solid var(--line);background:var(--panel)}
-.ctl button,.ctl a{font:inherit;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--txt);background:#121a17;border:1px solid #2a3630;border-radius:20px;
-  padding:7px 14px;cursor:pointer;text-decoration:none;transition:background .15s,border-color .15s,box-shadow .15s}
-.ctl button:hover,.ctl a:hover{border-color:#3d4d46}
-.ctl button:focus-visible,.ctl a:focus-visible{outline:2px solid var(--now);outline-offset:2px}
-.ctl button[aria-pressed="true"]{border-color:var(--stop);color:var(--stop);box-shadow:0 0 12px #ffc85744}
-#b-up{color:var(--up);border-color:#35ffb055}
-#b-dn{color:var(--dn);border-color:#ff4d6a55}
-.ctl .sp{flex:1}
-.st{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;color:var(--dim);padding:6px 10px;border:1px solid var(--line);border-radius:20px;white-space:nowrap}
+.st{display:inline-flex;align-items:center;gap:6px;margin-left:auto;align-self:center;font-family:var(--mono);font-size:10.5px;color:var(--dim);white-space:nowrap}
 .st i{width:7px;height:7px;border-radius:50%;background:var(--faint)}
 .st.live i{background:var(--up);box-shadow:0 0 8px var(--up);animation:blink 1.6s ease-in-out infinite}
 .st.site i{background:var(--stop)}
@@ -92,7 +83,6 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
   .feed li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px}
   .feed li:nth-child(n+3){display:none}
   .note{font-size:9.5px}
-  .ctl a{display:none}
 }
 @media (prefers-reduced-motion:reduce){.st.live i{animation:none}}
 </style>
@@ -100,7 +90,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
 <body>
 <div class="app">
   <header class="hud band">
-    <div class="tick"><span class="coin" aria-hidden="true"></span><span class="sym">BTC</span><b id="px">—</b><span id="chg"></span></div>
+    <div class="tick"><span class="coin" aria-hidden="true"></span><span class="sym">BTC</span><b id="px">—</b><span id="chg"></span><span class="st" id="st" title="laatste update"><i></i><span id="st-t">laden…</span></span></div>
     <div class="stats">
       <div><span>Geveegd</span><b id="s-clr">0</b></div>
       <div><span>Opgegeten</span><b id="s-eat">$0</b></div>
@@ -116,15 +106,6 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
     <div class="tip" id="tip" hidden></div>
     <p class="note" id="note">laden…</p>
   </main>
-  <footer class="ctl band">
-    <span class="st" id="st"><i></i><span id="st-t">laden…</span></span>
-    <button id="b-mode" type="button">Demo</button>
-    <button id="b-up" type="button" hidden>▲ Pomp</button>
-    <button id="b-dn" type="button" hidden>▼ Dump</button>
-    <button id="b-pause" type="button" aria-pressed="false">Pauze</button>
-    <span class="sp"></span>
-    <a href="./">GlassSphere</a>
-  </footer>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -1096,7 +1077,7 @@ async function loadLive() {
     if (!Object.keys(books).length) throw new Error('no books');
     const raw = { ts: Date.now(), price: tick.fresh() || series.candles[series.candles.length - 1][4], books, ...series, market, bookHist: site?.bookHist };
     const L = levelsOf(raw); applyLevels(L); armed = true;
-    status('live', COMPACT ? `live · ${hhmmss(L.ts)}` : `live · ${L.nBooks} boeken · ${hhmmss(L.ts)}`, COMPACT ? `${L.nBooks} boeken · stops/liq. geschat · glas = muur pas kort` : `${L.nBooks} orderboeken · stops en liq. geschat · glas: muur pas kort`);
+    status('live', COMPACT ? `live ${hhmmss(L.ts)}` : `live · ${L.nBooks} boeken · ${hhmmss(L.ts)}`, COMPACT ? `${L.nBooks} boeken · stops/liq. geschat · glas = muur pas kort` : `${L.nBooks} orderboeken · stops en liq. geschat · glas: muur pas kort`);
     return true;
   } catch (e) { return false; }
 }
@@ -1110,7 +1091,7 @@ async function seedTrail() {
   } catch (e) {}
 }
 async function startLive() {
-  const g = ++liveGen; mode = 'live'; armed = false; setButtons();
+  const g = ++liveGen; mode = 'live'; armed = false;
   tick.start(); liqWs.start(); seedTrail();
   status('', 'laden…', 'orderboeken ophalen…');
   site = await loadSite(); if (g !== liveGen) return;
@@ -1150,7 +1131,7 @@ function demoLevels() {
   return { P: P0, ts: Date.now(), rows: rowsD, B: 50, ref24: 0, ex };
 }
 function startDemo() {
-  liveGen++; clearInterval(liveTimer); tick.stop(); liqWs.stop(); mode = 'demo'; setButtons(); trail.length = 0;
+  liveGen++; clearInterval(liveTimer); tick.stop(); liqWs.stop(); mode = 'demo'; trail.length = 0;
   for (const r of liveRows()) removeRow(r, true);
   firstApply = true; armed = true; p = P0; pv = 0; boost = 0; anchorOff = 0; tm.demo = 4; ref24 = 0;
   applyLevels(demoLevels());
@@ -1211,11 +1192,6 @@ function showTip(r, x, y) {
   tip.style.left = Math.max(8, Math.min(w - tw - 8, x - tw / 2)) + 'px';
   tip.style.top = (y - th - 14 > 8 ? y - th - 14 : Math.min(h - th - 8, y + 18)) + 'px';
 }
-function setButtons() { $('b-mode').textContent = mode === 'live' ? 'Demo' : 'Live'; $('b-up').hidden = $('b-dn').hidden = mode !== 'demo'; }
-$('b-mode').onclick = () => { if (mode === 'live') startDemo(); else { for (const r of liveRows()) removeRow(r, true); firstApply = true; startLive(); } };
-$('b-up').onclick = () => spike(1, Math.random() < 0.4 ? 'mega' : 'big');
-$('b-dn').onclick = () => spike(-1, Math.random() < 0.4 ? 'mega' : 'big');
-$('b-pause').onclick = e => { paused = !paused; e.currentTarget.setAttribute('aria-pressed', paused); e.currentTarget.textContent = paused ? 'Verder' : 'Pauze'; };
 document.addEventListener('visibilitychange', () => {
   if (mode !== 'live') return;
   if (document.visibilityState === 'hidden') { tick.stop(); liqWs.stop(); clearInterval(liveTimer); liveTimer = 0; }

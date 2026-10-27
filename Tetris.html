@@ -48,7 +48,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
 .stats b{font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums}
 .main{flex:1;min-height:0;display:flex}
 .stage{position:relative;flex:1;min-width:0;min-height:0;overflow:hidden;touch-action:none;cursor:grab}
-#snd{margin-left:8px;align-self:center;display:inline-grid;place-items:center;width:30px;height:26px;border-radius:8px;border:1px solid #2a2540;background:#141020;color:var(--dim);cursor:pointer;padding:0}
+#snd,#help{margin-left:8px;align-self:center;display:inline-grid;place-items:center;width:30px;height:26px;border-radius:8px;border:1px solid #2a2540;background:#141020;color:var(--dim);cursor:pointer;padding:0}
 #snd .w{display:none} #snd[aria-pressed="true"]{color:var(--now);border-color:#3c5f56} #snd[aria-pressed="true"] .w{display:inline} #snd[aria-pressed="true"] .x{display:none}
 #snd:focus-visible{outline:2px solid var(--now);outline-offset:2px}
 .log{position:absolute;z-index:4;top:8px;left:max(10px,env(safe-area-inset-left,0px));right:max(10px,env(safe-area-inset-right,0px));max-height:72%;display:flex;flex-direction:column;
@@ -123,13 +123,20 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
   .next .who{font-size:10px}
   .note{font-size:9.5px}
 }
+#help{margin-left:6px;font:700 14px var(--mono)}
+.intro{position:absolute;inset:0;z-index:6;display:grid;place-items:center;background:rgba(3,2,8,.74);padding:16px}
+.intro[hidden]{display:none}
+.intro .card{width:min(460px,100%);max-height:100%;overflow:auto;background:#0d1311f7;border:1px solid var(--line);border-radius:14px;padding:18px 20px;font-family:var(--sans);color:var(--txt);font-size:14px;line-height:1.45}
+.intro h3{margin:0 0 10px;font-size:17px}
+.intro ul{margin:0 0 14px;padding-left:18px}.intro li{margin:7px 0}.intro b{color:#fff}
+.intro button{font:inherit;font-weight:700;background:#35ffb0;color:#04110b;border:0;border-radius:9px;padding:9px 18px;cursor:pointer}
 @media (prefers-reduced-motion:reduce){.st.live i{animation:none}}
 </style>
 </head>
 <body>
 <div class="app">
   <header class="hud band">
-    <div class="tick"><img class="coin" id="coin-ico" src="icons/coins/btc.png" alt=""><select id="coin" aria-label="Munt"><option value="btc">BTC</option><option value="eth">ETH</option><option value="sol">SOL</option><option value="xrp">XRP</option><option value="doge">DOGE</option><option value="sui">SUI</option></select><b id="px">—</b><span id="chg"></span><span class="st" id="st" title="laatste update"><i></i><span id="st-t">laden…</span></span><button id="snd" type="button" aria-pressed="false" aria-label="Geluid aan of uit" title="Geluid"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path class="w" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path class="x" d="M16 9l5 6M21 9l-5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+    <div class="tick"><img class="coin" id="coin-ico" src="icons/coins/btc.png" alt=""><select id="coin" aria-label="Munt"><option value="btc">BTC</option><option value="eth">ETH</option><option value="sol">SOL</option><option value="xrp">XRP</option><option value="doge">DOGE</option><option value="sui">SUI</option></select><b id="px">—</b><span id="chg"></span><span class="st" id="st" title="laatste update"><i></i><span id="st-t">laden…</span></span><button id="snd" type="button" aria-pressed="false" aria-label="Geluid aan of uit" title="Geluid"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path class="w" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path class="x" d="M16 9l5 6M21 9l-5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button><button id="help" type="button" aria-label="Uitleg" title="Uitleg">?</button></div>
     <div class="stats" id="stats" role="button" tabindex="0" aria-label="Logboek openen" title="Logboek">
       <div><span>Geveegd</span><b id="s-clr">0</b></div>
       <div><span>Opgegeten</span><b id="s-eat">$0</b></div>
@@ -147,6 +154,18 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
     <div class="banner" id="banner" aria-hidden="true"></div>
     <div class="tip" id="tip" hidden></div>
     <p class="note" id="note">laden…</p>
+    <div class="intro" id="intro" hidden><div class="card" role="dialog" aria-labelledby="intro-h">
+      <h3 id="intro-h">Zo lees je het</h3>
+      <ul>
+        <li>Elke <b>neonbuis</b> is een prijsniveau: een muur in de orderboeken, of geschatte stops of liquidaties. Prijs en soort staan links in de buis, het bedrag rechts.</li>
+        <li>Hoe <b>dikker</b> de buis, hoe groter het volume of de score.</li>
+        <li><b>Blokje</b> = muur: die <b>remt</b> de prijs. <b>Dubbele pijl</b> = stops of liquidaties: die <b>duwen</b> de prijs verder in die richting als ze geraakt worden.</li>
+        <li>De <b>draden</b> lopen naar de beurzen die de buis vullen: hoe feller, hoe groter hun deel. Een <b>puls</b> is een order die erbij komt of verdwijnt; een grote puls is een groot bedrag.</li>
+        <li><b>Tik op een buis</b> voor de details; de tegels tonen dan het deel van elke beurs. <b>Tik op een beurs</b> om alleen haar buizen te zien.</li>
+        <li><b>Scroll of knijp</b> om op een plek in te zoomen, sleep om rond te kijken, <b>dubbeltik</b> om terug te gaan.</li>
+      </ul>
+      <button id="intro-ok" type="button">Begrepen</button>
+    </div></div>
     <div class="log" id="log" hidden><div class="lh"><b>Logboek</b><span>nieuwste boven</span><button id="log-x" type="button" aria-label="Logboek sluiten">×</button></div><ol id="log-l"></ol></div>
   </main>
   </div>
@@ -158,6 +177,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
 const $ = id => document.getElementById(id);
 const stage = $('stage'), cvs = $('c');
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let LOWP = false;   // saving power (a phone, or a device on battery): 30 frames a second and half the particles
 try {
   await Promise.race([Promise.all([document.fonts.load('700 32px "JetBrains Mono"'), document.fonts.load('600 25px Inter'), document.fonts.load('16px "Press Start 2P"')]),
     new Promise(r => setTimeout(r, 1800))]);
@@ -426,6 +446,8 @@ const LL = LAY.LL, RR = LAY.RR;
 const BW = LAY.BW, TL = BW + RR - 0.05, WFIT = LAY.W;   // bar length, left edge of the tiles, width in view
 const CX = -LL - LAY.LW + WFIT / 2, RW = BW + 1.4, RX = BW / 2;   // view centre, row width and its centre
 const COMPACT = (stage.clientWidth || 400) < 560;   // phone: bigger labels without the distance column
+LOWP = COMPACT;
+if (navigator.getBattery) navigator.getBattery().then(b => { const u = () => { LOWP = COMPACT || !b.charging; }; u(); b.addEventListener('chargingchange', u); }).catch(() => {});
 const RS = (() => { const w = stage.clientWidth || 400, h = stage.clientHeight || 700, tanH = Math.tan(17.5 * Math.PI / 180);
   const visH = WFIT / (w / h) * 1.03 + 2.4 * tanH; return Math.max(1, Math.min(1.85, (visH * 0.94 - 2.4) / 27)); })();
 
@@ -551,7 +573,7 @@ pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3).setUsage(THREE.Dyn
 const pts = new THREE.Points(pGeo, new THREE.PointsMaterial({ size: 0.42, map: dotTex, vertexColors: true, transparent: true, depthWrite: false, blending: ADD }));
 pts.frustumCulled = false; scene.add(pts);
 function emit(x, y, z, col, n, spd, o = {}) {
-  n = RM ? Math.ceil(n / 2) : n;
+  n = RM || LOWP ? Math.ceil(n / 2) : n;
   for (let k = 0; k < n; k++) {
     const i = pHead; pHead = (pHead + 1) % PN;
     const sx = o.sx || 0.3;
@@ -572,6 +594,22 @@ function textPlane(w, h, pw, ph) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, opacity: 0 }));
   return { c, g: c.getContext('2d'), t, m };
 }
+// walls brake the price, stops and liquidations push it on (up for buy stops and short liquidations, down for the others)
+const KIND = { ask: 'wall', bid: 'wall', bstop: 'push', sliq: 'push', sstop: 'push', lliq: 'push' };
+function drawKindIcon(g, x, cy, s, r) {
+  const k = KIND[r.type]; if (!k) return;
+  g.save(); g.fillStyle = g.strokeStyle = r.t.c; g.shadowColor = r.t.c; g.shadowBlur = 8;
+  if (k === 'wall') {   // a small brick wall
+    const h = s * 0.8, w = s * 0.9, y0 = cy - h / 2; g.fillRect(x, y0, w, h); g.shadowBlur = 0;
+    g.strokeStyle = 'rgba(5,4,12,.9)'; g.lineWidth = Math.max(2, s * 0.08);
+    g.beginPath(); g.moveTo(x, y0 + h / 2); g.lineTo(x + w, y0 + h / 2); g.moveTo(x + w / 2, y0); g.lineTo(x + w / 2, y0 + h / 2);
+    g.moveTo(x + w / 4, y0 + h / 2); g.lineTo(x + w / 4, y0 + h); g.moveTo(x + w * 0.75, y0 + h / 2); g.lineTo(x + w * 0.75, y0 + h); g.stroke();
+  } else {   // a double chevron in the direction it pushes
+    const d = r.t.up ? -1 : 1, w = s * 0.9; g.lineWidth = Math.max(3, s * 0.15); g.lineCap = g.lineJoin = 'round';
+    for (const o of [-0.22, 0.2]) { const yy = cy + o * s * d * -1; g.beginPath(); g.moveTo(x, yy - d * s * 0.17); g.lineTo(x + w / 2, yy + d * s * 0.17); g.lineTo(x + w, yy - d * s * 0.17); g.stroke(); }
+  }
+  g.restore();
+}
 function drawLabel(r) {
   const d = fmtPct((r.price / p - 1) * 100);
   if (d === r.lblStr) return; r.lblStr = d;
@@ -580,10 +618,11 @@ function drawLabel(r) {
   const ps = fmtP(r.price), pf = Math.min(COMPACT ? 62 : 44, (COMPACT ? 300 : 220) / (ps.length * 0.6));
   const fP = `800 ${pf}px "JetBrains Mono", monospace`, fD = '600 30px "JetBrains Mono", monospace', fT = `700 ${COMPACT ? 42 : 32}px Inter, system-ui, sans-serif`;
   const wOf = (f, txt) => { g.font = f; return g.measureText(txt).width; };
-  const x1 = 18 + wOf(fP, ps) + 22, x2 = COMPACT ? x1 : x1 + wOf(fD, d) + 20, end = Math.min(c.width - 2, x2 + wOf(fT, r.t.n) + 16);
+  const IS = Math.min(c.height * 0.5, COMPACT ? 40 : 34), IW = KIND[r.type] ? IS + 12 : 0, x1 = 18 + IW + wOf(fP, ps) + 22, x2 = COMPACT ? x1 : x1 + wOf(fD, d) + 20, end = Math.min(c.width - 2, x2 + wOf(fT, r.t.n) + 16);
   roundRect(g, 2, 3, end - 2, c.height - 6, Math.min(16, c.height / 3)); g.fillStyle = 'rgba(5,4,12,.82)'; g.fill();
-  g.lineWidth = 3; g.strokeStyle = r.t.c + '99'; g.stroke();
-  g.font = fP; g.fillStyle = '#ffffff'; g.fillText(ps, 18, my + 1);
+  g.lineWidth = 3; g.strokeStyle = r.t.c + (KIND[r.type] === 'push' ? 'dd' : '99'); g.setLineDash(KIND[r.type] === 'push' ? [12, 8] : []); g.stroke(); g.setLineDash([]);
+  drawKindIcon(g, 14, my, IS, r);
+  g.font = fP; g.fillStyle = '#ffffff'; g.fillText(ps, 18 + IW, my + 1);
   if (!COMPACT) { g.font = fD; g.fillStyle = '#9fb3aa'; g.fillText(d, x1, my + 1); }
   g.font = fT; g.fillStyle = new THREE.Color(r.t.c).lerp(WHITE, 0.35).getStyle(); g.fillText(r.t.n, x2, my + 2);
   t.needsUpdate = true;
@@ -609,7 +648,7 @@ const laserGlow = new THREE.Mesh(new THREE.PlaneGeometry(BW + 1.8, 1.0), new THR
 laserGlow.position.set(BW / 2, 0, 0.7); slab.add(laserGlow);
 const sweep = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.9), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.9, blending: ADD, depthWrite: false }));
 sweep.position.z = 0.8; slab.add(sweep);
-const TAGH = Math.min(1.45, RS * 1.12), slabL = textPlane(1536, 180, TAGH * 8.53, TAGH); slabL.m.material.opacity = 1; slabL.m.position.set(BW / 2, 0, 0.9); slabL.m.renderOrder = 4; slab.add(slabL.m);   // in the middle of the tubes, between the prices and the amounts
+const TAGH = COMPACT ? RS * 0.82 : Math.min(1.45, RS * 1.12), slabL = textPlane(1536, 180, TAGH * 8.53, TAGH); slabL.m.material.opacity = 1; slabL.m.position.set(BW / 2, 0, 0.9); slabL.m.renderOrder = 4; slab.add(slabL.m);   // in the middle of the tubes, between the prices and the amounts
 let slabStr = '', tagDir = 0, tagFlash = 0;
 const UPC = '#35ffb0', DNC = '#ff4d6a', NTC = '#7ff0d0';
 function drawSlab() {
@@ -685,12 +724,17 @@ const EXN = { binance: ['Binance', '#f3ba2f'], okx: ['OKX', '#eef2f5'], bybit: [
 const EXKEY = { OKX: 'okx', Binance: 'binance', Bybit: 'bybit' };
 const SHORT = { hyperliquid: 'Hyper', cryptocom: 'Crypto', model: 'Schat.' };
 const REGS = {};
+let selRow = null;   // the tube tapped for its details
 // a column of tiles on each side of the bars, top to bottom along the well; the drawer opens towards the bars
 const regBodyGeo = new THREE.BoxGeometry(3, 1.7, 0.6), regDrawGeo = new THREE.BoxGeometry(0.28, 1.2, 0.45), regEdgeGeo = new THREE.EdgesGeometry(regBodyGeo);
 let tileTop = 13.5 * RS - 0.9, tileStep = 27 * RS / (12 / LAY.TC - 1), tileSc = 1;
 const tileX = col => col ? TL + 1.5 * tileSc : -LL - 0.3 - 1.5 * tileSc;   // column 0 left of the prices, 1 right of the amounts
 function drawReg(R) {
-  const fl = R.flash > 0 ? R.fTxt : '', st = R.on + '|' + R.tot + '|' + fl + '|' + (R.hist ? R.hist.length : 0);
+  // with a tube tapped, each tile shows its share of that tube
+  const sr = selRow && !selRow.gone ? selRow : null;
+  let share = null;
+  if (sr) { if (sr.per) { const tot = Object.values(sr.per).reduce((a, b) => a + b, 0) || 1; share = (sr.per[R.k] || 0) / tot; } else share = R.k === 'model' ? 1 : 0; }
+  const fl = R.flash > 0 ? R.fTxt : '', st = R.on + '|' + R.tot + '|' + fl + '|' + (R.hist ? R.hist.length : 0) + '|' + (share == null ? '' : share.toFixed(3) + sr.key);
   if (st === R.str) return; R.str = st;
   const { g, c, t } = R.scr; g.clearRect(0, 0, c.width, c.height);
   roundRect(g, 4, 4, 504, 266, 22); g.fillStyle = 'rgba(8,6,16,.94)'; g.fill(); g.lineWidth = 4; g.strokeStyle = R.css + (R.on ? 'cc' : '40'); g.stroke();
@@ -698,9 +742,11 @@ function drawReg(R) {
   const nm = (COMPACT && SHORT[R.k] || R.name).toUpperCase(), fit = (txt, max) => Math.min(max, 440 / (txt.length * 0.6));
   g.font = `800 ${fit(nm, COMPACT ? 86 : 62)}px "JetBrains Mono", monospace`; g.fillStyle = R.on ? R.css : '#4a5852'; g.shadowColor = R.css; g.shadowBlur = R.on ? 14 : 0;
   g.fillText(nm, 24, 80); g.shadowBlur = 0;
-  const line = fl || (R.k === 'model' ? (R.on ? (COMPACT ? 'stops/liq' : 'stops · liq.') : '—') : R.on ? fmtUsd(R.tot) : 'geen data');
+  const shTxt = share == null ? '' : share > 0.005 ? Math.round(share * 100) + '%' + (!COMPACT && sr.t.u === 'usd' ? ' · ' + fmtUsd(sr.val * share) : '') : '—';
+  const line = fl || shTxt || (R.k === 'model' ? (R.on ? (COMPACT ? 'stops/liq' : 'stops · liq.') : '—') : R.on ? fmtUsd(R.tot) : 'geen data');
   g.font = `700 ${fit(line, COMPACT ? 72 : 56)}px "JetBrains Mono", monospace`;
   if (fl) { g.fillStyle = R.fCss; g.shadowColor = R.fCss; g.shadowBlur = 12; g.fillText(line, 24, 192); g.shadowBlur = 0; }
+  else if (shTxt) { g.fillStyle = share > 0.005 ? '#ffffff' : '#4a5852'; g.fillText(line, 24, 192); }
   else { g.fillStyle = R.on ? '#d8e4de' : '#4a5852'; g.fillText(line, 24, 192); }
   g.fillStyle = R.on ? '#35ffb0' : '#3a4440'; g.beginPath(); g.arc(476, 80, 12, 0, 7); g.fill();
   const H = R.hist || [];
@@ -776,10 +822,32 @@ const boltPool = [...Array(BN)].map(() => {
   return { line, line2, head, busy: false };
 });
 const BV = new THREE.Vector3(), BD = new THREE.Vector3();
-function bolt(a, b, col, delay, dur, onHit, path) {
-  const slot = boltPool.find(x => !x.busy); if (!slot) { if (onHit) onHit(); return; }
-  slot.busy = true; bolts.push({ slot, a: a.clone(), b, col: col.clone(), t: -delay, dur, onHit, hit: false, flash: 0, path });
+// glass shards of a broken tube: they tumble down and fade
+const SHN = 160, shardGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-0.14, -0.05, 0, 0.16, -0.08, 0, 0.02, 0.12, 0], 3));
+const shards = [...Array(SHN)].map(() => { const m = new THREE.Mesh(shardGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false, blending: ADD }));
+  m.visible = false; m.frustumCulled = false; scene.add(m); return { m, life: 0, max: 1, v: new THREE.Vector3(), w: new THREE.Vector3() }; });
+let shHead = 0;
+function shatter(r) {
+  if (!r.bar) return;
+  const rad = Math.max(0.15, r.thS / 2), n = RM || LOWP ? 14 : 30;
+  for (let k = 0; k < n; k++) { const S = shards[shHead = (shHead + 1) % SHN], sc = rnd(1, 2.2) * (0.7 + rad);
+    S.m.position.set(rnd(0.3, BW - 0.3), r.yd + rnd(-rad, rad), rnd(-rad, rad) + 0.1); S.v.set(rnd(-1.5, 1.5), rnd(0.5, 3.5), rnd(0.5, 3.5)); S.w.set(rnd(-9, 9), rnd(-9, 9), rnd(-9, 9));
+    S.life = S.max = rnd(1.1, 1.8); S.m.scale.setScalar(sc); S.m.material.color.copy(r.t.col).lerp(WHITE, 0.5); S.m.visible = true; }
+  emit(BW / 2, r.yd, 0.3, WHITE, 12, 5, { sx: BW / 2, life: 0.6 }); snd('back');
 }
+function updateShards(dt) {
+  for (const S of shards) { if (S.life <= 0) continue;
+    S.life -= dt; if (S.life <= 0) { S.m.visible = false; continue; }
+    S.v.y -= 12 * dt; S.m.position.addScaledVector(S.v, dt); S.m.rotation.x += S.w.x * dt; S.m.rotation.y += S.w.y * dt; S.m.rotation.z += S.w.z * dt;
+    S.m.material.opacity = Math.min(1, S.life / S.max * 1.6); }
+}
+function bolt(a, b, col, delay, dur, onHit, path, mag = 0.4) {
+  const slot = boltPool.find(x => !x.busy); if (!slot) { if (onHit) onHit(); return; }
+  slot.busy = true; bolts.push({ slot, a: a.clone(), b, col: col.clone(), t: -delay, dur, onHit, hit: false, flash: 0, path, mag });
+}
+// how big a pulse is: 0 for $50K or less, 1 for $5M or more (stops and liquidations without an amount: in between)
+const magUsd = usd => Math.max(0, Math.min(1, Math.log10(Math.max(1, usd) / 5e4) / 2));
+const magOf = r => r.t.u === 'usd' ? magUsd(r.val / Math.max(1, r.base)) : 0.45;
 // the wire from a tube's cap on the tile's side (s = 0) to an exchange tile (s = 1)
 function wirePt(r, k, s, out) {
   const sd = (REGS[k] || REGS.model).side, W0 = regPos(k), y = r.yd ?? r.y, iu = 1 - s, a0 = sd > 0 ? BW + 0.2 : -0.2, c1 = a0 + sd * 1.2, c2 = W0.x - sd * 1.2;
@@ -805,6 +873,17 @@ function tileCurve(k, end) {
   };
 }
 const BP = new THREE.Vector3();
+// traffic on a wire: h glows while pulses run (seconds), hl keeps the wire lit while it is in use at all (a minute)
+function wireHeat(r, k, n = 1) {
+  const H = r.wh || (r.wh = {}), w = H[k] || (H[k] = { h: 0, hl: 1 });
+  w.h = Math.min(1.5, w.h + 0.45 * n); w.hl = Math.min(3, w.hl + 0.8);
+}
+const WSTR = 3, wireMesh = () => {   // up to three strands side by side: a thicker wire for a bigger share
+  const m = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(WSTR * (WIREN - 1) * 6), 3).setUsage(THREE.DynamicDrawUsage)),
+    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: ADD, depthWrite: false }));
+  m.frustumCulled = false; scene.add(m); return m;
+};
+const WP = [...Array(WIREN)].map(() => new THREE.Vector3());
 function updateBolts(dt) {
   for (let i = bolts.length - 1; i >= 0; i--) {
     const q = bolts[i], { line, line2, head } = q.slot;
@@ -815,17 +894,17 @@ function updateBolts(dt) {
       if (e >= 1) { q.hit = true; q.flash = 0.22; emit(B.x, B.y, B.z, q.col, 10, 4.5, { life: 0.5 }); if (q.onHit) q.onHit(); } }
     else { q.flash -= dt; if (q.flash <= 0) { for (const o of [line, line2, head]) o.visible = false; q.slot.busy = false; bolts.splice(i, 1); continue; } }
     if (q.path) {   // a pulse running along its wire: a bright comet with the wire lit up behind it
-      const e0 = Math.max(0, e - 0.12), op = q.hit ? q.flash / 0.22 : 1;
+      const e0 = Math.max(0, e - 0.06 - 0.12 * q.mag), op = q.hit ? q.flash / 0.22 : 1;
       for (const [ln, u0, k0] of [[line, e0, 1], [line2, 0, 0]]) {
         const arr = ln.geometry.attributes.position.array;
         for (let k = 0; k <= BSEG; k++) { q.path(u0 + (e - u0) * k / BSEG, BV); arr[k * 3] = BV.x; arr[k * 3 + 1] = BV.y + (k0 ? (Math.random() - 0.5) * 0.05 : 0); arr[k * 3 + 2] = BV.z; }
         ln.geometry.attributes.position.needsUpdate = true;
-        ln.material.color.copy(q.col).multiplyScalar(k0 ? 1.8 : 0.7); ln.material.opacity = op * (k0 ? 1 : 0.35); ln.visible = true;
+        ln.material.color.copy(q.col).multiplyScalar(k0 ? 1 + 1.5 * q.mag : 0.7); ln.material.opacity = op * (k0 ? 1 : 0.18 + 0.4 * q.mag); ln.visible = true;
       }
       q.path(e, BV);
       head.position.copy(BV); head.material.color.copy(q.col).lerp(WHITE, 0.5); head.material.opacity = op;
-      head.scale.setScalar(q.hit ? 2.4 : 1.2 + Math.random() * 0.5); head.visible = true;
-      if (!q.hit && Math.random() < 0.6) emit(BV.x, BV.y, BV.z, q.col, 1, 0.8, { life: 0.35 });
+      head.scale.setScalar((q.hit ? 2.4 : 1.2 + Math.random() * 0.5) * (0.45 + 1.4 * q.mag)); head.visible = true;
+      if (!q.hit && Math.random() < 0.2 + 0.6 * q.mag) emit(BV.x, BV.y, BV.z, q.col, 1, 0.8, { life: 0.35 });
       continue;
     }
     BD.subVectors(B, q.a); const len = BD.length() || 1, px = -BD.y / len, py = BD.x / len, amp = Math.min(1.1, 0.25 + len * 0.05);
@@ -857,12 +936,14 @@ const barPt = (r, x) => { const v = new THREE.Vector3(); return () => v.set(x, r
 function zap(src, r, n, delay = 0) {   // n units of orders from a register to a bar
   r.inbound += n;
   const col = (REGS[src] || REGS.model).col;
-  for (let k = 0; k < n; k++) { const x = rnd(0.5, BW - 0.5); bolt(regPos(src), barPt(r, x), col, delay + k * 0.12, rnd(0.6, 0.8), () => absorbAt(r, x, col), wireRoute(r, src, x)); }
+  for (let k = 0; k < n; k++) { const x = rnd(0.5, BW - 0.5); bolt(regPos(src), barPt(r, x), col, delay + k * 0.12, rnd(0.6, 0.8), () => absorbAt(r, x, col), wireRoute(r, src, x), magOf(r)); }
+  wireHeat(r, src, n);
 }
 function zapBack(r, dst, n, delay = 0) {   // n units pulled back from a bar into a register
   for (let k = 0; k < n; k++) { const x = rnd(0.5, BW - 0.5);
     emit(x, r.yd, 0.4, (REGS[dst] || REGS.model).col, 4, 2);
-    bolt(new THREE.Vector3(x, r.yd, 0.35), regPos(dst), (REGS[dst] || REGS.model).col, delay + k * 0.12, rnd(0.6, 0.85), () => { const R = REGS[dst]; if (R) R.open = 1; snd('back'); }, wireRoute(r, dst, x, true)); }
+    bolt(new THREE.Vector3(x, r.yd, 0.35), regPos(dst), (REGS[dst] || REGS.model).col, delay + k * 0.12, rnd(0.6, 0.85), () => { const R = REGS[dst]; if (R) R.open = 1; snd('back'); }, wireRoute(r, dst, x, true), magOf(r)); }
+  wireHeat(r, dst, n);
 }
 // a block on its way from a to c in an arc: into a bar (absorb), back into a register (withdraw) or a burst
 function pathTo(b, a, c, dur, end) { b.state = 'path'; b.ax = a.x; b.ay = a.y; b.az = a.z; b.cx = c[0]; b.cy = c[1]; b.cz = c[2]; b.dur = dur; b.end = end; b.t = 0; b.s0 = b.s1 = b.s > 0.01 ? b.s : 0.8; }
@@ -912,11 +993,9 @@ function makeRow(lv) {
     for (const f of [0.22, 0.78]) {   // the stand-offs that hold it to the board, each with a wire clip around the glass
       const c = new THREE.Mesh(postGeo, postMat); c.rotation.x = Math.PI / 2; c.userData.post = f; r.edge.add(c);
       const g = new THREE.Mesh(ringGeo, postMat); g.rotation.y = Math.PI / 2; g.userData.ring = f; r.edge.add(g); }
-    r.wire = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(WIREN * 3), 3).setUsage(THREE.DynamicDrawUsage)),
-      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: ADD, depthWrite: false }));
-    r.wire.frustumCulled = false;
+    r.wires = {};
     for (const m of [r.bar, r.gas]) { m.rotation.z = Math.PI / 2; m.scale.set(0.001, BW, 0.001); scene.add(m); }
-    for (const m of [r.glowA, r.refl, r.wire]) scene.add(m);
+    for (const m of [r.glowA, r.refl]) scene.add(m);
     scene.add(r.edge); r.glowA.renderOrder = 0; r.gas.renderOrder = 1; r.bar.renderOrder = 2;
   }
   if (t.u === 'pct') {
@@ -933,8 +1012,8 @@ function makeRow(lv) {
 function disposeRow(r) {
   const objs = [r.lbl.m, r.sz.m, r.halo, r.hit]; if (r.gate) objs.push(r.gate.m, r.gate.e);
   for (const o of objs) { scene.remove(o); o.geometry.dispose(); if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
-  for (const o of [r.bar, r.gas, r.glowA, r.refl, r.wire, r.band]) if (o) { scene.remove(o); o.material.dispose(); }
-  if (r.wire) r.wire.geometry.dispose();
+  for (const o of [r.bar, r.gas, r.glowA, r.refl, r.band]) if (o) { scene.remove(o); o.material.dispose(); }
+  for (const k in r.wires || {}) { const w = r.wires[k]; scene.remove(w); w.geometry.dispose(); w.material.dispose(); }
   if (r.edge) scene.remove(r.edge);   // the caps share their material   // the geometry and texture are shared
 }
 function removeRow(r, quiet) {
@@ -1011,7 +1090,7 @@ function applyLevels(L) {
       r.srcW = Object.fromEntries(Object.entries(d).filter(([, v]) => v > 0)); r.dstW = Object.fromEntries(Object.entries(d).filter(([, v]) => v < 0).map(([k, v]) => [k, -v])); }
     r.per = lv.per || null;
     if (r.t.u === 'usd' && !r.cleared && Math.abs(r.val - old) >= Math.max(3e6, old * 0.15)) r.delta = r.val - old;
-    if (r.cleared && (r.t.up ? p < r.price : p > r.price)) { r.cleared = false; r.isNew = true; }
+    if (r.cleared && (r.t.up ? p < r.price : p > r.price)) { r.cleared = false; r.shattered = false; r.isNew = true; }
   }
   for (const r of liveRows()) if (!seen.has(r.key)) removeRow(r, quiet);
   layout();
@@ -1166,6 +1245,11 @@ const sound = (() => {
 })();
 const snd = k => sound.play(k);
 $('snd').setAttribute('aria-pressed', sound.on);
+// the explanation, once on the first visit and again from the ? button
+{ const intro = $('intro'); let seen = false; try { seen = localStorage.getItem('tetris-intro') === '1'; } catch (e) {}
+  if (!seen) intro.hidden = false;
+  $('intro-ok').addEventListener('click', () => { intro.hidden = true; try { localStorage.setItem('tetris-intro', '1'); } catch (e) {} });
+  $('help').addEventListener('click', () => { intro.hidden = false; }); }
 $('snd').addEventListener('click', () => { $('snd').setAttribute('aria-pressed', sound.toggle()); snd('warn'); });
 addEventListener('pointerdown', () => sound.wake(), { capture: true });   // the browser lets sound start only after a tap
 const logEv = [];
@@ -1256,7 +1340,7 @@ function showLiq(long, q, usd, ex) {
   snd('liq');
   for (const e of ex) { const k = EXKEY[e], R = REGS[k]; if (!R) continue;
     R.open = 1; R.flash = 1.6; R.fTxt = 'LIQ ' + fmtUsd(usd); R.fCss = TY.sliq.c;
-    for (let n = 0; n < 3; n++) { const pv = new THREE.Vector3(rnd(0, BW), 0, 0.8); bolt(regPos(k), null, TY.sliq.col, n * 0.12, 0.5, null, tileCurve(k, () => pv.setY(slab.position.y))); } }
+    for (let n = 0; n < 3; n++) { const pv = new THREE.Vector3(rnd(0, BW), 0, 0.8); bolt(regPos(k), null, TY.sliq.col, n * 0.12, 0.5, null, tileCurve(k, () => pv.setY(slab.position.y)), magUsd(usd)); } }
   const big = Math.max(0, Math.min(1, Math.log10(Math.max(1, usd / 1e4)) / 2.5)), sy = slab.position.y, col = TY.sliq.col;
   for (let x = 0; x < BW; x += 1.4) emit(x, sy, 0.8, col, Math.round(3 + big * 10), 3 + big * 7, { vy: long ? -4 : 4, vz: 2, life: 1.2 });
   shake = Math.max(shake, 0.08 + big * 0.5); liqFlash = Math.max(liqFlash, 0.25 + big * 0.75);
@@ -1380,7 +1464,7 @@ function spike(dir, size) {
 
 /* ---------- interaction ---------- */
 let selEx = null;
-let dragYaw = 0, dragPitch = 0, down = null, selRow = null, zoom = 1, panX = 0, panY = 0, pinch0 = null, lastTap = 0;
+let dragYaw = 0, dragPitch = 0, down = null, zoom = 1, panX = 0, panY = 0, pinch0 = null, lastTap = 0;
 // zoom towards a point on screen (the mouse, or the middle between two fingers): that spot stays under the pointer
 const TANH = Math.tan(17.5 * Math.PI / 180), perPx = () => 2 * dist / zoom * TANH / (stage.clientHeight || 1);
 function zoomAt(z1, cx, cy) {
@@ -1392,7 +1476,7 @@ function zoomAt(z1, cx, cy) {
 const ptrs = new Map();
 const pinchD = () => { const [a, b] = [...ptrs.values()]; return Math.hypot(a.x - b.x, a.y - b.y) || 1; };
 const tip = $('tip'), ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
-stage.addEventListener('pointerdown', e => { if (e.target.closest('.log')) return; ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); stage.setPointerCapture(e.pointerId);
+stage.addEventListener('pointerdown', e => { if (e.target.closest('.log, .intro')) return; ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); stage.setPointerCapture(e.pointerId);
   if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch0 = { d: pinchD(), z: zoom, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }; down = null; return; }
   down = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, id: e.pointerId }; });
 stage.addEventListener('pointermove', e => {
@@ -1503,6 +1587,7 @@ const dummy = new THREE.Object3D(), tmpC = new THREE.Color();
 let last = performance.now(), clock = 0;
 function frame(now) {
   requestAnimationFrame(frame);
+  if (LOWP && now - last < 1000 / 31) return;
   const rdt = Math.min(0.05, (now - last) / 1000); last = now; clock += rdt;
   const dt = paused ? 0 : rdt;
   if (!paused) update(dt);
@@ -1529,7 +1614,7 @@ function update(dt) {
 
   // pieces in, extra blocks out
   if ((tm.piece -= dt) <= 0) { tm.piece = rnd(0.25, 0.55); spawn(); }
-  updateBolts(dt);
+  updateBolts(dt); updateShards(dt);
   if ((tm.flare -= dt) <= 0) {
     tm.flare = rnd(3, 5.5);
     const c = liveRows().filter(r => (r.t.u === 'score' || r.type.endsWith('liq')) && !r.cleared && !r.flare && r.units >= 2);
@@ -1545,7 +1630,7 @@ function update(dt) {
     // the price runs through a level: line clear
     if (armed && !r.cleared && T - r.born > 0.8 && (r.t.up ? p >= r.price : p <= r.price)) clearRow(r);
     else if (mode === 'demo' && r.cleared && T - r.clearedAt > 1.6 && (r.t.up ? p < r.price - 12 : p > r.price + 12)) {
-      r.cleared = false; r.born = T; if (r.base) fillRow(r, r.base, 0); }
+      r.cleared = false; r.shattered = false; r.born = T; if (r.base) fillRow(r, r.base, 0); }
     if (!r.cleared && r.base && r.units > r.base && (r.decayT -= dt) <= 0) {
       r.decayT = rnd(0.25, 0.6); r.units--; r.trend = Math.max(-1, (r.trend || 0) - 0.22);
       const d = pickReg(r, r.dstW); zapBack(r, d, 1); regSend(d, '−' + unitVal(r, 1), '#ff6b81');
@@ -1569,7 +1654,8 @@ function update(dt) {
       const tgt = side.sort((a, b) => Math.abs(a.yd - sy) - Math.abs(b.yd - sy))[0];
       const x = rnd(0.5, BW - 0.5), dir = tr.buy ? 1 : -1, end = tgt ? barPt(tgt, x) : new THREE.Vector3(x, sy + dir * 4, 0.35);
       bolt(regPos('okx'), end, col, 0, 0.55, () => { if (tgt && !tgt.gone) { tgt.hl = Math.max(tgt.hl, 0.7); tgt.pulse = Math.min(1.5, tgt.pulse + 0.35); } },
-        tgt ? wireRoute(tgt, 'okx', x) : tileCurve('okx', end));
+        tgt ? wireRoute(tgt, 'okx', x) : tileCurve('okx', end), magUsd(tr.usd));
+      if (tgt) wireHeat(tgt, 'okx', 1);
       REGS.okx.open = Math.max(REGS.okx.open, 0.6);
       if (tr.usd >= 1e6) floatText(x, sy + (tr.buy ? 1 : -1), (tr.buy ? 'koop ' : 'verkoop ') + fmtUsd(tr.usd), tr.buy ? '#35ffb0' : '#ff4d6a');
       if (tr.usd >= 3e6) feed(`<b>${tr.buy ? 'Grote koop' : 'Grote verkoop'}</b> ${fmtUsd(tr.usd)} op ${fmtP(tr.px)}`, tr.buy ? TY.bid.c : TY.ask.c);
@@ -1695,6 +1781,9 @@ function update(dt) {
 function render(rdt) {
   const t = clock, sy = yOf(pS);
   slab.position.y += (sy - slab.position.y) * Math.min(1, rdt * 6);
+  { // the tag stays in the gap between the two sides (where no label is), the laser line itself sits at the price
+    const lhh = (COMPACT ? Math.min(1.05, 0.86 * RS) : 0.8) / 2, mo = Math.max(0, RS - lhh - TAGH / 2 - 0.03), y0 = slab.position.y;
+    const ty = Math.abs(y0) < 1.5 * RS ? Math.max(-mo, Math.min(mo, y0)) : y0; slabL.m.position.y = ty - y0; }
   sweep.position.x = -0.7 + ((t * 9) % (BW + 1.4));
   slabEdge.material.color.lerp(tmpC.set(tagDir > 0 ? UPC : tagDir < 0 ? DNC : NTC), Math.min(1, rdt * 4));
   slabEdge.material.opacity = 0.8 + 0.2 * Math.sin(t * 6);
@@ -1724,7 +1813,9 @@ function render(rdt) {
     const wb = r.warnT > 0 ? Math.abs(Math.sin(t * 9)) : 0;
     const fade = (r.gone ? Math.max(0, r.goneT / 0.9) : 1) * dim, fadeL = r.gone ? Math.max(0, (r.goneT - 0.55) / 0.35) : 1;
     if (r.bar) {
-      r.thS += (thOf(r.units) - r.thS) * Math.min(1, rdt * 8);
+      const dying = r.cleared && T - r.clearedAt < 0.55;   // just eaten: the gas flickers out, then the glass breaks
+      if (r.cleared && !dying && !r.shattered) { r.shattered = true; shatter(r); r.thS = 0; }
+      r.thS += ((dying ? r.thS : thOf(r.units)) - r.thS) * Math.min(1, rdt * 8);
       r.pulse = Math.max(0, r.pulse - rdt * 2.5);
       const th = Math.max(0.001, r.thS * (1 + 0.12 * r.pulse)), fl = r.flare > 0;
       const rad = th / 2;
@@ -1742,7 +1833,7 @@ function render(rdt) {
       // close to the price the tube burns brighter and hums
       const zN = Math.max(0, 1 - Math.abs(r.price - p) / Math.max(bucket * 3, p * 0.002));
       // a new tube strikes like neon (a few false starts), a gone one flickers out
-      const ig = r.gone ? (Math.random() < r.goneT / 0.9 ? 1 : 0.05) : T - r.born < 0.7 ? (Math.random() < 0.55 ? 1 : 0.08) : 1;
+      const ig = dying ? (Math.random() < 0.35 ? 1 : 0.04) : r.gone ? (Math.random() < r.goneT / 0.9 ? 1 : 0.05) : T - r.born < 0.7 ? (Math.random() < 0.55 ? 1 : 0.08) : 1;
       let br = 1 + 0.35 * Math.min(1, r.thS / 0.9) + 0.5 * r.pulse + 0.35 * r.hl + (exS > 0 ? 0.3 + exS : 0) + 0.9 * wb + (Math.abs(y - sy) < 1.2 * RS ? 0.2 : 0) + (fl ? 0.6 * Math.abs(Math.sin(t * 26)) : 0);
       if (r.glass) br *= 0.75 + 0.35 * Math.abs(Math.sin(t * 7 + y));
       // the gas glows in the colour of the kind and flickers a little, like a neon sign; a wall that has only just
@@ -1759,11 +1850,24 @@ function render(rdt) {
       const fy = floor.position.y, dF = y - fy;
       if (dF > 0 && dF < 4 * RS) { r.refl.visible = true; r.refl.position.set(BW / 2, 2 * fy - y, -0.1); r.refl.scale.set(BW + 0.4, 0.25 + r.thS * 0.8, 1); r.refl.material.opacity = go * 0.22 * (1 - dF / (4 * RS)); }
       else r.refl.visible = false;
-      // a wire from the right cap to the tile that feeds it most (the estimate for stops and liquidations)
-      const wk = r.per ? Object.entries(r.per).filter(([k]) => REGS[k]).sort((a, b) => b[1] - a[1])[0]?.[0] || 'model' : 'model', wa = r.wire.geometry.attributes.position.array;
-      for (let i = 0; i < WIREN; i++) { wirePt(r, wk, i / (WIREN - 1), BV); wa[i * 3] = BV.x; wa[i * 3 + 1] = BV.y; wa[i * 3 + 2] = BV.z; }
-      r.wire.geometry.attributes.position.needsUpdate = true; r.wire.material.color.copy(REGS[wk].col); r.wire.material.opacity = fade * ig * 0.14 * dim;
-      r.bar.visible = r.gas.visible = r.glowA.visible = r.edge.visible = r.wire.visible = r.thS > 0.01;
+      // wires to every exchange that fills it (the estimate for stops and liquidations): brighter and thicker for a
+      // bigger share, glowing while pulses run on them, dimming when nothing has come over them for a while
+      const ent = r.per ? Object.entries(r.per).filter(([k, v]) => REGS[k] && v > 0) : [], etot = ent.reduce((a, [, v]) => a + v, 0) || 1;
+      const shares = ent.length ? ent.map(([k, v]) => [k, v / etot]).filter(([, v]) => v >= 0.03) : [['model', 1]], H = r.wh || (r.wh = {}), on = new Set();
+      for (const [k, sh] of shares) {
+        on.add(k); const w = r.wires[k] || (r.wires[k] = wireMesh()), h = H[k] || (H[k] = { h: 0, hl: 1 });
+        h.h *= Math.exp(-rdt / 2.5); h.hl *= Math.exp(-rdt / 40);
+        const est = k === 'model', ns = est ? 1 : sh > 0.4 ? 3 : sh > 0.15 ? 2 : 1, wa = w.geometry.attributes.position.array; let j = 0;
+        for (let i = 0; i < WIREN; i++) wirePt(r, k, i / (WIREN - 1), WP[i]);
+        for (let st = 0; st < ns; st++) { const off = (st - (ns - 1) / 2) * 0.05;
+          for (let i = 0; i < WIREN - 1; i++) for (const P of [WP[i], WP[i + 1]]) { wa[j++] = P.x; wa[j++] = P.y + off; wa[j++] = P.z; } }
+        w.geometry.setDrawRange(0, ns * (WIREN - 1) * 2); w.geometry.attributes.position.needsUpdate = true;
+        w.material.color.copy((REGS[k] || REGS.model).col);
+        w.material.opacity = fade * ig * dim * ((0.04 + 0.22 * sh) * (est ? 0.45 : 1) * (0.35 + 0.65 * Math.min(1, h.hl)) + 0.45 * Math.min(1, h.h));   // the estimate is one thin wire
+        w.visible = r.thS > 0.01;
+      }
+      for (const k in r.wires) if (!on.has(k)) r.wires[k].visible = false;
+      r.bar.visible = r.gas.visible = r.glowA.visible = r.edge.visible = r.thS > 0.01;
     }
     r.lbl.m.position.set(3.6 - (1 - fadeL) * 1.4, y, 0.65); r.sz.m.position.set(r.endX - 0.4 - 1.8, y, 0.65); r.hit.position.set(RX, y, 0.5);
     if (!r.gone) drawSize(r);

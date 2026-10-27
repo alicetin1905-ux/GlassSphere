@@ -372,10 +372,10 @@ const thOf = u => u > 0 ? 0.12 + 0.78 * Math.min(1, u / MAXB) : 0;   // units ->
 const baseOf = (type, rel) => TY[type].u === 'pct' ? 0 : Math.max(1, Math.min(MAXB, Math.round(rel * MAXB)));
 
 // row spacing: a tall phone screen spreads the rows out so the well fills the height (cubes stay cubes)
-const CTR = 4.6;   // height of the register counter below the well
+const WFIT = 24.8;   // width in view: labels, bars, size tags and the exchange tiles
 const COMPACT = (stage.clientWidth || 400) < 560;   // phone: bigger labels without the distance column
 const RS = (() => { const w = stage.clientWidth || 400, h = stage.clientHeight || 700, tanH = Math.tan(17.5 * Math.PI / 180);
-  const visH = 21.6 / (w / h) * 1.03 + 2.4 * tanH; return Math.max(1, Math.min(1.7, (visH * 0.9 - 2.4 - CTR) / 27)); })();
+  const visH = WFIT / (w / h) * 1.03 + 2.4 * tanH; return Math.max(1, Math.min(1.7, (visH * 0.9 - 2.4) / 27)); })();
 
 /* ---------- three.js scene ---------- */
 const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
@@ -443,7 +443,7 @@ trPts.frustumCulled = false; scene.add(trPts);
 
 // backdrop: table row lines, the well wall, drifting dust
 const floor = new THREE.Mesh(new THREE.BoxGeometry(20.6, 0.1, 1.2), new THREE.MeshBasicMaterial({ color: 0x2f6b58, transparent: true, opacity: 0.6, blending: ADD }));
-let ctrY = -13 * RS - 1.6;   // top row of the counter, follows the lowest level
+let ctrY = -13.5 * RS - 1.1;   // the floor follows the lowest level
 {
   const pos = [];
   for (let y = -13; y <= 14; y++) pos.push(-6.9, (y - 0.5) * RS, -0.7, 13.7, (y - 0.5) * RS, -0.7);
@@ -560,32 +560,36 @@ const EXN = { binance: ['Binance', '#f3ba2f'], okx: ['OKX', '#e8eef0'], bybit: [
   dydx: ['dYdX', '#a78bfa'], model: ['Schatting', '#ffc857'] };
 const EXKEY = { OKX: 'okx', Binance: 'binance', Bybit: 'bybit' };
 const REGS = {};
-const regBodyGeo = new THREE.BoxGeometry(3.3, 1.75, 0.9), regDrawGeo = new THREE.BoxGeometry(2.7, 0.3, 0.8), regEdgeGeo = new THREE.EdgesGeometry(regBodyGeo);
+// a column of tiles to the right of the bars, top to bottom along the well; the drawer opens towards the bars
+const regBodyGeo = new THREE.BoxGeometry(3, 1.7, 0.6), regDrawGeo = new THREE.BoxGeometry(0.28, 1.2, 0.45), regEdgeGeo = new THREE.EdgesGeometry(regBodyGeo);
+let tileTop = 13.5 * RS - 0.9, tileStep = 27 * RS / 11, tileSc = 1;
+const tileX = () => 14.25 + 1.5 * tileSc;
 function drawReg(R) {
   const fl = R.flash > 0 ? R.fTxt : '', st = R.on + '|' + R.tot + '|' + fl;
   if (st === R.str) return; R.str = st;
   const { g, c, t } = R.scr; g.clearRect(0, 0, c.width, c.height);
-  roundRect(g, 4, 4, 504, 142, 16); g.fillStyle = 'rgba(6,12,10,.94)'; g.fill(); g.lineWidth = 3; g.strokeStyle = R.css + (R.on ? 'cc' : '40'); g.stroke();
+  roundRect(g, 4, 4, 504, 266, 22); g.fillStyle = 'rgba(8,6,16,.94)'; g.fill(); g.lineWidth = 4; g.strokeStyle = R.css + (R.on ? 'cc' : '40'); g.stroke();
   g.textBaseline = 'middle';
-  g.font = '800 40px "JetBrains Mono", monospace'; g.fillStyle = R.on ? R.css : '#4a5852'; g.shadowColor = R.css; g.shadowBlur = R.on ? 12 : 0; g.fillText(R.name.toUpperCase(), 22, 44); g.shadowBlur = 0;
-  g.font = '700 36px "JetBrains Mono", monospace';
-  if (fl) { g.fillStyle = R.fCss; g.fillText(fl, 22, 106); }
-  else { g.fillStyle = R.on ? '#cfe0d8' : '#4a5852'; g.fillText(R.k === 'model' ? (R.on ? 'stops · liq.' : '—') : R.on ? fmtUsd(R.tot) + ' in beeld' : 'geen data', 22, 106); }
-  g.fillStyle = R.on ? '#35ffb0' : '#3a4440'; g.beginPath(); g.arc(484, 44, 9, 0, 7); g.fill();
+  g.font = `800 ${R.name.length > 9 ? 54 : 62}px "JetBrains Mono", monospace`; g.fillStyle = R.on ? R.css : '#4a5852'; g.shadowColor = R.css; g.shadowBlur = R.on ? 14 : 0;
+  g.fillText(R.name.toUpperCase(), 24, 80); g.shadowBlur = 0;
+  g.font = '700 56px "JetBrains Mono", monospace';
+  if (fl) { g.fillStyle = R.fCss; g.shadowColor = R.fCss; g.shadowBlur = 12; g.fillText(fl, 24, 192); g.shadowBlur = 0; }
+  else { g.fillStyle = R.on ? '#d8e4de' : '#4a5852'; g.fillText(R.k === 'model' ? (R.on ? 'stops · liq.' : '—') : R.on ? fmtUsd(R.tot) : 'geen data', 24, 192); }
+  g.fillStyle = R.on ? '#35ffb0' : '#3a4440'; g.beginPath(); g.arc(476, 80, 12, 0, 7); g.fill();
   t.needsUpdate = true;
 }
 Object.keys(EXN).forEach((k, i) => {
   const [name, css] = EXN[k], col = new THREE.Color(css);
-  const g = new THREE.Group(); g.position.set(-5.3 + (i % 6) * 3.55, ctrY - Math.floor(i / 6) * 2.15, 0.6); g.userData.row = Math.floor(i / 6); scene.add(g);
-  g.add(new THREE.Mesh(regBodyGeo, new THREE.MeshBasicMaterial({ color: 0x0b1311 })));
+  const g = new THREE.Group(); g.position.set(tileX(), tileTop - i * tileStep, 0.3); g.userData.i = i; scene.add(g);
+  g.add(new THREE.Mesh(regBodyGeo, new THREE.MeshBasicMaterial({ color: 0x0a0812 })));
   const edge = new THREE.LineSegments(regEdgeGeo, new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.4, blending: ADD })); g.add(edge);
-  const scr = textPlane(512, 150, 3.1, 0.91); scr.m.material.opacity = 1; scr.m.position.set(0, 0.2, 0.46); g.add(scr.m);
-  const drawer = new THREE.Mesh(regDrawGeo, new THREE.MeshBasicMaterial({ map: blockTex, color: col.clone().multiplyScalar(0.45) })); drawer.position.set(0, -0.6, 0.06); g.add(drawer);
-  const glow = new THREE.Mesh(new THREE.PlaneGeometry(2.9, 0.8), new THREE.MeshBasicMaterial({ map: glowTex, color: col, transparent: true, opacity: 0, blending: ADD, depthWrite: false })); glow.position.set(0, -0.45, 0.5); g.add(glow);
+  const scr = textPlane(512, 274, 2.8, 1.5); scr.m.material.opacity = 1; scr.m.position.set(0.08, 0, 0.31); g.add(scr.m);
+  const drawer = new THREE.Mesh(regDrawGeo, new THREE.MeshBasicMaterial({ map: blockTex, color: col.clone().multiplyScalar(0.5) })); drawer.position.set(-1.38, 0, 0); g.add(drawer);
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.9), new THREE.MeshBasicMaterial({ map: glowTex, color: col, transparent: true, opacity: 0, blending: ADD, depthWrite: false })); glow.position.set(-1.7, 0, 0.35); g.add(glow);
   REGS[k] = { k, name, css, col, g, edge, scr, drawer, glow, open: 0, flash: 0, fTxt: '', fCss: css, tot: 0, on: false, str: '', seed: Math.random() * 9 };
   drawReg(REGS[k]);
 });
-const regPos = k => { const R = REGS[k] || REGS.model; return new THREE.Vector3(R.g.position.x, R.g.position.y - 0.6, R.g.position.z + 0.5 + R.open * 0.6); };
+const regPos = k => { const R = REGS[k] || REGS.model, sc = R.g.scale.x; return new THREE.Vector3(R.g.position.x - (1.45 + R.open * 0.55) * sc, R.g.position.y, R.g.position.z + 0.2); };
 function regSend(k, txt, css) { const R = REGS[k]; if (!R) return; R.open = 1; R.flash = 1.3; R.fTxt = txt; R.fCss = css; const q = regPos(k); emit(q.x, q.y, q.z + 0.4, R.col, 6, 2.5, { vy: 1.5, life: 0.6, sx: 1.2 }); }
 const unitVal = (r, n) => r.t.u === 'usd' ? fmtUsd(r.val / Math.max(1, r.base) * n) : Math.round(r.val / Math.max(1, r.base) * n) + ' pnt';
 // which register a block of this level comes from (sign +) or goes back to: the books whose part grew or shrank most
@@ -1208,16 +1212,18 @@ document.addEventListener('visibilitychange', () => {
 
 /* ---------- camera fit ---------- */
 let dist = 60, midY = 0;
-const camT = new THREE.Vector3(3.4, 0, 0);
+const camT = new THREE.Vector3(5.45, 0, 0);
 function fit() {
   const w = stage.clientWidth, h = stage.clientHeight; if (!w || !h) return;
   renderer.setSize(w, h, false); cam.aspect = w / h;
   if (composer) { composer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5)); composer.setSize(w, h); }
   const tanH = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
   const lv = liveRows(), nU = lv.filter(r => r.t.up).length || 13, nD = lv.filter(r => !r.t.up).length || 13;
-  dist = Math.max(((nU + nD + 1) * RS + 2.4 + CTR) / 2 / tanH, 21.6 / 2 / (tanH * cam.aspect)) * 1.03 + 1.2;
-  ctrY = -(nD + 0.5) * RS - 1.6;
-  midY = ((nU + 0.5) * RS + ctrY - 3) / 2;
+  dist = Math.max(((nU + nD + 1) * RS + 2.4) / 2 / tanH, WFIT / 2 / (tanH * cam.aspect)) * 1.03 + 1.2;
+  ctrY = -(nD + 0.5) * RS - 1.1;
+  midY = ((nU - nD) * RS) / 2;
+  const top = (nU + 0.5) * RS, bot = -(nD + 0.5) * RS;
+  tileStep = (top - bot - 1.8) / 11; tileSc = Math.max(0.6, Math.min(1.1, tileStep * 0.88 / 1.7)); tileTop = top - 0.9 * tileSc;
   scene.fog.near = dist + 4; scene.fog.far = dist + 70;
   cam.updateProjectionMatrix();
 }
@@ -1434,8 +1440,9 @@ function render(rdt) {
   beam.position.y = scanY;
   for (const k in REGS) { const R = REGS[k];
     R.open = Math.max(0, R.open - rdt * 1.4); R.flash = Math.max(0, R.flash - rdt);
-    R.drawer.position.z = 0.06 + R.open * 0.6; R.glow.material.opacity = R.open * 0.9;
-    R.g.position.y += (ctrY - R.g.userData.row * 2.15 - R.g.position.y) * Math.min(1, rdt * 4);
+    R.drawer.position.x = -1.38 - R.open * 0.55; R.glow.material.opacity = R.open * 0.9;
+    const ky = Math.min(1, rdt * 4); R.g.position.y += (tileTop - R.g.userData.i * tileStep - R.g.position.y) * ky; R.g.position.x += (tileX() - R.g.position.x) * ky;
+    R.g.scale.setScalar(R.g.scale.x + (tileSc - R.g.scale.x) * ky);
     R.edge.material.opacity = (R.on ? 0.3 : 0.12) + 0.6 * R.open + 0.06 * Math.sin(t * 2 + R.seed);
     drawReg(R); }
   floor.position.y += (ctrY + 0.98 - floor.position.y) * Math.min(1, rdt * 4);

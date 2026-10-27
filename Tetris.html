@@ -797,6 +797,15 @@ function wireRoute(r, k, x, back) {
     return u < fA ? wirePt(r, k, 1 - u / fA, out) : out.set(cx - sd * (u - fA) / (1 - fA) * lB, y, 0.02);
   };
 }
+// a route from a tile along a curved wire to a free point (the price line): out of the drawer towards the bars, in level
+function tileCurve(k, end) {
+  const sd = (REGS[k] || REGS.model).side;
+  return (u, out) => {
+    const W0 = regPos(k), P = typeof end === 'function' ? end() : end, iu = 1 - u, c1 = W0.x - sd * 2.5, c2 = P.x + sd * 2.5;
+    return out.set(iu ** 3 * W0.x + 3 * iu * iu * u * c1 + 3 * iu * u * u * c2 + u ** 3 * P.x,
+      iu ** 3 * W0.y + 3 * iu * iu * u * W0.y + 3 * iu * u * u * P.y + u ** 3 * P.y, W0.z + (P.z - W0.z) * u);
+  };
+}
 const BP = new THREE.Vector3();
 function updateBolts(dt) {
   for (let i = bolts.length - 1; i >= 0; i--) {
@@ -1249,7 +1258,7 @@ function showLiq(long, q, usd, ex) {
   snd('liq');
   for (const e of ex) { const k = EXKEY[e], R = REGS[k]; if (!R) continue;
     R.open = 1; R.flash = 1.6; R.fTxt = 'LIQ ' + fmtUsd(usd); R.fCss = TY.sliq.c;
-    for (let n = 0; n < 3; n++) bolt(regPos(k), new THREE.Vector3(rnd(-5, BW + 2), slab.position.y, 0.8), TY.sliq.col, n * 0.08, 0.35, null); }
+    for (let n = 0; n < 3; n++) { const pv = new THREE.Vector3(rnd(0, BW), 0, 0.8); bolt(regPos(k), null, TY.sliq.col, n * 0.12, 0.5, null, tileCurve(k, () => pv.setY(slab.position.y))); } }
   const big = Math.max(0, Math.min(1, Math.log10(Math.max(1, usd / 1e4)) / 2.5)), sy = slab.position.y, col = TY.sliq.col;
   for (let x = -6; x < 13.5; x += 1.4) emit(x, sy, 0.8, col, Math.round(3 + big * 10), 3 + big * 7, { vy: long ? -4 : 4, vz: 2, life: 1.2 });
   shake = Math.max(shake, 0.08 + big * 0.5); liqFlash = Math.max(liqFlash, 0.25 + big * 0.75);
@@ -1558,9 +1567,10 @@ function update(dt) {
       const side = liveRows().filter(r => (tr.buy ? r.type === 'ask' : r.type === 'bid') && !r.cleared && r.units);
       const tgt = side.sort((a, b) => Math.abs(a.yd - sy) - Math.abs(b.yd - sy))[0];
       const x = rnd(0.5, BW - 0.5), dir = tr.buy ? 1 : -1, end = tgt ? barPt(tgt, x) : new THREE.Vector3(x, sy + dir * 4, 0.35);
-      bolt(regPos('okx'), end, col, 0, 0.32, () => { if (tgt && !tgt.gone) { tgt.hl = Math.max(tgt.hl, 0.7); tgt.pulse = Math.min(1.5, tgt.pulse + 0.35); } });
+      bolt(regPos('okx'), end, col, 0, 0.55, () => { if (tgt && !tgt.gone) { tgt.hl = Math.max(tgt.hl, 0.7); tgt.pulse = Math.min(1.5, tgt.pulse + 0.35); } },
+        tgt ? wireRoute(tgt, 'okx', x) : tileCurve('okx', end));
       REGS.okx.open = Math.max(REGS.okx.open, 0.6);
-      if (tr.usd >= 1e6) floatText(b.sx, sy + (tr.buy ? 1 : -1), (tr.buy ? 'koop ' : 'verkoop ') + fmtUsd(tr.usd), tr.buy ? '#35ffb0' : '#ff4d6a');
+      if (tr.usd >= 1e6) floatText(x, sy + (tr.buy ? 1 : -1), (tr.buy ? 'koop ' : 'verkoop ') + fmtUsd(tr.usd), tr.buy ? '#35ffb0' : '#ff4d6a');
       if (tr.usd >= 3e6) feed(`<b>${tr.buy ? 'Grote koop' : 'Grote verkoop'}</b> ${fmtUsd(tr.usd)} op ${fmtP(tr.px)}`, tr.buy ? TY.bid.c : TY.ask.c);
       slabEdge.material.color.set(tr.buy ? 0x35ffb0 : 0xff4d6a);
     }

@@ -317,8 +317,10 @@ function levelsOf(raw) {
   const lo = P * (1 - rg), hi = P * (1 + rg), i0 = Math.floor(lo / B), i1 = Math.ceil(hi / B), N = i1 - i0 + 1;
   const bid = new Float64Array(N), ask = new Float64Array(N), stop = new Float64Array(N), liq = new Float64Array(N);
   const idx = p => Math.floor(p / B + 1e-9) - i0;
-  for (const [ex, bk] of Object.entries(raw.books)) { const w = weights[ex] ?? 1;
-    for (const [side, arr] of [['b', bid], ['a', ask]]) for (const [p, v] of bk[side]) { const j = idx(p); if (j >= 0 && j < N) arr[j] += v * w; } }
+  const per = {}, exTot = {};
+  for (const [ex, bk] of Object.entries(raw.books)) { const w = weights[ex] ?? 1, o = per[ex] = { b: new Float64Array(N), a: new Float64Array(N) };
+    for (const [side, arr] of [['b', bid], ['a', ask]]) for (const [p, v] of bk[side]) { const j = idx(p); if (j >= 0 && j < N) { arr[j] += v * w; o[side][j] += v * w; exTot[ex] = (exTot[ex] || 0) + v * w; } } }
+  const partsOf = (side, j) => { const out = {}; for (const ex in per) if (per[ex][side][j] > 0) out[ex] = per[ex][side][j]; return out; };
   for (const s of stops) { const j = idx(s.p); if (j >= 0 && j < N) stop[j] += s.w; }
   for (const q of liqs) { const j = idx(q.p); if (j >= 0 && j < N) liq[j] += q.usd; }
   const mx = a => { let m = 1e-9; for (const v of a) if (v > m) m = v; return m; };
@@ -336,13 +338,13 @@ function levelsOf(raw) {
   const rows = [];
   for (const [type, arr, above, m] of [['ask', ask, true, mBook], ['bid', bid, false, mBook], ['bstop', stop, true, mStop], ['sstop', stop, false, mStop], ['sliq', liq, true, mLiq], ['lliq', liq, false, mLiq]])
     for (const [p, v, j] of top(arr, above)) rows.push({ type, price: p, val: type.endsWith('stop') ? Math.round(v / m * 100) : v, rel: v / m,
-      ps: type === 'ask' || type === 'bid' ? persist(j) : null });
+      ps: type === 'ask' || type === 'bid' ? persist(j) : null, per: type === 'ask' ? partsOf('a', j) : type === 'bid' ? partsOf('b', j) : null });
   if (prob != null) for (const [q, up] of [[tg.tUp, true], [tg.tDn, false]]) {
     if (!q || q.p < i0 * B || q.p > (i1 + 1) * B) continue;
     rows.push({ type: up ? 'tup' : 'tdn', price: q.p, val: q === first ? prob : 1 - prob, first: q === first, rel: 1 });
   }
   const cs = raw.candles;
-  return { P, ts: raw.ts, rows, B, nBooks: Object.keys(raw.books).length, ref24: cs[Math.max(0, cs.length - 25)][4] };
+  return { P, ts: raw.ts, rows, B, ex: exTot, nBooks: Object.keys(raw.books).length, ref24: cs[Math.max(0, cs.length - 25)][4] };
 }
 
 /* ---------- kinds, formatting ---------- */
@@ -370,9 +372,10 @@ const thOf = u => u > 0 ? 0.12 + 0.78 * Math.min(1, u / MAXB) : 0;   // units ->
 const baseOf = (type, rel) => TY[type].u === 'pct' ? 0 : Math.max(1, Math.min(MAXB, Math.round(rel * MAXB)));
 
 // row spacing: a tall phone screen spreads the rows out so the well fills the height (cubes stay cubes)
+const CTR = 4.6;   // height of the register counter below the well
 const COMPACT = (stage.clientWidth || 400) < 560;   // phone: bigger labels without the distance column
 const RS = (() => { const w = stage.clientWidth || 400, h = stage.clientHeight || 700, tanH = Math.tan(17.5 * Math.PI / 180);
-  const visH = 21.6 / (w / h) * 1.03 + 2.4 * tanH; return Math.max(1, Math.min(1.7, (visH * 0.9 - 2.4) / 27)); })();
+  const visH = 21.6 / (w / h) * 1.03 + 2.4 * tanH; return Math.max(1, Math.min(1.7, (visH * 0.9 - 2.4 - CTR) / 27)); })();
 
 /* ---------- three.js scene ---------- */
 const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
@@ -439,6 +442,8 @@ const trPts = new THREE.Points(trGeo, new THREE.PointsMaterial({ size: 0.26, map
 trPts.frustumCulled = false; scene.add(trPts);
 
 // backdrop: table row lines, the well wall, drifting dust
+const floor = new THREE.Mesh(new THREE.BoxGeometry(20.6, 0.1, 1.2), new THREE.MeshBasicMaterial({ color: 0x2f6b58, transparent: true, opacity: 0.6, blending: ADD }));
+let ctrY = -13 * RS - 1.6;   // top row of the counter, follows the lowest level
 {
   const pos = [];
   for (let y = -13; y <= 14; y++) pos.push(-6.9, (y - 0.5) * RS, -0.7, 13.7, (y - 0.5) * RS, -0.7);
@@ -447,8 +452,7 @@ trPts.frustumCulled = false; scene.add(trPts);
   scene.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x1a2622, transparent: true, opacity: 0.8 })));
   const wall = new THREE.Mesh(new THREE.BoxGeometry(0.1, 27.2 * RS, 0.1), new THREE.MeshBasicMaterial({ color: 0x2f6b58, transparent: true, opacity: 0.9, blending: ADD }));
   wall.position.set(-0.22, 0, 0); scene.add(wall);
-  const floor = new THREE.Mesh(new THREE.BoxGeometry(14, 0.1, 1.2), new THREE.MeshBasicMaterial({ color: 0x2f6b58, transparent: true, opacity: 0.6, blending: ADD }));
-  floor.position.set(6.8, -13 * RS - 0.62, 0); scene.add(floor);
+  floor.position.set(3.4, -13 * RS - 0.62, 0); scene.add(floor);
 }
 const SN = 320, sPos = new Float32Array(SN * 3), sSpd = new Float32Array(SN);
 for (let i = 0; i < SN; i++) { sPos[i * 3] = rnd(-30, 38); sPos[i * 3 + 1] = rnd(-30, 30); sPos[i * 3 + 2] = rnd(-30, -4); sSpd[i] = rnd(0.2, 1.4); }
@@ -550,6 +554,148 @@ function floatText(x, y, txt, css) {
   t.needsUpdate = true; s.position.set(x, y, 1.6); s.userData.life = 1.3; s.visible = true;
 }
 
+/* ---------- the exchanges as cash registers behind the well; a blockchain on the wall behind them ---------- */
+const EXN = { binance: ['Binance', '#f3ba2f'], okx: ['OKX', '#e8eef0'], bybit: ['Bybit', '#ff9f1c'], bitget: ['Bitget', '#22e1e8'], gate: ['Gate', '#4d8dff'],
+  htx: ['HTX', '#3fa9f5'], hyperliquid: ['Hyperliquid', '#97fce4'], deribit: ['Deribit', '#2fd1a5'], bitmex: ['BitMEX', '#ff5a5f'], cryptocom: ['Crypto.com', '#7f96ff'],
+  dydx: ['dYdX', '#a78bfa'], model: ['Schatting', '#ffc857'] };
+const EXKEY = { OKX: 'okx', Binance: 'binance', Bybit: 'bybit' };
+const REGS = {};
+const regBodyGeo = new THREE.BoxGeometry(3.3, 1.75, 0.9), regDrawGeo = new THREE.BoxGeometry(2.7, 0.3, 0.8), regEdgeGeo = new THREE.EdgesGeometry(regBodyGeo);
+function drawReg(R) {
+  const fl = R.flash > 0 ? R.fTxt : '', st = R.on + '|' + R.tot + '|' + fl;
+  if (st === R.str) return; R.str = st;
+  const { g, c, t } = R.scr; g.clearRect(0, 0, c.width, c.height);
+  roundRect(g, 4, 4, 504, 142, 16); g.fillStyle = 'rgba(6,12,10,.94)'; g.fill(); g.lineWidth = 3; g.strokeStyle = R.css + (R.on ? 'cc' : '40'); g.stroke();
+  g.textBaseline = 'middle';
+  g.font = '800 40px "JetBrains Mono", monospace'; g.fillStyle = R.on ? R.css : '#4a5852'; g.shadowColor = R.css; g.shadowBlur = R.on ? 12 : 0; g.fillText(R.name.toUpperCase(), 22, 44); g.shadowBlur = 0;
+  g.font = '700 36px "JetBrains Mono", monospace';
+  if (fl) { g.fillStyle = R.fCss; g.fillText(fl, 22, 106); }
+  else { g.fillStyle = R.on ? '#cfe0d8' : '#4a5852'; g.fillText(R.k === 'model' ? (R.on ? 'stops · liq.' : '—') : R.on ? fmtUsd(R.tot) + ' in beeld' : 'geen data', 22, 106); }
+  g.fillStyle = R.on ? '#35ffb0' : '#3a4440'; g.beginPath(); g.arc(484, 44, 9, 0, 7); g.fill();
+  t.needsUpdate = true;
+}
+Object.keys(EXN).forEach((k, i) => {
+  const [name, css] = EXN[k], col = new THREE.Color(css);
+  const g = new THREE.Group(); g.position.set(-5.3 + (i % 6) * 3.55, ctrY - Math.floor(i / 6) * 2.15, 0.6); g.userData.row = Math.floor(i / 6); scene.add(g);
+  g.add(new THREE.Mesh(regBodyGeo, new THREE.MeshBasicMaterial({ color: 0x0b1311 })));
+  const edge = new THREE.LineSegments(regEdgeGeo, new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.4, blending: ADD })); g.add(edge);
+  const scr = textPlane(512, 150, 3.1, 0.91); scr.m.material.opacity = 1; scr.m.position.set(0, 0.2, 0.46); g.add(scr.m);
+  const drawer = new THREE.Mesh(regDrawGeo, new THREE.MeshBasicMaterial({ map: blockTex, color: col.clone().multiplyScalar(0.45) })); drawer.position.set(0, -0.6, 0.06); g.add(drawer);
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(2.9, 0.8), new THREE.MeshBasicMaterial({ map: glowTex, color: col, transparent: true, opacity: 0, blending: ADD, depthWrite: false })); glow.position.set(0, -0.45, 0.5); g.add(glow);
+  REGS[k] = { k, name, css, col, g, edge, scr, drawer, glow, open: 0, flash: 0, fTxt: '', fCss: css, tot: 0, on: false, str: '', seed: Math.random() * 9 };
+  drawReg(REGS[k]);
+});
+const regPos = k => { const R = REGS[k] || REGS.model; return new THREE.Vector3(R.g.position.x, R.g.position.y - 0.6, R.g.position.z + 0.5 + R.open * 0.6); };
+function regSend(k, txt, css) { const R = REGS[k]; if (!R) return; R.open = 1; R.flash = 1.3; R.fTxt = txt; R.fCss = css; const q = regPos(k); emit(q.x, q.y, q.z + 0.4, R.col, 6, 2.5, { vy: 1.5, life: 0.6, sx: 1.2 }); }
+const unitVal = (r, n) => r.t.u === 'usd' ? fmtUsd(r.val / Math.max(1, r.base) * n) : Math.round(r.val / Math.max(1, r.base) * n) + ' pnt';
+// which register a block of this level comes from (sign +) or goes back to: the books whose part grew or shrank most
+function pickReg(r, w) {
+  if (!r.per) return 'model';
+  const e = Object.entries(w && Object.keys(w).length ? w : r.per).filter(([k, v]) => REGS[k] && v > 0);
+  if (!e.length) return 'model';
+  let x = Math.random() * e.reduce((a, [, v]) => a + v, 0);
+  for (const [k, v] of e) if ((x -= v) <= 0) return k;
+  return e[0][0];
+}
+
+// wallpaper: a hex grid, circuit traces and hashes on the far wall; pulses run along the traces
+const WALL = { x: 3.4, y: 0, z: -24, w: 64, h: 96 }, traces = [];
+{ let sd = 7; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+  for (let n = 0; n < 46; n++) {
+    let x = WALL.x - WALL.w / 2 + rr() * WALL.w, y = WALL.y - WALL.h / 2 + rr() * WALL.h; const pts = [[x, y]];
+    for (let k = 0, hor = rr() < 0.5; k < 3 + Math.floor(rr() * 4); k++, hor = !hor) { const d = (rr() < 0.5 ? -1 : 1) * (2 + rr() * 7); hor ? x += d : y += d; pts.push([x, y]); }
+    let len = 0; for (let k = 1; k < pts.length; k++) len += Math.abs(pts[k][0] - pts[k - 1][0]) + Math.abs(pts[k][1] - pts[k - 1][1]);
+    traces.push({ pts, len });
+  }
+}
+const wallTex = canvasTex(1024, 1536, g => {
+  const U = x => (x - (WALL.x - WALL.w / 2)) / WALL.w * 1024, V = y => ((WALL.y + WALL.h / 2) - y) / WALL.h * 1536;
+  g.fillStyle = '#000'; g.fillRect(0, 0, 1024, 1536);
+  g.strokeStyle = 'rgba(55,150,120,.20)'; g.lineWidth = 1.4;
+  const R = 30, H = R * Math.sqrt(3);
+  for (let col = -1; col < 1024 / (R * 1.5) + 1; col++) for (let row = -1; row < 1536 / H + 1; row++) {
+    const cx = col * R * 1.5, cy = row * H + (col % 2 ? H / 2 : 0);
+    g.beginPath(); for (let k = 0; k < 6; k++) { const a = Math.PI / 3 * k; g[k ? 'lineTo' : 'moveTo'](cx + R * Math.cos(a), cy + R * Math.sin(a)); } g.closePath(); g.stroke();
+  }
+  g.strokeStyle = 'rgba(70,230,170,.42)'; g.lineWidth = 2.4; g.fillStyle = 'rgba(120,255,200,.7)';
+  for (const tr of traces) { g.beginPath(); tr.pts.forEach(([x, y], k) => g[k ? 'lineTo' : 'moveTo'](U(x), V(y))); g.stroke();
+    for (const [x, y] of [tr.pts[0], tr.pts[tr.pts.length - 1]]) { g.beginPath(); g.arc(U(x), V(y), 5, 0, 7); g.fill(); } }
+  let sd = 3; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647, hx = n => [...Array(n)].map(() => '0123456789abcdef'[Math.floor(rr() * 16)]).join('');
+  g.font = '500 15px "JetBrains Mono", monospace';
+  for (let n = 0; n < 80; n++) { g.fillStyle = `rgba(90,210,170,${0.12 + rr() * 0.16})`; g.fillText('0x' + hx(12 + Math.floor(rr() * 20)), rr() * 900, rr() * 1536); }
+  g.font = '700 60px "JetBrains Mono", monospace'; g.fillStyle = 'rgba(247,147,26,.16)';
+  for (let n = 0; n < 7; n++) g.fillText('₿', rr() * 960, rr() * 1500);
+});
+const wallM = new THREE.Mesh(new THREE.PlaneGeometry(WALL.w, WALL.h), new THREE.MeshBasicMaterial({ map: wallTex, transparent: true, opacity: 0.3, blending: ADD, depthWrite: false, fog: false }));
+wallM.position.set(WALL.x, WALL.y, WALL.z); scene.add(wallM);
+const PU = RM ? 30 : 80, puPos = new Float32Array(PU * 3), puCol = new Float32Array(PU * 3), pulses = [];
+const PUC = [new THREE.Color('#35ffb0'), new THREE.Color('#7ff0d0'), new THREE.Color('#f7931a'), new THREE.Color('#b48cff')];
+for (let i = 0; i < PU; i++) { const c = PUC[i % 4]; pulses.push({ tr: traces[i % traces.length], s: Math.random() * 30, v: rnd(2.5, 8) }); puCol.set([c.r, c.g, c.b], i * 3); }
+const puGeo = new THREE.BufferGeometry();
+puGeo.setAttribute('position', new THREE.BufferAttribute(puPos, 3).setUsage(THREE.DynamicDrawUsage)); puGeo.setAttribute('color', new THREE.BufferAttribute(puCol, 3));
+const puPts = new THREE.Points(puGeo, new THREE.PointsMaterial({ size: 0.8, map: dotTex, vertexColors: true, transparent: true, opacity: 0.7, depthWrite: false, blending: ADD, fog: false }));
+puPts.frustumCulled = false; scene.add(puPts);
+function movePulses(dt) {
+  pulses.forEach((u, i) => {
+    u.s = (u.s + u.v * dt) % u.tr.len; let left = u.s, pts = u.tr.pts, x = pts[0][0], y = pts[0][1];
+    for (let k = 1; k < pts.length; k++) { const dx = pts[k][0] - pts[k - 1][0], dy = pts[k][1] - pts[k - 1][1], d = Math.abs(dx) + Math.abs(dy);
+      if (left <= d) { x = pts[k - 1][0] + dx * left / d; y = pts[k - 1][1] + dy * left / d; break; } left -= d; x = pts[k][0]; y = pts[k][1]; }
+    puPos.set([x, y, WALL.z + 0.1], i * 3);
+  });
+  puGeo.attributes.position.needsUpdate = true;
+}
+
+// the real Bitcoin chain (mempool.space): the newest blocks as linked cubes along the top, a new one drops in when it is found
+const CHN = 6, chain = [], chainG = new THREE.Group(); chainG.position.set(3.4, 12.2 * RS, -26); scene.add(chainG);
+const cubeGeo = new THREE.BoxGeometry(2, 2, 2), cubeEdge = new THREE.EdgesGeometry(cubeGeo), BTC = new THREE.Color('#f7931a');
+const linkM = new THREE.LineBasicMaterial({ color: BTC, transparent: true, opacity: 0.45, blending: ADD });
+function chainCube(b) {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(cubeGeo, new THREE.MeshBasicMaterial({ color: BTC, transparent: true, opacity: 0.08, blending: ADD, depthWrite: false })));
+  const e = new THREE.LineSegments(cubeEdge, new THREE.LineBasicMaterial({ color: BTC, transparent: true, opacity: 0.85, blending: ADD })); g.add(e);
+  const c = document.createElement('canvas'); c.width = 256; c.height = 112; const x = c.getContext('2d');
+  x.textAlign = 'center'; x.textBaseline = 'middle'; x.font = '800 40px "JetBrains Mono", monospace'; x.fillStyle = '#ffb35c'; x.shadowColor = '#f7931a'; x.shadowBlur = 10;
+  x.fillText('#' + b.height.toLocaleString('nl-NL'), 128, 38); x.shadowBlur = 0; x.font = '600 28px "JetBrains Mono", monospace'; x.fillStyle = '#c9b8a0';
+  x.fillText(b.tx_count.toLocaleString('nl-NL') + ' tx', 128, 84);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false })); sp.scale.set(2.9, 1.27, 1); sp.position.set(0, -2.1, 0); g.add(sp);
+  const link = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-1, 0, 0), new THREE.Vector3(-2.4, 0, 0)]), linkM); g.add(link);
+  g.userData = { h: b.height, born: clock, e, sp };
+  return g;
+}
+const slotX = i => (i - (CHN - 1) / 2) * 3.4;    // i = 0 oldest .. CHN - 1 newest
+function addBlock(b, fresh) {
+  if (chain.some(g => g.userData.h === b.height)) return;
+  const g = chainCube(b); chainG.add(g); chain.push(g); chain.sort((a, c) => a.userData.h - c.userData.h);
+  while (chain.length > CHN) { const o = chain.shift(); chainG.remove(o); o.traverse(m => { if (m.material) { if (m.material.map) m.material.map.dispose(); if (m !== o && m.material !== linkM) m.material.dispose(); } }); }
+  g.position.set(slotX(chain.indexOf(g)), fresh ? 9 : 0, 0); g.userData.fresh = fresh;
+  if (fresh) {
+    const pool = b.extras?.pool?.name;
+    banner('NIEUW BTC-BLOK', `#${b.height.toLocaleString('nl-NL')} · ${b.tx_count.toLocaleString('nl-NL')} transacties${pool ? ' · ' + pool : ''}`, '', '#f7931a', true);
+    feed(`<b>Nieuw blok</b> #${b.height.toLocaleString('nl-NL')} · ${b.tx_count.toLocaleString('nl-NL')} tx${pool ? ' · ' + pool : ''}`, '#f7931a');
+  }
+}
+let chainTop = 0;
+async function loadChain() {
+  try {
+    const d = (await getJSON('https://mempool.space/api/v1/blocks')).sort((a, b) => a.height - b.height).slice(-CHN);
+    const first = !chainTop;
+    for (const b of d) if (b.height > chainTop) { addBlock(b, !first); chainTop = b.height; }
+  } catch (e) {}
+}
+loadChain(); setInterval(loadChain, 60e3);
+function renderChain(rdt, t) {
+  chain.forEach((g, i) => {
+    const u = g.userData, tx = slotX(i);
+    g.position.x += (tx - g.position.x) * Math.min(1, rdt * 3);
+    g.position.y += (0 - g.position.y) * Math.min(1, rdt * (u.fresh ? 4 : 8));
+    g.rotation.y = 0.35 * Math.sin(t * 0.4 + i) + (u.fresh ? Math.max(0, 1 - (clock - u.born) / 2) * 6 : 0);
+    g.rotation.x = 0.15 * Math.sin(t * 0.3 + i * 0.7);
+    const newest = i === chain.length - 1, f = Math.max(0, 1 - (clock - u.born) / 3);
+    u.e.material.opacity = (newest ? 0.6 + 0.2 * Math.sin(t * 3) : 0.35) + f * 0.5; u.sp.material.opacity = newest ? 0.85 : 0.5;
+    g.children[3].visible = i > 0;   // the link to the block before
+  });
+}
+
 /* ---------- blocks ---------- */
 let blocks = [];
 const WHITE = new THREE.Color(1, 1, 1), BUYC = new THREE.Color('#35ffb0'), SELLC = new THREE.Color('#ff4d6a');
@@ -557,9 +703,17 @@ function newBlock(col) { const b = { col, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0,
 // blocks rain onto a bar and melt into it: each one makes it a unit thicker
 function fillRow(r, n, delay) {
   r.inbound += n;
+  const sent = {};
   for (let k = 0; k < n; k++) {
-    const b = newBlock(r.t.col); b.row = r; b.state = 'feed'; b.x = (k + 0.5) * 10 / n; b.y = r.yd + 10 + Math.random() * 3; b.vy = 0; b.delay = delay + k * 0.04; b.s = 0.0001;
+    const src = pickReg(r, r.srcW), b = newBlock(r.t.col); sent[src] = (sent[src] || 0) + 1;
+    pathTo(b, regPos(src), [(k + 0.5) * 10 / n, r.yd, 0], 0.8, 'absorb'); b.row = r; b.t = -(delay + k * 0.05); b.s0 = 0.35; b.s1 = 0.8;
   }
+  for (const k in sent) regSend(k, '+' + unitVal(r, sent[k]), '#35ffb0');
+}
+// a block on its way from a to c in an arc: into a bar (absorb), back into a register (withdraw) or a burst
+function pathTo(b, a, c, dur, end) { b.state = 'path'; b.ax = a.x; b.ay = a.y; b.az = a.z; b.cx = c[0]; b.cy = c[1]; b.cz = c[2]; b.dur = dur; b.end = end; b.t = 0; b.s0 = b.s1 = b.s > 0.01 ? b.s : 0.8; }
+function withdraw(r, b, dst) {
+  const q = regPos(dst); pathTo(b, { x: b.x, y: b.y, z: b.z }, [q.x, q.y, q.z], 0.85, 'withdraw'); b.reg = dst; b.s0 = b.s; b.s1 = 0.3; b.flash = 0.6;
 }
 function absorb(r, b) {
   b.dead = true; r.inbound = Math.max(0, r.inbound - 1);
@@ -583,7 +737,7 @@ let rows = [];
 const keyOf = lv => lv.type + '|' + lv.price;
 function makeRow(lv) {
   const t = TY[lv.type];
-  const r = { key: keyOf(lv), type: lv.type, t, price: lv.price, val: lv.val, rel: lv.rel, first: !!lv.first, base: baseOf(lv.type, lv.rel), ps: lv.ps || null, glass: !!(lv.ps && lv.ps[0] <= 1),
+  const r = { key: keyOf(lv), type: lv.type, t, price: lv.price, val: lv.val, rel: lv.rel, first: !!lv.first, base: baseOf(lv.type, lv.rel), ps: lv.ps || null, glass: !!(lv.ps && lv.ps[0] <= 1), per: lv.per || null, srcW: lv.per || null, dstW: null,
     y: 0, yd: null, units: 0, inbound: 0, thS: 0, pulse: 0, cleared: false, clearedAt: -9, gone: false, goneT: 0, born: T, flare: 0, decayT: 0, hl: 0, endX: 10, lblStr: '', sizeStr: '' };
   r.lbl = textPlane(640, 80, 6.4, 0.8); scene.add(r.lbl.m);
   r.sz = textPlane(360, 80, 3.6, 0.8); scene.add(r.sz.m);
@@ -615,7 +769,9 @@ function disposeRow(r) {
 function removeRow(r, quiet) {
   if (r.gone) return;
   r.gone = true; r.goneT = 0.9;
-  if (r.units) debris(r, Math.min(10, r.units), 'dying');
+  if (r.units) { const sent = {};
+    debris(r, Math.min(8, r.units), 'dying').forEach((b, k) => { const d = pickReg(r, r.per); sent[d] = (sent[d] || 0) + 1; withdraw(r, b, d); b.t = -k * 0.05; });
+    for (const k in sent) regSend(k, '−' + unitVal(r, sent[k]), '#ff6b81'); }
   r.units = 0;
   if (!quiet && !r.cleared && r.rel >= 0.6 && r.t.u === 'usd')
     feed(`<b>${r.t.n} ${fmtP(r.price)}</b> weggetrokken · ${fmtUsd(r.val)}`, r.t.c);
@@ -660,6 +816,7 @@ let nextP = null;
 // gone ones dissolve; a level that was swept and is still listed on its side rebuilds
 function applyLevels(L) {
   refP = L.P; ref24 = L.ref24 || 0; bucket = L.B || bucket;
+  for (const k in REGS) { const R = REGS[k]; R.tot = L.ex?.[k] || 0; R.on = k === 'model' || R.tot > 0; }
   if (mode === 'live' && !tick.fresh()) p = L.P;
   if (firstApply) pS = shown = p;
   const seen = new Set(), quiet = firstApply || !armed, now = mode === 'live' ? tick.fresh() : null;
@@ -676,6 +833,10 @@ function applyLevels(L) {
     }
     const old = r.val;
     r.val = lv.val; r.rel = lv.rel; r.first = !!lv.first; r.base = baseOf(lv.type, lv.rel); r.ps = lv.ps || null; r.glass = !!(r.ps && r.ps[0] <= 1);
+    if (lv.per) { const o = r.per || {}, d = {};
+      for (const k of new Set([...Object.keys(o), ...Object.keys(lv.per)])) d[k] = (lv.per[k] || 0) - (o[k] || 0);
+      r.srcW = Object.fromEntries(Object.entries(d).filter(([, v]) => v > 0)); r.dstW = Object.fromEntries(Object.entries(d).filter(([, v]) => v < 0).map(([k, v]) => [k, -v])); }
+    r.per = lv.per || null;
     if (r.t.u === 'usd' && !r.cleared && Math.abs(r.val - old) >= Math.max(3e6, old * 0.15)) r.delta = r.val - old;
     if (r.cleared && (r.t.up ? p < r.price : p > r.price)) { r.cleared = false; r.isNew = true; }
   }
@@ -704,7 +865,7 @@ function makeNext() {
   const r = pickRow();
   if (!r) { nextP = null; drawNext(); return; }
   const opts = BY_SIZE[Math.min(4, deficit(r))];
-  nextP = { row: r, key: opts[Math.floor(Math.random() * opts.length)] }; drawNext();
+  nextP = { row: r, key: opts[Math.floor(Math.random() * opts.length)], src: pickReg(r, r.srcW) }; drawNext();
 }
 const mini = $('mini'); for (let i = 0; i < 8; i++) mini.appendChild(document.createElement('i'));
 function drawNext() {
@@ -713,7 +874,7 @@ function drawNext() {
   if (!nextP) { $('who').textContent = 'wacht op orders'; return; }
   mini.style.setProperty('--mc', nextP.row.t.c);
   for (const [dx, dy] of SHAPES[nextP.key]) cells[(1 - dy) * 4 + dx].className = 'on';
-  $('who').textContent = nextP.row.t.n + ' ' + fmtP(nextP.row.price);
+  $('who').textContent = nextP.row.t.n + ' ' + fmtP(nextP.row.price) + ' ← ' + REGS[nextP.src].name;
 }
 function spawn() {
   if (!nextP || nextP.row.gone || nextP.row.cleared || deficit(nextP.row) <= 0 || pieces.some(q => q.row === nextP.row)) makeNext();
@@ -722,7 +883,9 @@ function spawn() {
   const cells = SHAPES[key].slice(0, Math.max(1, deficit(row))).map(c => c.slice());
   const wd = Math.max(...cells.map(c => c[0])) + 1, q = { row, cells, gx: Math.floor(Math.random() * (11 - wd)), gy: 16, stepT: 0, blocks: [] };
   row.inbound += cells.length;
-  for (const [dx, dy] of cells) { const b = newBlock(row.t.col); b.state = 'piece'; b.x = q.gx + dx + 0.5; b.y = q.gy * RS + dy + 4; b.z = 1.35; b.s = 0.9; q.blocks.push(b); }
+  const src = nextP.src || 'model', a = regPos(src); q.phase = 'travel'; q.t = 0; q.a = a;
+  for (const [dx, dy] of cells) { const b = newBlock(row.t.col); b.state = 'piece'; b.x = a.x + dx * 0.4; b.y = a.y + dy * 0.4; b.z = a.z; b.s = 0.35; q.blocks.push(b); }
+  regSend(src, '+' + unitVal(row, cells.length), '#35ffb0');
   pieces.push(q); nextP = null; makeNext();
 }
 function rotate(q) {
@@ -856,6 +1019,9 @@ function realLiq(ex, long, q, usd) {
 }
 function showLiq(long, q, usd, ex) {
   liqTot += usd;
+  for (const e of ex) { const k = EXKEY[e], R = REGS[k]; if (!R) continue;
+    R.open = 1; R.flash = 1.6; R.fTxt = 'LIQ ' + fmtUsd(usd); R.fCss = TY.sliq.c;
+    const b = newBlock(TY.sliq.col); b.s = 0.6; pathTo(b, regPos(k), [rnd(1, 9), slab.position.y, 0.8], 0.6, 'burst'); }
   const big = Math.max(0, Math.min(1, Math.log10(Math.max(1, usd / 1e4)) / 2.5)), sy = slab.position.y, col = TY.sliq.col;
   for (let x = -6; x < 13.5; x += 1.4) emit(x, sy, 0.8, col, Math.round(3 + big * 10), 3 + big * 7, { vy: long ? -4 : 4, vz: 2, life: 1.2 });
   shake = Math.max(shake, 0.08 + big * 0.5); liqFlash = Math.max(liqFlash, 0.25 + big * 0.75);
@@ -919,15 +1085,22 @@ const SNAP = [
   [79225, 'sstop', 48], [79075, 'sstop', 86], [79075, 'lliq', 80.9e6], [79050, 'tdn', 0.48], [79025, 'lliq', 54.6e6],
   [78975, 'sstop', 7], [78975, 'lliq', 107.8e6], [78825, 'lliq', 173.6e6],
 ].map(([price, type, val]) => ({ price, type, val, drift: 1 }));
+const DMIX = { binance: .3, okx: .17, bybit: .14, bitget: .1, gate: .08, htx: .05, hyperliquid: .07, deribit: .03, bitmex: .02, cryptocom: .02, dydx: .02 };
 const DMAX = { usd: { ask: 80e6, bid: 80e6, sliq: 175e6, lliq: 175e6 }, score: 100 };
 function demoLevels() {
   const rowsD = SNAP.map(s => {
     if (TY[s.type].u !== 'pct') s.drift = Math.max(0.35, Math.min(1.6, s.drift * Math.exp(gauss() * 0.16) * (1 + (1 - s.drift) * 0.15)));
     const val = TY[s.type].u === 'pct' ? s.val : s.val * s.drift;
     const m = TY[s.type].u === 'usd' ? DMAX.usd[s.type] : 100;
-    return { type: s.type, price: s.price, val: TY[s.type].u === 'score' ? Math.min(100, Math.round(val)) : val, rel: TY[s.type].u === 'pct' ? 1 : Math.min(1, val / m), first: s.type === 'tup' };
+    const wall = s.type === 'ask' || s.type === 'bid';
+    if (wall) { s.mix = s.mix || Object.fromEntries(Object.entries(DMIX).map(([k, w]) => [k, w * rnd(0.5, 1.5)]));
+      for (const k in s.mix) s.mix[k] = Math.max(0.005, s.mix[k] * Math.exp(gauss() * 0.25)); }
+    const sum = wall ? Object.values(s.mix).reduce((a, b) => a + b, 0) : 1;
+    return { type: s.type, price: s.price, val: TY[s.type].u === 'score' ? Math.min(100, Math.round(val)) : val, rel: TY[s.type].u === 'pct' ? 1 : Math.min(1, val / m), first: s.type === 'tup',
+      per: wall ? Object.fromEntries(Object.entries(s.mix).map(([k, w]) => [k, val * w / sum])) : null };
   });
-  return { P: P0, ts: Date.now(), rows: rowsD, B: 50, ref24: 0 };
+  const ex = {}; for (const r of rowsD) for (const k in r.per || {}) ex[k] = (ex[k] || 0) + r.per[k] * 9;
+  return { P: P0, ts: Date.now(), rows: rowsD, B: 50, ref24: 0, ex };
 }
 function startDemo() {
   liveGen++; clearInterval(liveTimer); tick.stop(); liqWs.stop(); mode = 'demo'; setButtons(); trail.length = 0;
@@ -1013,8 +1186,9 @@ function fit() {
   if (composer) { composer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5)); composer.setSize(w, h); }
   const tanH = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
   const lv = liveRows(), nU = lv.filter(r => r.t.up).length || 13, nD = lv.filter(r => !r.t.up).length || 13;
-  dist = Math.max(((nU + nD + 1) * RS + 2.4) / 2 / tanH, 21.6 / 2 / (tanH * cam.aspect)) * 1.03 + 1.2;
-  midY = (nU - nD) * RS / 2;
+  dist = Math.max(((nU + nD + 1) * RS + 2.4 + CTR) / 2 / tanH, 21.6 / 2 / (tanH * cam.aspect)) * 1.03 + 1.2;
+  ctrY = -(nD + 0.5) * RS - 1.6;
+  midY = ((nU + 0.5) * RS + ctrY - 3) / 2;
   scene.fog.near = dist + 4; scene.fog.far = dist + 70;
   cam.updateProjectionMatrix();
 }
@@ -1069,8 +1243,7 @@ function update(dt) {
       r.cleared = false; r.born = T; if (r.base) fillRow(r, r.base, 0); }
     if (!r.cleared && r.base && r.units > r.base && (r.decayT -= dt) <= 0) {
       r.decayT = rnd(0.25, 0.6); r.units--;
-      const near = (r.type === 'ask' || r.type === 'bid') && Math.abs(r.yd - sy) < 3.5 * RS, [b] = debris(r, 1, near ? 'suck' : 'dying');
-      b.flash = 0.8; b.t = 0;
+      const d = pickReg(r, r.dstW), [b] = debris(r, 1, 'dying'); withdraw(r, b, d); regSend(d, '−' + unitVal(r, 1), '#ff6b81');
     }
     if (r.flare > 0) {
       r.flare -= dt;
@@ -1089,7 +1262,8 @@ function update(dt) {
     if (tr.usd >= 250e3) {
       const side = liveRows().filter(r => (tr.buy ? r.type === 'ask' : r.type === 'bid') && !r.cleared && r.units);
       const tgt = side.sort((a, b) => Math.abs(a.yd - sy) - Math.abs(b.yd - sy))[0];
-      const b = newBlock(col); b.state = 'shot'; b.t = 0; b.s = 0.55; b.tx = rnd(0.5, 9.5); b.sx = rnd(1, 8); b.sy = sy; b.tgt = tgt || null; b.dirY = tr.buy ? 1 : -1;
+      const b = newBlock(col); b.s = 0.55; b.tx = rnd(0.5, 9.5); b.sx = rnd(1, 8); b.sy = sy; b.tgt = tgt || null; b.dirY = tr.buy ? 1 : -1;
+      pathTo(b, regPos('okx'), [b.tx, tgt ? tgt.yd : sy + b.dirY * 4, 0.3], 0.5, 'burst'); REGS.okx.open = Math.max(REGS.okx.open, 0.6);
       if (tr.usd >= 1e6) floatText(b.sx, sy + (tr.buy ? 1 : -1), (tr.buy ? 'koop ' : 'verkoop ') + fmtUsd(tr.usd), tr.buy ? '#35ffb0' : '#ff4d6a');
       if (tr.usd >= 3e6) feed(`<b>${tr.buy ? 'Grote koop' : 'Grote verkoop'}</b> ${fmtUsd(tr.usd)} op ${fmtP(tr.px)}`, tr.buy ? TY.bid.c : TY.ask.c);
       slabEdge.material.color.set(tr.buy ? 0x35ffb0 : 0xff4d6a);
@@ -1100,6 +1274,15 @@ function update(dt) {
   const STEP = 0.05;
   for (let i = pieces.length - 1; i >= 0; i--) {
     const q = pieces[i], r = q.row, ri = Math.round(r.yd / RS);
+    if (q.phase === 'travel') {
+      q.t += dt / 0.7; const e = Math.min(1, q.t), ee = e * e * (3 - 2 * e), top = Math.round(r.yd / RS + 4) * RS;
+      q.blocks.forEach((b, j) => { const [dx, dy] = q.cells[j], sx = q.a.x + dx * 0.4, sy0 = q.a.y + dy * 0.4;
+        b.x = sx + (q.gx + dx + 0.5 - sx) * ee; b.y = sy0 + (top + dy - sy0) * ee + Math.sin(Math.PI * e) * 1.5; b.z = q.a.z + (1.35 - q.a.z) * ee + Math.sin(Math.PI * e) * 2.5;
+        b.s = 0.35 + 0.55 * ee; b.ry = (1 - ee) * 4; });
+      if (e >= 1) { q.phase = 'fall'; q.gy = Math.round(top / RS); q.stepT = 0; q.blocks.forEach(b => b.ry = 0); }
+      if (r.gone || r.cleared) { lock(q); pieces.splice(i, 1); }
+      continue;
+    }
     q.stepT += dt;
     while (q.stepT > STEP && q.gy > ri) { q.stepT -= STEP; q.gy -= 1; if (Math.random() < 0.1) rotate(q); }
     const k = 1 - Math.exp(-32 * dt), land = r.yd + r.thS / 2 + 0.45, fy = q.gy > ri ? Math.max(q.gy * RS, land) : land;
@@ -1112,6 +1295,20 @@ function update(dt) {
   for (const b of blocks) {
     b.flash = Math.max(0, b.flash - dt * 3.2);
     switch (b.state) {
+      case 'path': {
+        if (b.t < 0) { b.t += dt; b.s = 0.0001; break; }
+        b.t += dt / b.dur; const e = Math.min(1, b.t), ee = e * e * (3 - 2 * e), tr = b.row || b.tgt;
+        const cy = tr && !tr.gone ? tr.yd + (b.end === 'absorb' ? tr.thS / 2 : 0) : b.cy;
+        b.x = b.ax + (b.cx - b.ax) * ee; b.y = b.ay + (cy - b.ay) * ee + Math.sin(Math.PI * e) * 1.6; b.z = b.az + (b.cz - b.az) * ee + Math.sin(Math.PI * e) * 2.4;
+        b.s = b.s0 + (b.s1 - b.s0) * ee; b.rx += dt * 5; b.ry += dt * 4;
+        if (Math.random() < 0.35) emit(b.x, b.y, b.z, b.col, 1, 0.5, { life: 0.35 });
+        if (e >= 1) {
+          if (b.end === 'absorb') { b.rx = b.ry = 0; absorb(b.row, b); }
+          else if (b.end === 'withdraw') { b.dead = true; const R = REGS[b.reg]; if (R) { R.open = 1; emit(b.x, b.y, b.z, R.col, 6, 2); } }
+          else { b.dead = true; emit(b.x, b.y, b.z, b.col, 14, 4); if (b.tgt && !b.tgt.gone) { b.tgt.hl = Math.max(b.tgt.hl, 0.7); b.tgt.pulse = Math.min(1.5, b.tgt.pulse + 0.35); } }
+        }
+        break;
+      }
       case 'feed': {
         if (b.delay > 0) { b.delay -= dt; b.s = 0.0001; break; }
         const r = b.row; if (!r || r.gone || r.cleared) { if (r) absorb(r, b); else b.dead = true; break; }
@@ -1205,6 +1402,16 @@ function render(rdt) {
     }
     trGeo.attributes.position.needsUpdate = true; trGeo.attributes.color.needsUpdate = true; }
   beam.position.y = scanY;
+  for (const k in REGS) { const R = REGS[k];
+    R.open = Math.max(0, R.open - rdt * 1.4); R.flash = Math.max(0, R.flash - rdt);
+    R.drawer.position.z = 0.06 + R.open * 0.6; R.glow.material.opacity = R.open * 0.9;
+    R.g.position.y += (ctrY - R.g.userData.row * 2.15 - R.g.position.y) * Math.min(1, rdt * 4);
+    R.edge.material.opacity = (R.on ? 0.3 : 0.12) + 0.6 * R.open + 0.06 * Math.sin(t * 2 + R.seed);
+    drawReg(R); }
+  floor.position.y += (ctrY + 0.98 - floor.position.y) * Math.min(1, rdt * 4);
+  if (!paused) movePulses(rdt);
+  renderChain(rdt, t);
+  wallM.position.y = WALL.y + Math.sin(t * 0.05) * 2; puPts.position.y = wallM.position.y - WALL.y;
 
   // rows: halos, labels, size tags, gates
   for (const r of rows) {

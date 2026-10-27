@@ -481,33 +481,34 @@ function drawSize(r) {
   t.needsUpdate = true;
 }
 
-// current-price slab (the app's own "HUIDIGE PRIJS" row, as a glass bar that moves)
+// the current price: a laser line across the bars in the colour of the last tick (green up, red down) with a spark
+// running along it, and a price tag over the label column with the change and how far the nearest walls are
 const slab = new THREE.Group(); scene.add(slab);
-const slabBox = new THREE.Mesh(new THREE.BoxGeometry(20.8, 0.92, 1.5), new THREE.MeshBasicMaterial({ color: 0x35ffb0, transparent: true, opacity: 0.07, blending: ADD, depthWrite: false }));
-slabBox.position.x = 3.4; slab.add(slabBox);
-const slabEdge = new THREE.LineSegments(new THREE.EdgesGeometry(slabBox.geometry), new THREE.LineBasicMaterial({ color: 0x7ff0d0, transparent: true, opacity: 0.95, blending: ADD }));
-slabEdge.position.x = 3.4; slab.add(slabEdge);
-const sweep = new THREE.Mesh(new THREE.PlaneGeometry(3, 1.1), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.6, blending: ADD, depthWrite: false }));
-sweep.position.z = 0.78; slab.add(sweep);
-const slabL = textPlane(1024, 96, 8.53, 0.8); slabL.m.material.opacity = 1; slabL.m.position.set(-6.9 + 4.27, 0, 0.8); slab.add(slabL.m);
-let slabStr = '';
+const slabEdge = new THREE.Mesh(new THREE.PlaneGeometry(14.3, 0.07), new THREE.MeshBasicMaterial({ color: 0x7ff0d0, transparent: true, opacity: 1, blending: ADD, depthWrite: false }));
+slabEdge.position.set(6.95, 0, 0.75); slab.add(slabEdge);
+const laserGlow = new THREE.Mesh(new THREE.PlaneGeometry(14.6, 1.0), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.3, blending: ADD, depthWrite: false }));
+laserGlow.position.set(6.95, 0, 0.7); slab.add(laserGlow);
+const sweep = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.9), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.9, blending: ADD, depthWrite: false }));
+sweep.position.z = 0.8; slab.add(sweep);
+const TAGH = Math.min(1.45, RS * 1.12), slabL = textPlane(1536, 180, TAGH * 8.53, TAGH); slabL.m.material.opacity = 1; slabL.m.position.set(-6.9 + TAGH * 4.27, 0, 0.9); slab.add(slabL.m);
+let slabStr = '', tagDir = 0, tagFlash = 0;
+const UPC = '#35ffb0', DNC = '#ff4d6a', NTC = '#7ff0d0';
 function drawSlab() {
   const d = ref24 ? fmtPct((shown / ref24 - 1) * 100) + ' 24u' : fmtPct((shown / P0 - 1) * 100);
-  const s = fmtP(shown) + '|' + d; if (s === slabStr) return; slabStr = s;
+  const lv = liveRows(), asks = lv.filter(r => r.type === 'ask' && !r.cleared && r.price > shown), bids = lv.filter(r => r.type === 'bid' && !r.cleared && r.price < shown);
+  const up = asks.length ? Math.min(...asks.map(r => r.price)) - shown : null, dn = bids.length ? shown - Math.max(...bids.map(r => r.price)) : null;
+  const s = [fmtP(shown), d, tagDir, Math.round(up ?? -1), Math.round(dn ?? -1)].join('|'); if (s === slabStr) return; slabStr = s;
+  const col = tagDir > 0 ? UPC : tagDir < 0 ? DNC : NTC;
   const { g, c, t } = slabL; g.clearRect(0, 0, c.width, c.height); g.textBaseline = 'middle';
-  g.shadowColor = '#35ffb0'; g.shadowBlur = 18; g.fillStyle = '#7ff0d0';
-  if (!COMPACT) { g.font = '800 64px "JetBrains Mono", monospace'; g.fillText(fmtP(shown), 6, 50); }
-  if (COMPACT) {
-    g.font = '800 84px "JetBrains Mono", monospace'; g.fillText(fmtP(shown), 6, 50);
-    g.shadowBlur = 0; g.font = '700 40px "JetBrains Mono", monospace'; g.fillStyle = '#eef4f0'; g.fillText(d.replace(' 24u', ''), 330, 52);
-    t.needsUpdate = true; return;
-  }
-  g.shadowBlur = 0; g.font = '700 30px "JetBrains Mono", monospace'; g.fillStyle = '#eef4f0'; g.fillText(d, 262, 50);
-  const lx = ref24 ? 500 : 442;
-  g.font = '700 32px Inter, system-ui, sans-serif'; const tw = g.measureText('HUIDIGE PRIJS').width;
-  roundRect(g, lx, 14, tw + 70, 68, 34); g.fillStyle = 'rgba(127,240,208,.10)'; g.fill(); g.lineWidth = 3; g.strokeStyle = 'rgba(238,244,240,.8)'; g.stroke();
-  g.fillStyle = '#35ffb0'; g.beginPath(); g.arc(lx + 30, 49, 7, 0, 7); g.fill();
-  g.fillStyle = '#eef4f0'; g.fillText('HUIDIGE PRIJS', lx + 50, 50);
+  roundRect(g, 8, 12, 1520, 156, 78); g.fillStyle = 'rgba(8,6,16,.94)'; g.fill();
+  g.shadowColor = col; g.shadowBlur = 24; g.lineWidth = 6; g.strokeStyle = col; g.stroke();
+  g.font = '800 84px "JetBrains Mono", monospace'; g.fillStyle = col; g.fillText(tagDir > 0 ? '▲' : tagDir < 0 ? '▼' : '●', 44, 92);
+  g.font = '800 128px "JetBrains Mono", monospace'; g.fillStyle = '#f2fbf6'; g.shadowBlur = 18; g.fillText(fmtP(shown), 140, 94); g.shadowBlur = 0;
+  g.font = '700 62px "JetBrains Mono", monospace'; g.fillStyle = col; g.fillText(d.replace(' 24u', ''), 640, 70);
+  g.font = '600 38px "JetBrains Mono", monospace'; g.fillStyle = '#8fa39a'; g.fillText(ref24 ? '24 uur' : 't.o.v. 13:21', 642, 128);
+  g.font = '700 46px "JetBrains Mono", monospace';
+  g.fillStyle = DNC; g.fillText(up != null ? '↑ $' + Math.round(up).toLocaleString('nl-NL') + ' verkoopmuur' : '↑ geen muur', 1010, 62);
+  g.fillStyle = UPC; g.fillText(dn != null ? '↓ $' + Math.round(dn).toLocaleString('nl-NL') + ' koopmuur' : '↓ geen muur', 1010, 122);
   t.needsUpdate = true;
 }
 
@@ -1400,7 +1401,7 @@ function update(dt) {
 
   // HUD
   if ((shownT -= dt) <= 0) { shownT = 0.5; const v = Math.round(p);
-    if (v !== lastPx) { const el = $('px'); el.textContent = fmtP(p); el.className = v > lastPx ? 'u' : 'd'; lastPx = v; shown = p; } }
+    if (v !== lastPx) { const el = $('px'); el.textContent = fmtP(p); el.className = v > lastPx ? 'u' : 'd'; if (lastPx) { tagDir = v > lastPx ? 1 : -1; tagFlash = 1; } lastPx = v; shown = p; } }
   const chg = ref24 ? fmtPct((shown / ref24 - 1) * 100) + ' 24u' : mode === 'demo' ? fmtPct((shown / P0 - 1) * 100) + ' t.o.v. 13:21' : '';
   if ($('chg').textContent !== chg) $('chg').textContent = chg;
   $('s-clr').textContent = nCleared; $('s-eat').textContent = eaten ? fmtUsd(eaten).replace(' mln', 'M').replace(' mld', 'B') : '$0';
@@ -1413,9 +1414,12 @@ function update(dt) {
 function render(rdt) {
   const t = clock, sy = yOf(pS);
   slab.position.y += (sy - slab.position.y) * Math.min(1, rdt * 6);
-  sweep.position.x = -7 + ((t * 9) % 22);
-  slabEdge.material.opacity = 0.7 + 0.3 * Math.sin(t * 6);
-  slabEdge.material.color.lerp(tmpC.set(0x7ff0d0), Math.min(1, rdt * 3));
+  sweep.position.x = -0.2 + ((t * 9) % 14.4);
+  slabEdge.material.color.lerp(tmpC.set(tagDir > 0 ? UPC : tagDir < 0 ? DNC : NTC), Math.min(1, rdt * 4));
+  slabEdge.material.opacity = 0.8 + 0.2 * Math.sin(t * 6);
+  laserGlow.material.color.copy(slabEdge.material.color); sweep.material.color.copy(slabEdge.material.color).lerp(WHITE, 0.3);
+  laserGlow.material.opacity = 0.28 + 0.35 * tagFlash; laserGlow.scale.y = 1 + 0.6 * tagFlash;
+  tagFlash = Math.max(0, tagFlash - rdt * 2.5); slabL.m.scale.setScalar(1 + 0.05 * tagFlash);
   const scanY = 15 * RS - ((t * 5 * RS) % (34 * RS));
   { const now = Date.now(), lim = 13.4 * RS, tc = new THREE.Color(0x7ff0d0);
     for (let i = 0; i < TRN; i++) {

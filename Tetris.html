@@ -88,7 +88,10 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
 @media (max-width:520px){
   .stats{grid-template-columns:repeat(4,1fr);width:100%}
   .stats div{align-items:flex-start}
-  .feed{top:58px}
+  .feed{top:auto;bottom:26px;left:max(12px,env(safe-area-inset-left,0px));width:auto}
+  .feed li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px}
+  .feed li:nth-child(n+3){display:none}
+  .note{font-size:9.5px}
   .ctl a{display:none}
 }
 @media (prefers-reduced-motion:reduce){.st.live i{animation:none}}
@@ -368,7 +371,7 @@ const baseOf = (type, rel) => TY[type].u === 'pct' ? 0 : Math.max(1, Math.min(MA
 const WFIT = 24.8;   // width in view: labels, bars, size tags and the exchange tiles
 const COMPACT = (stage.clientWidth || 400) < 560;   // phone: bigger labels without the distance column
 const RS = (() => { const w = stage.clientWidth || 400, h = stage.clientHeight || 700, tanH = Math.tan(17.5 * Math.PI / 180);
-  const visH = WFIT / (w / h) * 1.03 + 2.4 * tanH; return Math.max(1, Math.min(1.7, (visH * 0.9 - 2.4) / 27)); })();
+  const visH = WFIT / (w / h) * 1.03 + 2.4 * tanH; return Math.max(1, Math.min(1.7, (visH * 0.94 - 2.4) / 27)); })();
 
 /* ---------- three.js scene ---------- */
 const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
@@ -478,22 +481,22 @@ function drawLabel(r) {
   const d = fmtPct((r.price / p - 1) * 100);
   if (d === r.lblStr) return; r.lblStr = d;
   const { g, c, t } = r.lbl; g.clearRect(0, 0, c.width, c.height);
-  g.textBaseline = 'middle';
-  g.font = `700 ${COMPACT ? 50 : 40}px "JetBrains Mono", monospace`; g.fillStyle = '#eef4f0'; g.fillText(fmtP(r.price), 4, 41);
-  if (!COMPACT) { g.font = '500 29px "JetBrains Mono", monospace'; g.fillStyle = '#8fa39a'; g.fillText(d, 160, 41); }
-  g.font = `600 ${COMPACT ? 34 : 29}px Inter, system-ui, sans-serif`;
-  const tw = g.measureText(r.t.n).width, px = COMPACT ? 206 : 290, pw = tw + 34;
-  roundRect(g, px, COMPACT ? 8 : 12, pw, COMPACT ? 66 : 58, COMPACT ? 33 : 29); g.fillStyle = r.t.c + '29'; g.fill();
+  g.textBaseline = 'middle'; const my = c.height / 2;
+  g.font = `700 ${COMPACT ? 62 : 40}px "JetBrains Mono", monospace`; g.fillStyle = '#eef4f0'; g.fillText(fmtP(r.price), 4, my + 1);
+  if (!COMPACT) { g.font = '500 29px "JetBrains Mono", monospace'; g.fillStyle = '#8fa39a'; g.fillText(d, 160, my + 1); }
+  g.font = `600 ${COMPACT ? 40 : 29}px Inter, system-ui, sans-serif`;
+  const tw = g.measureText(r.t.n).width, px = COMPACT ? 238 : 290, pw = tw + 36, ph = COMPACT ? 74 : 58;
+  roundRect(g, px, my - ph / 2, pw, ph, ph / 2); g.fillStyle = r.t.c + '29'; g.fill();
   g.shadowColor = r.t.c; g.shadowBlur = 14; g.lineWidth = 3; g.strokeStyle = r.t.c; g.stroke(); g.shadowBlur = 0;
-  g.fillStyle = r.t.c; g.fillText(r.t.n, px + 17, 42);
+  g.fillStyle = r.t.c; g.fillText(r.t.n, px + 18, my + 2);
   t.needsUpdate = true;
 }
 function drawSize(r) {
   const s = r.cleared && r.t.u !== 'pct' ? 'geveegd' : valStr(r);
   if (s === r.sizeStr) return; r.sizeStr = s;
   const { g, c, t } = r.sz; g.clearRect(0, 0, c.width, c.height);
-  g.textBaseline = 'middle'; g.font = `700 ${COMPACT ? 46 : 38}px "JetBrains Mono", monospace`;
-  g.shadowColor = r.t.c; g.shadowBlur = r.cleared ? 0 : 10; g.fillStyle = r.cleared ? '#5d6e67' : '#eef4f0'; g.fillText(s, 6, 41);
+  g.textBaseline = 'middle'; g.font = `700 ${COMPACT ? 52 : 38}px "JetBrains Mono", monospace`;
+  g.shadowColor = r.t.c; g.shadowBlur = r.cleared ? 0 : 10; g.fillStyle = r.cleared ? '#5d6e67' : '#eef4f0'; g.fillText(s, 6, c.height / 2 + 1);
   t.needsUpdate = true;
 }
 
@@ -511,7 +514,13 @@ function drawSlab() {
   const d = ref24 ? fmtPct((shown / ref24 - 1) * 100) + ' 24u' : fmtPct((shown / P0 - 1) * 100);
   const s = fmtP(shown) + '|' + d; if (s === slabStr) return; slabStr = s;
   const { g, c, t } = slabL; g.clearRect(0, 0, c.width, c.height); g.textBaseline = 'middle';
-  g.font = '800 64px "JetBrains Mono", monospace'; g.shadowColor = '#35ffb0'; g.shadowBlur = 18; g.fillStyle = '#7ff0d0'; g.fillText(fmtP(shown), 6, 50);
+  g.shadowColor = '#35ffb0'; g.shadowBlur = 18; g.fillStyle = '#7ff0d0';
+  if (!COMPACT) { g.font = '800 64px "JetBrains Mono", monospace'; g.fillText(fmtP(shown), 6, 50); }
+  if (COMPACT) {
+    g.font = '800 84px "JetBrains Mono", monospace'; g.fillText(fmtP(shown), 6, 50);
+    g.shadowBlur = 0; g.font = '700 40px "JetBrains Mono", monospace'; g.fillStyle = '#eef4f0'; g.fillText(d.replace(' 24u', ''), 330, 52);
+    t.needsUpdate = true; return;
+  }
   g.shadowBlur = 0; g.font = '700 30px "JetBrains Mono", monospace'; g.fillStyle = '#eef4f0'; g.fillText(d, 262, 50);
   const lx = ref24 ? 500 : 442;
   g.font = '700 32px Inter, system-ui, sans-serif'; const tw = g.measureText('HUIDIGE PRIJS').width;
@@ -542,6 +551,7 @@ const EXN = { binance: ['Binance', '#f3ba2f'], okx: ['OKX', '#e8eef0'], bybit: [
   htx: ['HTX', '#3fa9f5'], hyperliquid: ['Hyperliquid', '#97fce4'], deribit: ['Deribit', '#2fd1a5'], bitmex: ['BitMEX', '#ff5a5f'], cryptocom: ['Crypto.com', '#7f96ff'],
   dydx: ['dYdX', '#a78bfa'], model: ['Schatting', '#ffc857'] };
 const EXKEY = { OKX: 'okx', Binance: 'binance', Bybit: 'bybit' };
+const SHORT = { hyperliquid: 'Hyper', cryptocom: 'Crypto', model: 'Schat.' };
 const REGS = {};
 // a column of tiles to the right of the bars, top to bottom along the well; the drawer opens towards the bars
 const regBodyGeo = new THREE.BoxGeometry(3, 1.7, 0.6), regDrawGeo = new THREE.BoxGeometry(0.28, 1.2, 0.45), regEdgeGeo = new THREE.EdgesGeometry(regBodyGeo);
@@ -553,11 +563,13 @@ function drawReg(R) {
   const { g, c, t } = R.scr; g.clearRect(0, 0, c.width, c.height);
   roundRect(g, 4, 4, 504, 266, 22); g.fillStyle = 'rgba(8,6,16,.94)'; g.fill(); g.lineWidth = 4; g.strokeStyle = R.css + (R.on ? 'cc' : '40'); g.stroke();
   g.textBaseline = 'middle';
-  g.font = `800 ${R.name.length > 9 ? 54 : 62}px "JetBrains Mono", monospace`; g.fillStyle = R.on ? R.css : '#4a5852'; g.shadowColor = R.css; g.shadowBlur = R.on ? 14 : 0;
-  g.fillText(R.name.toUpperCase(), 24, 80); g.shadowBlur = 0;
-  g.font = '700 56px "JetBrains Mono", monospace';
-  if (fl) { g.fillStyle = R.fCss; g.shadowColor = R.fCss; g.shadowBlur = 12; g.fillText(fl, 24, 192); g.shadowBlur = 0; }
-  else { g.fillStyle = R.on ? '#d8e4de' : '#4a5852'; g.fillText(R.k === 'model' ? (R.on ? 'stops · liq.' : '—') : R.on ? fmtUsd(R.tot) : 'geen data', 24, 192); }
+  const nm = (COMPACT && SHORT[R.k] || R.name).toUpperCase(), fit = (txt, max) => Math.min(max, 440 / (txt.length * 0.6));
+  g.font = `800 ${fit(nm, COMPACT ? 86 : 62)}px "JetBrains Mono", monospace`; g.fillStyle = R.on ? R.css : '#4a5852'; g.shadowColor = R.css; g.shadowBlur = R.on ? 14 : 0;
+  g.fillText(nm, 24, 80); g.shadowBlur = 0;
+  const line = fl || (R.k === 'model' ? (R.on ? (COMPACT ? 'stops/liq' : 'stops · liq.') : '—') : R.on ? fmtUsd(R.tot) : 'geen data');
+  g.font = `700 ${fit(line, COMPACT ? 72 : 56)}px "JetBrains Mono", monospace`;
+  if (fl) { g.fillStyle = R.fCss; g.shadowColor = R.fCss; g.shadowBlur = 12; g.fillText(line, 24, 192); g.shadowBlur = 0; }
+  else { g.fillStyle = R.on ? '#d8e4de' : '#4a5852'; g.fillText(line, 24, 192); }
   g.fillStyle = R.on ? '#35ffb0' : '#3a4440'; g.beginPath(); g.arc(476, 80, 12, 0, 7); g.fill();
   t.needsUpdate = true;
 }
@@ -776,8 +788,9 @@ function makeRow(lv) {
   const t = TY[lv.type];
   const r = { key: keyOf(lv), type: lv.type, t, price: lv.price, val: lv.val, rel: lv.rel, first: !!lv.first, base: baseOf(lv.type, lv.rel), ps: lv.ps || null, glass: !!(lv.ps && lv.ps[0] <= 1), per: lv.per || null, srcW: lv.per || null, dstW: null,
     y: 0, yd: null, units: 0, inbound: 0, thS: 0, pulse: 0, cleared: false, clearedAt: -9, gone: false, goneT: 0, born: T, flare: 0, decayT: 0, hl: 0, endX: 10, lblStr: '', sizeStr: '' };
-  r.lbl = textPlane(640, 80, 6.4, 0.8); scene.add(r.lbl.m);
-  r.sz = textPlane(360, 80, 3.6, 0.8); scene.add(r.sz.m);
+  const lh = COMPACT ? Math.min(1.05, 0.86 * RS) : 0.8;   // label height: as tall as the row allows on a phone
+  r.lbl = textPlane(640, Math.round(lh * 100), 6.4, lh); scene.add(r.lbl.m);
+  r.sz = textPlane(360, Math.round(lh * 100), 3.6, lh); scene.add(r.sz.m);
   r.halo = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: glowTex, color: t.col, transparent: true, opacity: 0, blending: ADD, depthWrite: false }));
   r.halo.position.z = -0.6; scene.add(r.halo);
   r.hit = new THREE.Mesh(new THREE.PlaneGeometry(20.6, 0.98 * RS), new THREE.MeshBasicMaterial()); r.hit.visible = false; r.hit.userData.row = r; scene.add(r.hit);
@@ -1083,7 +1096,7 @@ async function loadLive() {
     if (!Object.keys(books).length) throw new Error('no books');
     const raw = { ts: Date.now(), price: tick.fresh() || series.candles[series.candles.length - 1][4], books, ...series, market, bookHist: site?.bookHist };
     const L = levelsOf(raw); applyLevels(L); armed = true;
-    status('live', COMPACT ? `live · ${hhmmss(L.ts)}` : `live · ${L.nBooks} boeken · ${hhmmss(L.ts)}`, `${L.nBooks} orderboeken · stops en liq. geschat · glas: muur pas kort`);
+    status('live', COMPACT ? `live · ${hhmmss(L.ts)}` : `live · ${L.nBooks} boeken · ${hhmmss(L.ts)}`, COMPACT ? `${L.nBooks} boeken · stops/liq. geschat · glas = muur pas kort` : `${L.nBooks} orderboeken · stops en liq. geschat · glas: muur pas kort`);
     return true;
   } catch (e) { return false; }
 }

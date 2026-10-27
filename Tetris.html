@@ -119,19 +119,12 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
     <button id="b-up" type="button" hidden>▲ Pomp</button>
     <button id="b-dn" type="button" hidden>▼ Dump</button>
     <button id="b-pause" type="button" aria-pressed="false">Pauze</button>
-    <button id="b-glow" type="button" aria-pressed="true">Gloed</button>
     <span class="sp"></span>
     <a href="./">GlassSphere</a>
   </footer>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 <script>
 (async function () {
 const $ = id => document.getElementById(id);
@@ -385,16 +378,6 @@ const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x060908, 50, 120);
 const cam = new THREE.PerspectiveCamera(35, 1, 0.1, 400);
 const ADD = THREE.AdditiveBlending;
-// real glow: a bloom pass over the neon; switched off by itself when the phone cannot keep up
-let composer = null, bloomOn = true;
-try {
-  if (THREE.EffectComposer && THREE.UnrealBloomPass) {
-    composer = new THREE.EffectComposer(renderer);
-    composer.addPass(new THREE.RenderPass(scene, cam));
-    composer.addPass(new THREE.UnrealBloomPass(new THREE.Vector2(256, 256), 0.75, 0.42, 0.68));
-  }
-} catch (e) { composer = null; }
-if (!composer) bloomOn = false;
 
 function canvasTex(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); draw(g, w, h); const t = new THREE.CanvasTexture(c); t.anisotropy = 4; return t; }
 const blockTex = canvasTex(64, 64, g => {
@@ -604,17 +587,19 @@ function pickReg(r, w) {
 
 // background: a live network (a plexus) in a band from the top left to the bottom right, magenta to blue; it flows and
 // waves; far nodes are soft blurred blobs. Trades send pulses along its lines, liquidations and new blocks light it up
-const NET = { n: RM ? 60 : 110, far: RM ? 24 : 46, reach: 7.2, maxL: 1400 };
+const NET = { n: RM ? 90 : 200, far: RM ? 36 : 90, reach: 7.2, maxL: 2800 };
 const NC = [new THREE.Color('#e040ff'), new THREE.Color('#8f3dff'), new THREE.Color('#3f4cff')];
 const netCol = (u, out) => { const k = Math.max(0, Math.min(1, u)) * 2, i = Math.min(1, Math.floor(k)); return out.copy(NC[i]).lerp(NC[i + 1], k - i); };
-// a point on the band: u along it (0 top left .. 1 bottom right), v across it, w in depth
-function bandAt(u, v, w, t, out) {
-  const x = -24 + 54 * u, y = 27 - 56 * u + 7 * Math.sin(u * 4.2 + 0.6) + 1.6 * Math.sin(t * 0.35 + u * 7);
-  out.set(x + v * 5.5, y + v * 5.5 + 1.2 * Math.sin(t * 0.5 + v * 3 + u * 5), w + 2.2 * Math.sin(t * 0.3 + u * 6 + v * 2));
+// a point on a band: u along it (0 top .. 1 bottom), v across it, w in depth; band 0 runs from the top left to the bottom
+// right, band 1 (mirrored) from the top right to the bottom left, so together they fill the screen
+function bandAt(u, v, w, t, out, b = 0) {
+  const x = -24 + 54 * u + v * 7, y = 27 - 56 * u + 7 * Math.sin(u * 4.2 + 0.6 + b * 2) + 1.6 * Math.sin(t * 0.35 + u * 7 + b) + v * 7;
+  out.set(b ? 10.9 - x : x, y + 1.2 * Math.sin(t * 0.5 + v * 3 + u * 5), w + 2.2 * Math.sin(t * 0.3 + u * 6 + v * 2));
   return out;
 }
 const nodes = [...Array(NET.n + NET.far)].map((_, i) => { const far = i >= NET.n;
-  return { u: Math.random() * 1.2 - 0.1, v: (Math.random() * 2 - 1) * (far ? 1.6 : 1), w: far ? rnd(-44, -30) : rnd(-26, -13), sp: rnd(0.004, 0.012), far, p: new THREE.Vector3(), glow: 0 }; });
+  return { u: Math.random() * 1.2 - 0.1, v: (Math.random() * 2 - 1) * (far ? 2.2 : 1.5), w: far ? rnd(-46, -30) : rnd(-27, -12), sp: rnd(0.004, 0.012), far,
+    b: i % 5 < 3 ? 0 : 1, p: new THREE.Vector3(), glow: 0 }; });
 const nPos = new Float32Array(NET.n * 3), nCol = new Float32Array(NET.n * 3), fPos = new Float32Array(NET.far * 3), fCol = new Float32Array(NET.far * 3);
 const lPos = new Float32Array(NET.maxL * 6), lCol = new Float32Array(NET.maxL * 6);
 const mkPts = (pos, col, size, tex, op) => { const g = new THREE.BufferGeometry();
@@ -625,9 +610,9 @@ const lGeo = new THREE.BufferGeometry();
 lGeo.setAttribute('position', new THREE.BufferAttribute(lPos, 3).setUsage(THREE.DynamicDrawUsage)); lGeo.setAttribute('color', new THREE.BufferAttribute(lCol, 3).setUsage(THREE.DynamicDrawUsage));
 const netLines = new THREE.LineSegments(lGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: ADD, fog: false }));
 netLines.frustumCulled = false; scene.add(netLines);
-const haze = [...Array(7)].map((_, i) => { const u = i / 6, c = netCol(u, new THREE.Color());
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: c, transparent: true, opacity: 0.16, depthWrite: false, blending: ADD, fog: false }));
-  sp.scale.set(26, 18, 1); sp.userData.u = u; scene.add(sp); return sp; });
+const haze = [...Array(13)].map((_, i) => { const b = i < 7 ? 0 : 1, u = b ? (i - 7) / 5 : i / 6, c = netCol(u, new THREE.Color());
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: c, transparent: true, opacity: 0.18, depthWrite: false, blending: ADD, fog: false }));
+  sp.scale.set(32, 24, 1); sp.userData = { u, b }; scene.add(sp); return sp; });
 // pulses along the lines: one per trade (green buy, red sell), purple for liquidations
 const NPU = 60, npPos = new Float32Array(NPU * 3), npCol = new Float32Array(NPU * 3), netPulses = [];
 const netPu = mkPts(npPos, npCol, 1.1, dotTex, 1);
@@ -641,7 +626,7 @@ function netPulse(col, n = 1) {
 }
 function updateNet(dt, t) {
   const tc = new THREE.Color();
-  nodes.forEach(nd => { nd.u += nd.sp * dt; if (nd.u > 1.15) { nd.u -= 1.3; nd.v = (Math.random() * 2 - 1) * (nd.far ? 1.6 : 1); } bandAt(nd.u, nd.v, nd.w, t, nd.p); nd.glow = Math.max(0, nd.glow - dt * 1.5); });
+  nodes.forEach(nd => { nd.u += nd.sp * dt; if (nd.u > 1.15) { nd.u -= 1.3; nd.v = (Math.random() * 2 - 1) * (nd.far ? 2.2 : 1.5); } bandAt(nd.u, nd.v, nd.w, t, nd.p, nd.b); nd.glow = Math.max(0, nd.glow - dt * 1.5); });
   const lift = 1 + netGlow * 1.6;
   if (netWave >= 0) netWave += dt * 0.55;
   if (netWave > 1.4) netWave = -1;
@@ -671,62 +656,27 @@ function updateNet(dt, t) {
     if (!q) { npCol[j] = npCol[j + 1] = npCol[j + 2] = 0; continue; }
     const A = nodes[q.a].p, B = nodes[q.b].p; npPos[j] = A.x + (B.x - A.x) * q.t; npPos[j + 1] = A.y + (B.y - A.y) * q.t; npPos[j + 2] = A.z + (B.z - A.z) * q.t;
     npCol[j] = q.col.r * 1.6; npCol[j + 1] = q.col.g * 1.6; npCol[j + 2] = q.col.b * 1.6; }
-  for (const sp of haze) { bandAt(sp.userData.u, 0, -34, t, sp.position); sp.material.opacity = (0.14 + 0.04 * Math.sin(t * 0.7 + sp.userData.u * 9)) * lift; }
+  for (const sp of haze) { bandAt(sp.userData.u, 0, -34, t, sp.position, sp.userData.b); sp.material.opacity = (0.15 + 0.05 * Math.sin(t * 0.7 + sp.userData.u * 9 + sp.userData.b * 2)) * lift; }
   netGlow = Math.max(0, netGlow - dt * 0.8);
   for (const m of [netNear, netFar, netLines, netPu]) { m.geometry.attributes.position.needsUpdate = true; m.geometry.attributes.color.needsUpdate = true; }
 }
 
-// the real Bitcoin chain (mempool.space): the newest blocks as linked cubes along the top, a new one drops in when it is found
-const CHN = 6, chain = [], chainG = new THREE.Group(); chainG.position.set(3.4, 12.2 * RS, -26); scene.add(chainG);
-const cubeGeo = new THREE.BoxGeometry(2, 2, 2), cubeEdge = new THREE.EdgesGeometry(cubeGeo), BTC = new THREE.Color('#f7931a');
-const linkM = new THREE.LineBasicMaterial({ color: BTC, transparent: true, opacity: 0.45, blending: ADD });
-function chainCube(b) {
-  const g = new THREE.Group();
-  g.add(new THREE.Mesh(cubeGeo, new THREE.MeshBasicMaterial({ color: BTC, transparent: true, opacity: 0.08, blending: ADD, depthWrite: false })));
-  const e = new THREE.LineSegments(cubeEdge, new THREE.LineBasicMaterial({ color: BTC, transparent: true, opacity: 0.85, blending: ADD })); g.add(e);
-  const c = document.createElement('canvas'); c.width = 256; c.height = 112; const x = c.getContext('2d');
-  x.textAlign = 'center'; x.textBaseline = 'middle'; x.font = '800 40px "JetBrains Mono", monospace'; x.fillStyle = '#ffb35c'; x.shadowColor = '#f7931a'; x.shadowBlur = 10;
-  x.fillText('#' + b.height.toLocaleString('nl-NL'), 128, 38); x.shadowBlur = 0; x.font = '600 28px "JetBrains Mono", monospace'; x.fillStyle = '#c9b8a0';
-  x.fillText(b.tx_count.toLocaleString('nl-NL') + ' tx', 128, 84);
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false })); sp.scale.set(2.9, 1.27, 1); sp.position.set(0, -2.1, 0); g.add(sp);
-  const link = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-1, 0, 0), new THREE.Vector3(-2.4, 0, 0)]), linkM); g.add(link);
-  g.userData = { h: b.height, born: clock, e, sp };
-  return g;
-}
-const slotX = i => (i - (CHN - 1) / 2) * 3.4;    // i = 0 oldest .. CHN - 1 newest
-function addBlock(b, fresh) {
-  if (chain.some(g => g.userData.h === b.height)) return;
-  const g = chainCube(b); chainG.add(g); chain.push(g); chain.sort((a, c) => a.userData.h - c.userData.h);
-  while (chain.length > CHN) { const o = chain.shift(); chainG.remove(o); o.traverse(m => { if (m.material) { if (m.material.map) m.material.map.dispose(); if (m !== o && m.material !== linkM) m.material.dispose(); } }); }
-  g.position.set(slotX(chain.indexOf(g)), fresh ? 9 : 0, 0); g.userData.fresh = fresh;
-  if (fresh) {
-    netWave = 0;
-    const pool = b.extras?.pool?.name;
-    banner('NIEUW BTC-BLOK', `#${b.height.toLocaleString('nl-NL')} · ${b.tx_count.toLocaleString('nl-NL')} transacties${pool ? ' · ' + pool : ''}`, '', '#f7931a', true);
-    feed(`<b>Nieuw blok</b> #${b.height.toLocaleString('nl-NL')} · ${b.tx_count.toLocaleString('nl-NL')} tx${pool ? ' · ' + pool : ''}`, '#f7931a');
-  }
-}
+// the real Bitcoin chain (mempool.space): a new block sends a wave of light through the network, with a notice
 let chainTop = 0;
 async function loadChain() {
   try {
-    const d = (await getJSON('https://mempool.space/api/v1/blocks')).sort((a, b) => a.height - b.height).slice(-CHN);
+    const d = (await getJSON('https://mempool.space/api/v1/blocks')).sort((a, b) => a.height - b.height);
     const first = !chainTop;
-    for (const b of d) if (b.height > chainTop) { addBlock(b, !first); chainTop = b.height; }
+    for (const b of d) if (b.height > chainTop) {
+      chainTop = b.height; if (first) continue;
+      netWave = 0; netGlow = Math.min(1.5, netGlow + 0.6);
+      const pool = b.extras?.pool?.name;
+      banner('NIEUW BTC-BLOK', `#${b.height.toLocaleString('nl-NL')} · ${b.tx_count.toLocaleString('nl-NL')} transacties${pool ? ' · ' + pool : ''}`, '', '#f7931a', true);
+      feed(`<b>Nieuw blok</b> #${b.height.toLocaleString('nl-NL')} · ${b.tx_count.toLocaleString('nl-NL')} tx${pool ? ' · ' + pool : ''}`, '#f7931a');
+    }
   } catch (e) {}
 }
 loadChain(); setInterval(loadChain, 60e3);
-function renderChain(rdt, t) {
-  chain.forEach((g, i) => {
-    const u = g.userData, tx = slotX(i);
-    g.position.x += (tx - g.position.x) * Math.min(1, rdt * 3);
-    g.position.y += (0 - g.position.y) * Math.min(1, rdt * (u.fresh ? 4 : 8));
-    g.rotation.y = 0.35 * Math.sin(t * 0.4 + i) + (u.fresh ? Math.max(0, 1 - (clock - u.born) / 2) * 6 : 0);
-    g.rotation.x = 0.15 * Math.sin(t * 0.3 + i * 0.7);
-    const newest = i === chain.length - 1, f = Math.max(0, 1 - (clock - u.born) / 3);
-    u.e.material.opacity = (newest ? 0.6 + 0.2 * Math.sin(t * 3) : 0.35) + f * 0.5; u.sp.material.opacity = newest ? 0.85 : 0.5;
-    g.children[3].visible = i > 0;   // the link to the block before
-  });
-}
 
 /* ---------- blocks ---------- */
 let blocks = [];
@@ -1201,8 +1151,6 @@ function setButtons() { $('b-mode').textContent = mode === 'live' ? 'Demo' : 'Li
 $('b-mode').onclick = () => { if (mode === 'live') startDemo(); else { for (const r of liveRows()) removeRow(r, true); firstApply = true; startLive(); } };
 $('b-up').onclick = () => spike(1, Math.random() < 0.4 ? 'mega' : 'big');
 $('b-dn').onclick = () => spike(-1, Math.random() < 0.4 ? 'mega' : 'big');
-$('b-glow').onclick = e => { bloomOn = !!composer && !bloomOn; e.currentTarget.setAttribute('aria-pressed', bloomOn); };
-if (!composer) $('b-glow').hidden = true;
 $('b-pause').onclick = e => { paused = !paused; e.currentTarget.setAttribute('aria-pressed', paused); e.currentTarget.textContent = paused ? 'Verder' : 'Pauze'; };
 document.addEventListener('visibilitychange', () => {
   if (mode !== 'live') return;
@@ -1216,7 +1164,6 @@ const camT = new THREE.Vector3(5.45, 0, 0);
 function fit() {
   const w = stage.clientWidth, h = stage.clientHeight; if (!w || !h) return;
   renderer.setSize(w, h, false); cam.aspect = w / h;
-  if (composer) { composer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5)); composer.setSize(w, h); }
   const tanH = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
   const lv = liveRows(), nU = lv.filter(r => r.t.up).length || 13, nD = lv.filter(r => !r.t.up).length || 13;
   dist = Math.max(((nU + nD + 1) * RS + 2.4) / 2 / tanH, WFIT / 2 / (tanH * cam.aspect)) * 1.03 + 1.2;
@@ -1447,7 +1394,6 @@ function render(rdt) {
     drawReg(R); }
   floor.position.y += (ctrY + 0.98 - floor.position.y) * Math.min(1, rdt * 4);
   if (!paused) updateNet(rdt, t);
-  renderChain(rdt, t);
 
   // rows: halos, labels, size tags, gates
   for (const r of rows) {
@@ -1536,13 +1482,8 @@ function render(rdt) {
   cam.lookAt(camT.x, camT.y, 0);
   liqFlash *= Math.exp(-rdt * 4);
   renderer.setClearColor(tmpC.setRGB(0.02 + 0.25 * liqFlash, 0.012 + 0.1 * liqFlash, 0.035 + 0.38 * liqFlash), 1);
-  if (bloomOn && composer) {
-    composer.render();
-    slowT = rdt > 0.034 ? slowT + rdt : Math.max(0, slowT - rdt);
-    if (slowT > 4) { bloomOn = false; $('b-glow').setAttribute('aria-pressed', 'false'); feed('<b>Gloed uit</b> · voor een soepeler beeld; zet hem terug met Gloed', '#7ff0d0'); }
-  } else renderer.render(scene, cam);
+  renderer.render(scene, cam);
 }
-let slowT = 0;
 requestAnimationFrame(frame);
 if (/^https?:$/.test(location.protocol)) startLive(); else startDemo();
 })();

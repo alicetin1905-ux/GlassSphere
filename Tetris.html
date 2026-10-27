@@ -357,7 +357,7 @@ const TY = {
   tdn:   { n: 'Doel ▼',       c: '#ff4d6a', u: 'pct',   up: false, o: 7 },
 };
 for (const k in TY) TY[k].col = new THREE.Color(TY[k].c);
-const MAXB = 10, CAP = 13;
+const MAXB = 12, CAP = 12;   // a bar is 0..12 units thick
 const fx = (x, d) => x.toFixed(d).replace('.', ',');
 const fmtP = p => p.toLocaleString('nl-NL', { minimumFractionDigits: A.dec, maximumFractionDigits: A.dec });
 const fmtPct = x => Math.abs(x) < 0.005 ? '0,00%' : (x > 0 ? '+' : '') + fx(x, 2) + '%';
@@ -366,6 +366,7 @@ const valStr = r => r.t.u === 'usd' ? fmtUsd(r.val) : r.t.u === 'score' ? 'score
 const hhmmss = ts => new Date(ts).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 const rnd = (a, b) => a + Math.random() * (b - a);
 const gauss = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
+const thOf = u => u > 0 ? 0.12 + 0.78 * Math.min(1, u / MAXB) : 0;   // units -> bar thickness
 const baseOf = (type, rel) => TY[type].u === 'pct' ? 0 : Math.max(1, Math.min(MAXB, Math.round(rel * MAXB)));
 
 // row spacing: a tall phone screen spreads the rows out so the well fills the height (cubes stay cubes)
@@ -400,6 +401,13 @@ const blockTex = canvasTex(64, 64, g => {
   const gr = g.createLinearGradient(13, 13, 51, 51); gr.addColorStop(0, '#dcdcdc'); gr.addColorStop(1, '#7e7e7e'); g.fillStyle = gr; g.fillRect(13, 13, 38, 38);
   g.fillStyle = '#fff'; g.fillRect(17, 17, 9, 4); g.fillRect(17, 17, 4, 9);
 });
+const barTex = canvasTex(512, 64, g => {
+  const gr = g.createLinearGradient(0, 0, 0, 64); gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.2, '#e4e4e4'); gr.addColorStop(0.6, '#a6a6a6'); gr.addColorStop(1, '#666666');
+  g.fillStyle = gr; g.fillRect(0, 0, 512, 64);
+  g.fillStyle = 'rgba(255,255,255,.95)'; g.fillRect(0, 3, 512, 3);
+  g.fillStyle = 'rgba(0,0,0,.14)'; for (let x = 51.2; x < 511; x += 51.2) g.fillRect(Math.round(x) - 1, 9, 2, 50);
+  g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(0, 60, 512, 4);
+});
 const ghostTex = canvasTex(64, 64, g => { g.strokeStyle = '#fff'; g.lineWidth = 5; g.strokeRect(5, 5, 54, 54); g.fillStyle = 'rgba(255,255,255,.12)'; g.fillRect(8, 8, 48, 48); });
 const dotTex = canvasTex(64, 64, g => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, '#fff'); r.addColorStop(.25, 'rgba(255,255,255,.8)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); });
 const glowTex = canvasTex(128, 128, g => { const r = g.createRadialGradient(64, 64, 0, 64, 64, 64); r.addColorStop(0, 'rgba(255,255,255,.9)'); r.addColorStop(.45, 'rgba(255,255,255,.28)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 128, 128); });
@@ -412,6 +420,9 @@ const chevTex = up => { const t = canvasTex(64, 64, g => {
 const bGeo = new THREE.BoxGeometry(0.9, 0.9, 0.9);
 { const shade = [0.62, 0.74, 1.2, 0.42, 1.0, 0.5], a = []; for (let f = 0; f < 6; f++) for (let v = 0; v < 4; v++) a.push(shade[f], shade[f], shade[f]);
   bGeo.setAttribute('color', new THREE.Float32BufferAttribute(a, 3)); }
+const barGeo = new THREE.BoxGeometry(1, 1, 1);
+barGeo.setAttribute('color', bGeo.getAttribute('color').clone());
+const barEdgeGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
 const BCAP = 1100;
 const bMesh = new THREE.InstancedMesh(bGeo, new THREE.MeshBasicMaterial({ map: blockTex, vertexColors: true }), BCAP);
 bMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); bMesh.setColorAt(0, new THREE.Color(1, 1, 1)); bMesh.frustumCulled = false; scene.add(bMesh);
@@ -543,13 +554,29 @@ function floatText(x, y, txt, css) {
 let blocks = [];
 const WHITE = new THREE.Color(1, 1, 1), BUYC = new THREE.Color('#35ffb0'), SELLC = new THREE.Color('#ff4d6a');
 function newBlock(col) { const b = { col, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, rx: 0, ry: 0, rz: 0, wx: 0, wy: 0, wz: 0, s: 0.0001, flash: 0, state: 'idle', t: 0, delay: 0, life: 1, max: 1, row: null, dead: false }; blocks.push(b); return b; }
+// blocks rain onto a bar and melt into it: each one makes it a unit thicker
 function fillRow(r, n, delay) {
+  r.inbound += n;
   for (let k = 0; k < n; k++) {
-    const b = newBlock(r.t.col); b.row = r; b.state = 'drop'; b.x = r.blocks.length + 0.5; b.y = r.yd + 10 + k * 0.5 + Math.random() * 2; b.vy = 0; b.delay = delay + k * 0.05; b.s = 0.0001;
-    r.blocks.push(b);
+    const b = newBlock(r.t.col); b.row = r; b.state = 'feed'; b.x = (k + 0.5) * 10 / n; b.y = r.yd + 10 + Math.random() * 3; b.vy = 0; b.delay = delay + k * 0.04; b.s = 0.0001;
   }
 }
-function launch(b, vx, vy, vz, life) { b.row = null; b.state = 'fly'; b.vx = vx; b.vy = vy; b.vz = vz; b.wx = rnd(-9, 9); b.wy = rnd(-9, 9); b.wz = rnd(-9, 9); b.life = b.max = life; }
+function absorb(r, b) {
+  b.dead = true; r.inbound = Math.max(0, r.inbound - 1);
+  if (r.gone || r.cleared) return;
+  r.units = Math.min(CAP, r.units + 1); r.pulse = Math.min(1.5, r.pulse + 0.45);
+  emit(b.x, r.yd + r.thS / 2, 0.4, r.t.col, 4, 2.5);
+}
+// pieces of a bar breaking off
+function debris(r, n, state) {
+  const th = Math.max(0.3, r.thS), out = [];
+  for (let k = 0; k < n; k++) {
+    const b = newBlock(r.t.col); b.x = rnd(0.4, 9.6); b.y = r.yd + rnd(-0.4, 0.4) * th; b.z = rnd(-0.4, 0.4) * th;
+    b.s = b.s0 = Math.max(0.35, Math.min(0.9, th * 0.9)); b.state = state; b.t = state === 'dying' ? -k * 0.03 : 0; b.sx = b.x; b.sy = b.y; out.push(b);
+  }
+  return out;
+}
+function launch(b, vx, vy, vz, life) { if (!b.s0) b.s0 = b.s > 0.01 ? b.s : 0.9; b.row = null; b.state = 'fly'; b.vx = vx; b.vy = vy; b.vz = vz; b.wx = rnd(-9, 9); b.wy = rnd(-9, 9); b.wz = rnd(-9, 9); b.life = b.max = life; }
 
 /* ---------- rows (levels on screen) ---------- */
 let rows = [];
@@ -557,12 +584,18 @@ const keyOf = lv => lv.type + '|' + lv.price;
 function makeRow(lv) {
   const t = TY[lv.type];
   const r = { key: keyOf(lv), type: lv.type, t, price: lv.price, val: lv.val, rel: lv.rel, first: !!lv.first, base: baseOf(lv.type, lv.rel), ps: lv.ps || null, glass: !!(lv.ps && lv.ps[0] <= 1),
-    y: 0, yd: null, blocks: [], cleared: false, clearedAt: -9, gone: false, goneT: 0, born: T, flare: 0, decayT: 0, hl: 0, endX: 0, lblStr: '', sizeStr: '' };
+    y: 0, yd: null, units: 0, inbound: 0, thS: 0, pulse: 0, cleared: false, clearedAt: -9, gone: false, goneT: 0, born: T, flare: 0, decayT: 0, hl: 0, endX: 10, lblStr: '', sizeStr: '' };
   r.lbl = textPlane(640, 80, 6.4, 0.8); scene.add(r.lbl.m);
   r.sz = textPlane(360, 80, 3.6, 0.8); scene.add(r.sz.m);
   r.halo = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: glowTex, color: t.col, transparent: true, opacity: 0, blending: ADD, depthWrite: false }));
   r.halo.position.z = -0.6; scene.add(r.halo);
   r.hit = new THREE.Mesh(new THREE.PlaneGeometry(20.6, 0.98 * RS), new THREE.MeshBasicMaterial()); r.hit.visible = false; r.hit.userData.row = r; scene.add(r.hit);
+  if (t.u !== 'pct') {
+    r.bar = new THREE.Mesh(barGeo, new THREE.MeshBasicMaterial({ map: barTex, vertexColors: true, color: t.col.clone(), transparent: true }));
+    r.bar.position.x = 5; r.bar.scale.set(10, 0.001, 0.001); scene.add(r.bar);
+    r.edge = new THREE.LineSegments(barEdgeGeo, new THREE.LineBasicMaterial({ color: t.col, transparent: true, opacity: 0, blending: ADD }));
+    r.edge.position.x = 5; r.edge.scale.copy(r.bar.scale); scene.add(r.edge);
+  }
   if (t.u === 'pct') {
     const tex = chevTex(lv.type === 'tup');
     const gm = new THREE.Mesh(new THREE.BoxGeometry(10, 0.56, 0.56), new THREE.MeshBasicMaterial({ map: tex, color: t.col, transparent: true, opacity: 0, blending: ADD, depthWrite: false }));
@@ -577,11 +610,13 @@ function makeRow(lv) {
 function disposeRow(r) {
   const objs = [r.lbl.m, r.sz.m, r.halo, r.hit]; if (r.gate) objs.push(r.gate.m, r.gate.e);
   for (const o of objs) { scene.remove(o); o.geometry.dispose(); if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+  if (r.bar) for (const o of [r.bar, r.edge]) { scene.remove(o); o.material.dispose(); }   // the geometry and texture are shared
 }
 function removeRow(r, quiet) {
   if (r.gone) return;
   r.gone = true; r.goneT = 0.9;
-  r.blocks.splice(0).forEach((b, k) => { b.row = null; b.state = 'dying'; b.t = -k * 0.03; });
+  if (r.units) debris(r, Math.min(10, r.units), 'dying');
+  r.units = 0;
   if (!quiet && !r.cleared && r.rel >= 0.6 && r.t.u === 'usd')
     feed(`<b>${r.t.n} ${fmtP(r.price)}</b> weggetrokken · ${fmtUsd(r.val)}`, r.t.c);
   if (selRow === r) { selRow = null; tip.hidden = true; }
@@ -656,7 +691,7 @@ function applyLevels(L) {
   if (!nextP) makeNext();
 }
 
-function deficit(r) { return r.base - r.blocks.length - pieces.filter(q => q.row === r).reduce((s, q) => s + q.cells.length, 0); }
+function deficit(r) { return r.base - r.units - r.inbound; }
 function pickRow() {
   const cand = liveRows().filter(r => r.base && !r.cleared && !pieces.some(q => q.row === r) && deficit(r) > 0);
   if (!cand.length) return null;
@@ -685,8 +720,9 @@ function spawn() {
   if (!nextP) return;
   const { row, key } = nextP;
   const cells = SHAPES[key].slice(0, Math.max(1, deficit(row))).map(c => c.slice());
-  const q = { row, cells, gy: 16, stepT: 0, blocks: [] };
-  for (const [dx, dy] of cells) { const b = newBlock(row.t.col); b.state = 'piece'; b.x = row.blocks.length + dx + 0.5; b.y = q.gy * RS + dy + 4; b.z = 1.35; b.s = 0.9; q.blocks.push(b); }
+  const wd = Math.max(...cells.map(c => c[0])) + 1, q = { row, cells, gx: Math.floor(Math.random() * (11 - wd)), gy: 16, stepT: 0, blocks: [] };
+  row.inbound += cells.length;
+  for (const [dx, dy] of cells) { const b = newBlock(row.t.col); b.state = 'piece'; b.x = q.gx + dx + 0.5; b.y = q.gy * RS + dy + 4; b.z = 1.35; b.s = 0.9; q.blocks.push(b); }
   pieces.push(q); nextP = null; makeNext();
 }
 function rotate(q) {
@@ -695,13 +731,13 @@ function rotate(q) {
 }
 function lock(q) {
   const r = q.row;
-  if (r.gone || r.cleared || r.blocks.length + q.blocks.length > CAP) {
+  if (r.gone || r.cleared) {
+    r.inbound = Math.max(0, r.inbound - q.blocks.length);
     for (const b of q.blocks) { launch(b, rnd(-4, 4), rnd(2, 7), rnd(3, 8), 1.2); b.flash = 1; }
     return;
   }
-  const ord = q.blocks.map((b, i) => [b, q.cells[i]]).sort((a, b) => a[1][1] - b[1][1] || a[1][0] - b[1][0]);
-  for (const [b] of ord) { b.state = 'merge'; b.t = 0; b.sx = b.x; b.sy = b.y; b.sz = b.z; b.row = r; r.blocks.push(b); }
-  emit(r.blocks.length - 2, r.yd, 0.6, r.t.col, 22, 4.5, { sx: 1.5 });
+  q.blocks.forEach((b, i) => { b.state = 'merge'; b.t = -q.cells[i][1] * 0.08; b.sx = b.x; b.sy = b.y; b.sz = b.z; b.row = r; });
+  emit(q.gx + 1, r.yd + r.thS / 2, 0.6, r.t.col, 22, 4.5, { sx: 1.5 });
   flashRow(r.yd, r.t.col); shake = Math.max(shake, 0.06);
 }
 
@@ -709,7 +745,8 @@ function clearRow(r) {
   if (r.cleared) return;
   r.cleared = true; r.clearedAt = T;
   const dir = r.t.up ? 1 : -1;
-  r.blocks.splice(0).forEach((b, k) => { b.row = null; b.state = 'pop'; b.t = 0.07 + k * 0.018; b.flash = 1.6; b.dir = dir; });
+  if (r.units) debris(r, Math.min(28, 6 + r.units * 2), 'pop').forEach((b, k) => { b.t = 0.05 + k * 0.012; b.flash = 1.6; b.dir = dir; });
+  r.units = 0;
   flashRow(r.yd, r.t.col);
   for (let x = 0; x < 11; x += 1.2) emit(x, r.yd, 0.4, r.t.col, 10, 7, { vz: 3, life: 1.1 });
   if (r.gate) for (let x = 0; x < 10; x += 0.5) emit(x, r.yd, 0.3, r.t.col, 8, 9, { vy: dir * 3, vz: 2, life: 1.4 });
@@ -944,7 +981,7 @@ stage.addEventListener('wheel', e => { e.preventDefault(); zoom = Math.max(1, Ma
 stage.addEventListener('dblclick', () => { zoom = 1; });
 function showTip(r, x, y) {
   const rows_ = [['Prijs', fmtP(r.price)], ['Afstand', fmtPct((r.price / p - 1) * 100)], ['Grootte', r.cleared && r.t.u !== 'pct' ? 'geveegd' : valStr(r)],
-    ['Blokken', r.base ? r.blocks.length + ' / ' + r.base : '—'], ...(r.ps ? [['Aanwezig', `${r.ps[0]} van ${r.ps[1]} uur${r.glass ? ' · glas' : ''}`]] : [])];
+    ['Dikte', r.base ? `${r.units} van ${MAXB}` : '—'], ...(r.ps ? [['Aanwezig', `${r.ps[0]} van ${r.ps[1]} uur${r.glass ? ' · glas' : ''}`]] : [])];
   tip.style.setProperty('--tc', r.t.c);
   tip.innerHTML = `<h4></h4>` + rows_.map(() => `<div class="r"><span></span><b></b></div>`).join('');
   tip.querySelector('h4').textContent = r.t.n;
@@ -1016,7 +1053,7 @@ function update(dt) {
   if ((tm.piece -= dt) <= 0) { tm.piece = rnd(0.28, 0.6); if (pieces.length < 4) spawn(); }
   if ((tm.flare -= dt) <= 0) {
     tm.flare = rnd(3, 5.5);
-    const c = liveRows().filter(r => (r.t.u === 'score' || r.type.endsWith('liq')) && !r.cleared && !r.flare && r.blocks.length >= 2);
+    const c = liveRows().filter(r => (r.t.u === 'score' || r.type.endsWith('liq')) && !r.cleared && !r.flare && r.units >= 2);
     const r = c[Math.floor(Math.random() * c.length)]; if (r) r.flare = 1.4;
   }
   if (pendingT > 0 && (pendingT -= dt) <= 0) flushPending();
@@ -1030,13 +1067,14 @@ function update(dt) {
     if (armed && !r.cleared && T - r.born > 0.8 && (r.t.up ? p >= r.price : p <= r.price)) clearRow(r);
     else if (mode === 'demo' && r.cleared && T - r.clearedAt > 1.6 && (r.t.up ? p < r.price - 12 : p > r.price + 12)) {
       r.cleared = false; r.born = T; if (r.base) fillRow(r, r.base, 0); }
-    if (!r.cleared && r.base && r.blocks.length > r.base && (r.decayT -= dt) <= 0) {
-      r.decayT = rnd(0.25, 0.6); const b = r.blocks.pop(); b.row = null; b.flash = 0.8;
-      if ((r.type === 'ask' || r.type === 'bid') && Math.abs(r.yd - sy) < 3.5 * RS) { b.state = 'suck'; b.t = 0; b.sx = b.x; b.sy = b.y; } else { b.state = 'dying'; b.t = 0; }
+    if (!r.cleared && r.base && r.units > r.base && (r.decayT -= dt) <= 0) {
+      r.decayT = rnd(0.25, 0.6); r.units--;
+      const near = (r.type === 'ask' || r.type === 'bid') && Math.abs(r.yd - sy) < 3.5 * RS, [b] = debris(r, 1, near ? 'suck' : 'dying');
+      b.flash = 0.8; b.t = 0;
     }
     if (r.flare > 0) {
       r.flare -= dt;
-      if (r.blocks.length && Math.random() < 0.6) { const b = r.blocks[Math.floor(Math.random() * r.blocks.length)]; emit(b.x, b.y, 0.5, r.t.col, 2, 2.5, { vz: 2, vy: 1 }); }
+      if (r.units && Math.random() < 0.6) emit(rnd(0.3, 9.7), r.yd, 0.5, r.t.col, 2, 2.5, { vz: 2, vy: 1 });
       if (r.flare < 0) r.flare = 0;
     }
   }
@@ -1049,9 +1087,9 @@ function update(dt) {
     const col = tr.buy ? BUYC : SELLC, n = Math.min(6, Math.max(1, Math.ceil(Math.log10(tr.usd / 2e3))));
     if (budget > 0) { emit(rnd(-6, 13), sy, 0.8, col, n, 1.5, { vy: tr.buy ? 5 : -5, life: 0.7, sx: 0.4 }); budget -= n; }
     if (tr.usd >= 250e3) {
-      const side = liveRows().filter(r => (tr.buy ? r.type === 'ask' : r.type === 'bid') && !r.cleared && r.blocks.length);
+      const side = liveRows().filter(r => (tr.buy ? r.type === 'ask' : r.type === 'bid') && !r.cleared && r.units);
       const tgt = side.sort((a, b) => Math.abs(a.yd - sy) - Math.abs(b.yd - sy))[0];
-      const b = newBlock(col); b.state = 'shot'; b.t = 0; b.s = 0.55; b.sx = rnd(1, 8); b.sy = sy; b.tgt = tgt || null; b.dirY = tr.buy ? 1 : -1;
+      const b = newBlock(col); b.state = 'shot'; b.t = 0; b.s = 0.55; b.tx = rnd(0.5, 9.5); b.sx = rnd(1, 8); b.sy = sy; b.tgt = tgt || null; b.dirY = tr.buy ? 1 : -1;
       if (tr.usd >= 1e6) floatText(b.sx, sy + (tr.buy ? 1 : -1), (tr.buy ? 'koop ' : 'verkoop ') + fmtUsd(tr.usd), tr.buy ? '#35ffb0' : '#ff4d6a');
       if (tr.usd >= 3e6) feed(`<b>${tr.buy ? 'Grote koop' : 'Grote verkoop'}</b> ${fmtUsd(tr.usd)} op ${fmtP(tr.px)}`, tr.buy ? TY.bid.c : TY.ask.c);
       slabEdge.material.color.set(tr.buy ? 0x35ffb0 : 0xff4d6a);
@@ -1064,8 +1102,8 @@ function update(dt) {
     const q = pieces[i], r = q.row, ri = Math.round(r.yd / RS);
     q.stepT += dt;
     while (q.stepT > STEP && q.gy > ri) { q.stepT -= STEP; q.gy -= 1; if (Math.random() < 0.1) rotate(q); }
-    const k = 1 - Math.exp(-32 * dt), gx = r.blocks.length, fy = q.gy > ri ? q.gy * RS : r.yd;
-    q.blocks.forEach((b, j) => { b.x += (gx + q.cells[j][0] + 0.5 - b.x) * k; b.y += (fy + q.cells[j][1] - b.y) * k; });
+    const k = 1 - Math.exp(-32 * dt), land = r.yd + r.thS / 2 + 0.45, fy = q.gy > ri ? Math.max(q.gy * RS, land) : land;
+    q.blocks.forEach((b, j) => { b.x += (q.gx + q.cells[j][0] + 0.5 - b.x) * k; b.y += (fy + q.cells[j][1] - b.y) * k; });
     if (r.gone || r.cleared || (q.gy <= ri && Math.abs(q.blocks[0].y - (fy + q.cells[0][1])) < 0.12)) { lock(q); pieces.splice(i, 1); }
   }
 
@@ -1074,55 +1112,49 @@ function update(dt) {
   for (const b of blocks) {
     b.flash = Math.max(0, b.flash - dt * 3.2);
     switch (b.state) {
-      case 'drop':
+      case 'feed': {
         if (b.delay > 0) { b.delay -= dt; b.s = 0.0001; break; }
-        if (!b.row) { b.dead = true; break; }
-        b.s = 0.9; b.vy -= 70 * dt; b.y += b.vy * dt;
-        if (b.y <= b.row.yd) {
-          b.y = b.row.yd;
-          if (b.vy < -4) { if (!b.landed) { b.landed = true; b.flash = 1; emit(b.x, b.y - 0.4, 0.3, b.col, 3, 2.5); } b.vy = -b.vy * 0.22; }
-          else { b.vy = 0; b.state = 'idle'; }
-        }
+        const r = b.row; if (!r || r.gone || r.cleared) { if (r) absorb(r, b); else b.dead = true; break; }
+        b.s = 0.8; b.vy -= 70 * dt; b.y += b.vy * dt;
+        if (b.y <= r.yd + r.thS / 2) absorb(r, b);
         break;
-      case 'idle': case 'merge': {
-        const r = b.row; if (!r) { b.state = 'dying'; b.t = 0; break; }
-        const tx = r.blocks.indexOf(b) + 0.5;
-        if (b.state === 'merge') {
-          b.t += dt / 0.16; const e = Math.min(1, b.t), ee = 1 - (1 - e) * (1 - e);
-          b.x = b.sx + (tx - b.sx) * ee; b.y = b.sy + (r.yd - b.sy) * ee; b.z = b.sz * (1 - ee);
-          if (e >= 1) { b.state = 'idle'; b.flash = 1; }
-        } else { b.x += (tx - b.x) * Math.min(1, dt * 14); b.y = r.yd; b.z = 0; }
-        b.s = 0.9; break;
+      }
+      case 'merge': {
+        const r = b.row; b.t += dt / 0.22; if (b.t < 0) break;
+        const e = Math.min(1, b.t), ee = 1 - (1 - e) * (1 - e);
+        b.y = b.sy + (r.yd - b.sy) * ee; b.z = b.sz * (1 - ee); b.s = 0.9 * (1 - 0.6 * ee);
+        if (e >= 1) absorb(r, b);
+        break;
       }
       case 'pop':
-        b.t -= dt; b.s = 0.9 + b.flash * 0.08;
+        b.t -= dt;
         if (b.t <= 0) launch(b, rnd(-3, 7), b.dir * rnd(3, 9), rnd(4, 12), rnd(1.2, 1.8));
         break;
       case 'fly':
         b.vy -= g * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
         b.rx += b.wx * dt; b.ry += b.wy * dt; b.rz += b.wz * dt;
-        b.life -= dt; b.s = 0.9 * Math.min(1, (b.life / b.max) * 1.6);
+        b.life -= dt; b.s = b.s0 * Math.min(1, (b.life / b.max) * 1.6);
         if (Math.random() < 0.25) emit(b.x, b.y, b.z, b.col, 1, 0.8, { life: 0.5 });
         if (b.life <= 0) b.dead = true;
         break;
       case 'shot': {
         b.t += dt / 0.4; const e = Math.min(1, b.t), r = b.tgt && !b.tgt.gone ? b.tgt : null;
-        const tx = r ? r.blocks.length : b.sx, ty = r ? r.yd : b.sy + b.dirY * 4;
+        const tx = r ? b.tx : b.sx, ty = r ? r.yd : b.sy + b.dirY * 4;
         b.x = b.sx + (tx - b.sx) * e; b.y = b.sy + (ty - b.sy) * e; b.z = 1.2 * (1 - e) + 0.3; b.rz += dt * 12; b.ry += dt * 9;
         if (Math.random() < 0.7) emit(b.x, b.y, b.z, b.col, 1, 0.6, { life: 0.35 });
-        if (e >= 1) { b.dead = true; emit(b.x, b.y, 0.4, b.col, 14, 4); if (r) { r.hl = Math.max(r.hl, 0.7); r.blocks.forEach(x => x.flash = Math.max(x.flash, 0.35)); } }
+        if (e >= 1) { b.dead = true; emit(b.x, b.y, 0.4, b.col, 14, 4); if (r) { r.hl = Math.max(r.hl, 0.7); r.pulse = Math.min(1.5, r.pulse + 0.35); } }
         break;
       }
       case 'suck': {
         b.t += dt / 0.5; const e = Math.min(1, b.t);
-        b.x = b.sx + (3.5 - b.sx) * e * 0.4; b.y = b.sy + (sy - b.sy) * e * e; b.z = e * 0.8; b.s = 0.9 * (1 - e); b.rz = e * 3;
+        b.x = b.sx + (3.5 - b.sx) * e * 0.4; b.y = b.sy + (sy - b.sy) * e * e; b.z = e * 0.8; b.s = (b.s0 || 0.9) * (1 - e); b.rz = e * 3;
         if (Math.random() < 0.6) emit(b.x, b.y, b.z, b.col, 1, 1, { life: 0.4 });
         if (e >= 1) { b.dead = true; emit(b.x, sy, 0.8, b.col, 10, 3); }
         break;
       }
       case 'dying':
         b.t += dt / 0.6; if (b.t < 0) break;
-        b.s = 0.9 * (1 - b.t); b.y += dt * 1.5; b.ry += dt * 6;
+        b.s = (b.s0 || 0.9) * (1 - b.t); b.y += dt * 1.5; b.ry += dt * 6;
         if (Math.random() < 0.5) emit(b.x, b.y, 0.3, b.col, 1, 1.2, { vy: 1, life: 0.6 });
         if (b.t >= 1) b.dead = true;
         break;
@@ -1176,9 +1208,23 @@ function render(rdt) {
 
   // rows: halos, labels, size tags, gates
   for (const r of rows) {
-    const y = r.yd ?? r.y, n = r.blocks.length;
-    if (r.base) r.endX += (n - r.endX) * Math.min(1, rdt * 10);
+    const y = r.yd ?? r.y;
     const fade = r.gone ? Math.max(0, r.goneT / 0.9) : 1, fadeL = r.gone ? Math.max(0, (r.goneT - 0.55) / 0.35) : 1;
+    if (r.bar) {
+      r.thS += (thOf(r.units) - r.thS) * Math.min(1, rdt * 8);
+      r.pulse = Math.max(0, r.pulse - rdt * 2.5);
+      const th = Math.max(0.001, r.thS * (1 + 0.12 * r.pulse)), fl = r.flare > 0;
+      r.bar.position.set(5 + (fl ? rnd(-0.04, 0.04) : 0), y, fl ? rnd(-0.06, 0.06) : 0); r.bar.scale.set(10, th, th);
+      r.edge.position.copy(r.bar.position); r.edge.scale.copy(r.bar.scale);
+      let br = 1 + 0.6 * Math.exp(-((y - scanY) ** 2) * 1.4) + 0.5 * r.pulse + 0.35 * r.hl + (Math.abs(y - sy) < 1.2 * RS ? 0.2 : 0) + (fl ? 0.6 * Math.abs(Math.sin(t * 26)) : 0);
+      if (r.glass) br *= 0.75 + 0.35 * Math.abs(Math.sin(t * 7 + y));
+      r.bar.material.color.copy(r.t.col).multiplyScalar(br);
+      const add = r.glass, m = r.bar.material;
+      if (m.blending !== (add ? ADD : THREE.NormalBlending)) { m.blending = add ? ADD : THREE.NormalBlending; m.depthWrite = !add; m.needsUpdate = true; }
+      m.opacity = (add ? 0.45 : 1) * fade;
+      r.edge.material.opacity = fade * Math.min(1, 0.45 + 0.4 * r.pulse + (add ? 0.35 : 0));
+      r.bar.visible = r.edge.visible = r.thS > 0.01;
+    }
     r.lbl.m.position.set(-3.6 - (1 - fadeL) * 1.4, y, r.gone ? -0.1 : 0.05); r.sz.m.position.set(r.endX + 0.25 + 1.8, y, 0.1); r.hit.position.set(3.4, y, 0.5);
     if (!r.gone) drawSize(r);
     const near = Math.max(0, 1 - Math.abs(y - sy) / (3 * RS));
@@ -1227,7 +1273,7 @@ function render(rdt) {
   // ghosts: where the falling piece will land
   let gn = 0;
   for (const q of pieces) for (let j = 0; j < q.cells.length && gn < 64; j++) {
-    dummy.position.set(q.row.blocks.length + j + 0.5, q.row.yd, 0); dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(0.9); dummy.updateMatrix();
+    dummy.position.set(q.gx + q.cells[j][0] + 0.5, q.row.yd + q.row.thS / 2 + 0.45 + q.cells[j][1], 0); dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(0.9); dummy.updateMatrix();
     gMesh.setMatrixAt(gn, dummy.matrix); tmpC.copy(q.row.t.col).multiplyScalar(0.55 + 0.3 * Math.sin(t * 10)); gMesh.setColorAt(gn, tmpC); gn++;
   }
   gMesh.count = gn; gMesh.instanceMatrix.needsUpdate = true; gMesh.instanceColor.needsUpdate = true;

@@ -59,18 +59,6 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
 .log ol{list-style:none;margin:0;padding:6px 12px 10px;overflow:auto;display:flex;flex-direction:column;gap:5px;font-family:var(--mono);font-size:11px;line-height:1.4}
 .log li{border-left:3px solid var(--fc);padding-left:8px;color:var(--txt)} .log li b{color:var(--fc)} .log time{color:var(--faint);margin-right:6px}
 .log .none{color:var(--faint);border:0}
-.side{display:none}
-@media (min-width:900px){
-  .side{display:flex;flex-direction:column;gap:14px;width:340px;flex:none;border-left:1px solid var(--line);background:#09070f;overflow:auto;padding-block:12px;padding-inline:16px;font-family:var(--mono);font-size:11.5px;font-variant-numeric:tabular-nums}
-  .side h3{margin:0 0 6px;font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
-  .side table{width:100%;border-collapse:collapse}
-  .side td{padding:3px 0;white-space:nowrap} .side td.r{text-align:right} .side td.d{color:var(--dim);padding-left:8px}
-  .side tr.now td{color:var(--now);font-weight:700;border-block:1px solid #2a3c38}
-  .side .pill{display:inline-block;font-family:var(--sans);font-size:10.5px;font-weight:600;padding:0 7px;border-radius:20px;border:1px solid}
-  .side .ex{display:grid;grid-template-columns:84px 1fr auto;align-items:center;gap:8px;padding:2px 0}
-  .side .ex i{height:5px;border-radius:3px}
-  .side .tg{display:flex;justify-content:space-between;gap:8px;padding:3px 0}
-}
 .stage:active{cursor:grabbing}
 #c{display:block;width:100%;height:100%}
 .banner{position:absolute;left:0;right:0;top:36%;text-align:center;pointer-events:none;opacity:0;padding-inline:16px}
@@ -150,7 +138,6 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
     <p class="note" id="note">laden…</p>
     <div class="log" id="log" hidden><div class="lh"><b>Logboek</b><span>nieuwste boven</span><button id="log-x" type="button" aria-label="Logboek sluiten">×</button></div><ol id="log-l"></ol></div>
   </main>
-  <aside class="side" id="side" aria-label="Niveaus, doelen en beurzen"></aside>
   </div>
 </div>
 
@@ -1018,17 +1005,6 @@ function checkNear() {
     } else if (r.warned && d > th * 2) r.warned = false;
   }
 }
-// on a wide screen: the levels as a table, the targets, the exchanges
-function drawSide() {
-  const el = $('side'); if (!el.offsetParent) return;
-  const lv = liveRows().slice().sort((a, b) => b.price - a.price || a.t.o - b.t.o), tg = lv.filter(r => r.t.u === 'pct');
-  const row = r => `<tr><td>${esc(fmtP(r.price))}</td><td class="d">${esc(fmtPct((r.price / p - 1) * 100))}</td><td><span class="pill" style="color:${r.t.c};border-color:${r.t.c}66">${esc(r.t.n)}</span></td><td class="r">${esc(r.cleared && r.t.u !== 'pct' ? 'geveegd' : valStr(r))}</td></tr>`;
-  const up = lv.filter(r => r.price > p), dn = lv.filter(r => r.price <= p);
-  const regs = Object.values(REGS).filter(R => R.k !== 'model' && R.on).sort((a, b) => b.tot - a.tot), mx = regs.length ? regs[0].tot : 1;
-  el.innerHTML = (tg.length ? `<section><h3>Doelen · 1 dag</h3>${tg.map(r => `<div class="tg"><span style="color:${r.t.c}">${esc(r.t.n)} ${esc(fmtP(r.price))}</span><b>${esc(valStr(r))}</b></div>`).join('')}</section>` : '')
-    + `<section><h3>Niveaus</h3><table>${up.map(row).join('')}<tr class="now"><td>${esc(fmtP(p))}</td><td class="d">nu</td><td>Huidige prijs</td><td></td></tr>${dn.map(row).join('')}</table></section>`
-    + (regs.length ? `<section><h3>Beurzen · boek in beeld</h3>${regs.map(R => `<div class="ex"><span style="color:${R.css}">${esc(R.name)}</span><i style="width:${Math.max(4, R.tot / mx * 100).toFixed(0)}%;background:${R.css}"></i><b>${esc(fmtUsd(R.tot))}</b></div>`).join('')}</section>` : '');
-}
 function clearRow(r) {
   if (r.cleared) return;
   snd('sweep');
@@ -1626,7 +1602,7 @@ function update(dt) {
   $('s-clr').textContent = nCleared; $('s-eat').textContent = eaten ? fmtUsd(eaten).replace(' mln', 'M').replace(' mld', 'B') : '$0';
   $('s-liq').textContent = liqTot ? fmtUsd(liqTot).replace(' mln', 'M').replace(' mld', 'B') : '$0'; $('s-cmb').textContent = '×' + (T - lastClearT < 4.5 ? combo : 0);
   if ((tm.dist -= dt) <= 0) { tm.dist = 1; for (const r of liveRows()) drawLabel(r);
-    checkNear(); drawSide();
+    checkNear();
     const now = Date.now(); trail.push({ t: now, p: pS }); while (trail.length && (trail.length > TRN || now - trail[0].t > 900e3)) trail.shift(); }
   drawSlab();
 }

@@ -15,20 +15,22 @@
    a sandbank close to the surface, few: deep water), estimated stops are rocks with a buoy, estimated liquidations are
    whirlpools, the two targets are lighthouses on the horizon. A wall that was not there an hour or two ago is quicksand;
    the real liquidations of the last 24 hours lie on the floor as wrecks, where they happened. Funding is the wind, aggressive buying or selling the
-   current, the day's range the waves, real liquidations a splash and a storm. Tap the sea to take a sounding.
+   current, the day's range the waves, real liquidations a splash and a storm. Tap the sea to take a sounding. Beside it
+   (or under a button on a narrow screen) a panel with the market in numbers and every level as a ladder.
    Stand-alone like Held; the data part is copied from held.html, so it computes exactly what the coin page shows. */
 :root{
   color-scheme: dark;
   --bg:#03090e; --line2:#21313a; --txt:#eef4f0; --dim:#8aa0a6; --faint:#4a5d63;
   --up:#35ffb4; --dn:#ff4f6d; --stop:#ffc35a; --liq:#ad8bff; --btc:#f7931a;
-  --mono:'JetBrains Mono','SF Mono',Consolas,monospace; --sans:'Inter',system-ui,sans-serif;
+  --mono:'JetBrains Mono','SF Mono',Consolas,monospace; --sans:'Inter',system-ui,sans-serif; --sw:0px;
 }
+@media (min-width:1100px){ :root{ --sw:312px } }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow:hidden}
-#sea{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:crosshair;outline:none}
+#sea{position:fixed;top:0;left:0;width:calc(100% - var(--sw));height:100%;display:block;touch-action:none;cursor:crosshair;outline:none}
 #sea.hand{cursor:pointer}
 #sea.grab{cursor:grabbing}
-#msg{position:fixed;inset:0;display:grid;place-items:center;text-align:center;font:500 12px var(--mono);letter-spacing:.1em;color:var(--dim);padding:24px;pointer-events:none}
+#msg{position:fixed;top:0;left:0;bottom:0;right:var(--sw);display:grid;place-items:center;text-align:center;font:500 12px var(--mono);letter-spacing:.1em;color:var(--dim);padding:24px;pointer-events:none}
 #msg[hidden]{display:none}
 .tools{position:fixed;left:max(14px,env(safe-area-inset-left,0px));bottom:max(12px,env(safe-area-inset-bottom,0px));display:flex;gap:6px;
   max-width:calc(100vw - 28px);overflow-x:auto;scrollbar-width:none}
@@ -74,6 +76,50 @@ dd i{font-style:normal;color:var(--faint);margin-left:6px}
 #toast b{display:block;font:800 13px var(--sans);letter-spacing:.06em}
 #toast span{font:500 10.5px var(--mono)}
 @keyframes tin{from{opacity:0;transform:translateX(-18px)}}
+/* the side panel: the market in numbers, the odds of the two targets, and every level as a ladder */
+#side{position:fixed;top:0;right:0;bottom:0;width:var(--sw);background:#060e14;border-left:1px solid var(--line2);overflow-y:auto;padding:18px 14px 24px;
+  padding-top:max(18px,env(safe-area-inset-top,0px));font-size:12px;scrollbar-width:thin;scrollbar-color:#21313a transparent}
+#side section{margin-bottom:18px}
+#side .k{display:flex;justify-content:space-between;margin:0 2px 8px}
+#side .k span{letter-spacing:.04em;text-transform:none;color:var(--faint)}
+#side .x{display:none}
+.mk{gap:4px 10px;margin:0 2px}
+.mk dt{color:var(--dim);font-size:11.5px}
+.mk dd{font-size:11.5px;color:var(--txt)}
+.odds{display:flex;height:8px;border-radius:4px;overflow:hidden;margin:2px 2px 6px;background:rgba(255,255,255,.06)}
+.odds span{display:block;height:100%}
+.oddl{display:flex;justify-content:space-between;font:500 11px var(--mono);margin:0 2px}
+#lad{list-style:none;display:grid;gap:1px}
+.row{display:grid;grid-template-columns:14px 1fr auto;column-gap:9px;align-items:baseline;width:100%;text-align:left;background:none;border:0;border-radius:6px;
+  padding:6px 8px;color:var(--txt);cursor:pointer;font:600 12px var(--sans)}
+.row:hover{background:rgba(255,255,255,.045)}
+.row.sel{background:rgba(255,255,255,.08);box-shadow:inset 2px 0 0 var(--c)}
+.row:focus-visible{outline:2px solid var(--up);outline-offset:-2px}
+.row .sz{font:600 11.5px var(--mono);text-align:right}
+.row .sub{grid-column:2 / 4;display:flex;gap:10px;font:500 10.5px var(--mono);color:var(--dim)}
+.row .sub em{font-style:normal;color:var(--faint)}
+.row .sub em.new{color:#f0e4b8}
+.ic{width:10px;height:10px;align-self:center;display:block;color:var(--c)}
+.ic.wall{height:5px;background:var(--c);border-radius:1px}
+.ic.stop{width:0;height:0;border:5px solid transparent;border-bottom:9px solid var(--c);border-top:0}
+.ic.stop.dn{border-bottom:0;border-top:9px solid var(--c)}
+.ic.liq{border:2px solid var(--c);border-radius:50%}
+.ic.port{width:8px;height:8px;background:var(--c);transform:rotate(45deg)}
+.now{display:flex;align-items:center;gap:8px;margin:4px 0;font:700 12px var(--mono);color:var(--btc)}
+.now:before,.now:after{content:'';flex:1;height:1px;background:rgba(247,147,26,.45)}
+.empty{color:var(--faint);padding:4px 8px}
+#sideb{display:none}
+@media (min-width:1100px){ .panel{right:calc(var(--sw) + 16px)} #toast{max-width:calc(100vw - var(--sw) - 400px)}
+  /* the market stays in view; only the ladder scrolls */
+  #side{display:flex;flex-direction:column;overflow:hidden;padding-bottom:0}
+  #side section{flex:none}
+  #side #ladsec{flex:1;min-height:0;overflow-y:auto;margin:0 -14px;padding:0 14px 18px;scrollbar-width:thin;scrollbar-color:#21313a transparent} }
+@media (max-width:1099px){
+  #side{display:none;top:auto;left:12px;right:12px;bottom:54px;width:auto;max-height:62vh;border:1px solid var(--line2);border-radius:10px;padding:14px}
+  #side.open{display:block}
+  #side .x{display:block;position:absolute;top:6px;right:8px;background:none;border:0;color:var(--dim);font:500 20px var(--sans);cursor:pointer;padding:2px 6px;line-height:1}
+  #sideb{display:inline-block}
+}
 @media (max-width:639px){
   .panel,#log{left:12px;right:12px;width:auto;bottom:54px;max-height:48vh}
   #toast{bottom:auto;top:calc(env(safe-area-inset-top,0px) + 92px);right:14px}
@@ -84,20 +130,27 @@ dd i{font-style:normal;color:var(--faint);margin-left:6px}
 </style>
 </head>
 <body>
-<canvas id="sea" tabindex="0" aria-label="Het orderboek van BTC als zee: de prijs is een boot, de muren zijn de zeebodem, stops zijn rotsen met een boei, liquidaties zijn draaikolken en de doelen zijn vuurtorens. Tik of klik op de zee om te peilen; slepen schuift, knijpen of scrollen zoomt."></canvas>
+<canvas id="sea" tabindex="0" aria-label="Het orderboek van BTC als zee: de prijs is een boot, het orderboek is de zeebodem met een schaal links, geschatte stops zijn rotsen met een boei, geschatte liquidaties zijn draaikolken, echte liquidaties wrakken en de doelen vuurtorens. Tik of klik op de zee om te peilen; slepen schuift, knijpen of scrollen zoomt."></canvas>
+<aside id="side" aria-label="Markt en niveaus">
+  <button class="x" type="button" aria-label="Sluiten">×</button>
+  <section><div class="k">Markt</div><dl class="mk" id="mk"></dl></section>
+  <section><div class="k">Welk doel eerst <span>binnen 3 dagen</span></div><div id="odds"></div></section>
+  <section id="ladsec"><div class="k">Niveaus <span>afstand · grootte</span></div><ol id="lad"></ol></section>
+</aside>
 <div id="msg">ZEE LADEN…</div>
 <div id="sat" style="position:fixed;top:0;left:0;width:0;height:env(safe-area-inset-top,0px)"></div>
 <div id="toast" aria-live="polite"></div>
 <div class="panel" id="card" hidden role="dialog" aria-label="Peiling"></div>
-<div class="panel" id="log" hidden role="log" aria-label="Scheepsjournaal"></div>
+<div class="panel" id="log" hidden role="log" aria-label="Journaal"></div>
 <div class="tools">
   <a href="./#btc">← <span class="long">GlassSphere</span></a>
-  <button id="follow" type="button" aria-pressed="true" title="De boot volgen (0)">⌖ Volg</button>
-  <button type="button" data-layer="bed" aria-pressed="true"><span class="dot" style="background:#c9b98a"></span>Bodem</button>
-  <button type="button" data-layer="stop" aria-pressed="true"><span class="dot" style="background:var(--stop)"></span>Rotsen</button>
-  <button type="button" data-layer="liq" aria-pressed="true"><span class="dot" style="background:var(--liq)"></span>Kolken</button>
-  <button type="button" data-layer="port" aria-pressed="true"><span class="dot" style="background:#fff"></span>Vuurtorens</button>
-  <button type="button" data-layer="wreck" aria-pressed="true"><span class="dot" style="background:#8a6f55"></span>Wrakken</button>
+  <button id="follow" type="button" aria-pressed="true" title="De prijs volgen (0)">⌖ Volg</button>
+  <button id="sideb" type="button" aria-pressed="false">☰ Niveaus</button>
+  <button type="button" data-layer="bed" aria-pressed="true"><span class="dot" style="background:#c9b98a"></span>Muren</button>
+  <button type="button" data-layer="stop" aria-pressed="true"><span class="dot" style="background:var(--stop)"></span>Stops</button>
+  <button type="button" data-layer="liq" aria-pressed="true"><span class="dot" style="background:var(--liq)"></span>Liquidaties</button>
+  <button type="button" data-layer="port" aria-pressed="true"><span class="dot" style="background:#fff"></span>Doelen</button>
+  <button type="button" data-layer="wreck" aria-pressed="true"><span class="dot" style="background:#8a6f55"></span>Echte liq.</button>
   <button id="logb" type="button" aria-pressed="false">≡ Journaal</button>
   <button id="help" type="button" aria-pressed="false">? Uitleg</button>
 </div>
@@ -412,9 +465,9 @@ try { Object.assign(LAYERS, JSON.parse(localStorage.getItem('zee-layers') || '{}
 
 /* ---- canvas and layout ------------------------------------------------------------------------------------------- */
 const cv = $('sea'), g = cv.getContext('2d');
-let W = 0, H = 0, DPR = 1, HZ = 0, SURF = 0, BED = 0, phone = false, STARS = [];
+let W = 0, H = 0, DPR = 1, HZ = 0, SURF = 0, BED = 0, phone = false, SIDE = false, STARS = [];
 function resize() {
-  DPR = Math.min(2, window.devicePixelRatio || 1); W = innerWidth; H = innerHeight;
+  DPR = Math.min(2, window.devicePixelRatio || 1); W = cv.clientWidth || innerWidth; H = cv.clientHeight || innerHeight; SIDE = innerWidth >= 1100;
   cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); phone = W < 640;
   HZ = Math.round(H * (phone ? .29 : .28)); SURF = Math.round(H * (phone ? .37 : .385)); BED = H - (phone ? 66 : 60);
   STARS = Array.from({ length: Math.round(W * HZ / 2400) }, (_, i) => ({ x: hash(i + 1) * W, y: hash(i + 99) * HZ * .9, r: .35 + hash(i + 7) * 1.05, ph: hash(i + 3) * 6.28 }));
@@ -430,9 +483,10 @@ const defR = () => D.price * clamp(D.range * (phone ? .8 : 1.1), .005, .14);
 function zoomAt(r, ax) { const pa = PX(ax); V.r = clamp(r, rMin(), rMax()); V.c = pa - (ax - W / 2) / (W / 2) * V.r; V.anim = null; }
 function setFollow(on) { V.follow = on; $('follow').setAttribute('aria-pressed', String(on)); }
 function home() { setFollow(true); V.anim = { c0: V.c, r0: V.r, r1: defR(), t0: T, d: .9 }; }
+function centerOn(p) { const x = X(p); if (x > W * .12 && x < W * .88) return; setFollow(false); V.anim = { c0: V.c, c1: p, r0: V.r, r1: Math.max(V.r, Math.abs(p - B0.p) * 1.25), t0: T, d: .7 }; }
 
 /* ---- the data on a $10 grid, as running sums, so any stretch of price sums in O(1) ------------------------------- */
-let G = null, MINOR = [], C24 = null, RANGE24 = null;
+let G = null, MINOR = [], C24 = null, RANGE24 = null, PORTS = [];
 function S(a, p0, p1) {
   if (!G) return 0; if (p1 < p0) [p0, p1] = [p1, p0];
   const f = p => { const x = clamp(p / G.b - G.i0, 0, G.N), i = Math.min(G.N - 1, Math.floor(x)); return a[i] + (x - i) * (a[i + 1] - a[i]); };
@@ -489,8 +543,6 @@ const STATS = { real: 0 };
 let LZ = { HB: 100, of: 0, m: new Map() };      // drijfzand: per $100 bucket, in how many of the last hours the book stood there
 const WRECKS = [], DAY = 24 * 3.6e6;            // real liquidations of the last 24 hours, where they happened
 const CLOUDS = Array.from({ length: 7 }, (_, i) => ({ x: hash(i + 40), y: .18 + hash(i + 50) * .5, s: .6 + hash(i + 60) * .9 }));
-const PLANK = Array.from({ length: 90 }, (_, i) => ({ x: hash(i + 200), y: hash(i + 300), r: .5 + hash(i + 400) * 1.1, s: .3 + hash(i + 500) }));
-const SCHOOLS = Array.from({ length: 3 }, (_, i) => ({ x: hash(i + 600), y: .35 + i * .18, n: 6 + Math.round(hash(i + 700) * 6), sp: .7 + hash(i + 800) * .6, dir: 1 }));
 
 // OKX trades: buy and sell volume per second, the last ten seconds, and the usual pace (as in Held)
 const TAKER = (() => {
@@ -604,7 +656,7 @@ function drawSky() {
   gr.addColorStop(0, '#02050a'); gr.addColorStop(.65, '#06131f'); gr.addColorStop(1, '#0e2b3a');
   g.fillStyle = gr; g.fillRect(0, 0, W, HZ + 1);
   const clear = 1 - storm * .85;
-  for (const s of STARS) { g.fillStyle = `rgba(230,240,255,${clear * (.25 + .55 * Math.abs(Math.sin(T * .7 + s.ph)))})`; g.fillRect(s.x, s.y, s.r, s.r); }
+  for (const s of STARS) { g.fillStyle = `rgba(230,240,255,${clear * (.15 + .35 * Math.abs(Math.sin(T * .7 + s.ph)))})`; g.fillRect(s.x, s.y, s.r, s.r); }
   // the moon, and its glow
   const mx = W * (phone ? .8 : .78), my = HZ * .36, mr = phone ? 11 : 14;
   const mg = g.createRadialGradient(mx, my, mr * .5, mx, my, mr * 7); mg.addColorStop(0, `rgba(220,235,255,${.16 * clear})`); mg.addColorStop(1, 'rgba(220,235,255,0)');
@@ -616,7 +668,7 @@ function drawSky() {
     const span = W + 360, x = ((c.x * span) % span + span) % span - 180, y = c.y * HZ, s = c.s * (phone ? 60 : 90);
     for (let k = 0; k < 4; k++) {
       const cx = x + (k - 1.5) * s * .45, cy = y + Math.sin(k * 2.1) * s * .08, r = s * (.35 + .18 * Math.sin(k * 1.7 + c.s));
-      const cg = g.createRadialGradient(cx, cy, 0, cx, cy, r); cg.addColorStop(0, `rgba(120,150,170,${.06 + storm * .16})`); cg.addColorStop(1, 'rgba(120,150,170,0)');
+      const cg = g.createRadialGradient(cx, cy, 0, cx, cy, r); cg.addColorStop(0, `rgba(120,150,170,${.035 + storm * .1})`); cg.addColorStop(1, 'rgba(120,150,170,0)');
       g.fillStyle = cg; g.fillRect(cx - r, cy - r, r * 2, r * 2);
     }
   }
@@ -627,12 +679,10 @@ function drawPorts() {
   if (!LAYERS.port || !TG) return;
   for (const [p, up] of [[TG.up, true], [TG.dn, false]]) {
     if (!p) continue;
-    const x = X(p), col = up ? CSS.up : CSS.dn, first = TG.first === p, prob = TG.prob == null ? null : Math.round((first ? TG.prob : 1 - TG.prob) * 100);
-    const obj = { port: true, up, p, prob, first, key: 'port' + (up ? 'u' : 'd') };
+    const obj = PORTS.find(o => o.up === up); if (!obj) continue;
+    const x = X(p), col = up ? CSS.up : CSS.dn, first = obj.first;
     if (x < -30 || x > W + 30) {        // off screen: an arrow at the edge
-      const ex = x < 0 ? 10 : W - 10, s = `${x < 0 ? '←' : ''} doel ${fmtP(p)} ${x > 0 ? '→' : ''}`;
-      txt(s, ex, HZ - 10, `600 10px ${FM}`, rgba(col, .85), x < 0 ? 'left' : 'right');
-      HITS.push({ x: x < 0 ? 50 : W - 50, y: HZ - 14, rx: 50, ry: 12, obj, pri: 2 });
+      obj.ax = x < 0 ? 0 : W; obj.ay = HZ - 4; obj.edge = x < 0 ? -1 : 1; PORTTAGS.push(obj);
       continue;
     }
     const s = phone ? .75 : 1, top = HZ - 40 * s;
@@ -651,7 +701,7 @@ function drawPorts() {
     const lg = g.createRadialGradient(x, top, 0, x, top, 16 * s); lg.addColorStop(0, rgba('#ffffff', .95)); lg.addColorStop(.25, rgba(col, .6)); lg.addColorStop(1, rgba(col, 0));
     g.fillStyle = lg; g.fillRect(x - 16 * s, top - 16 * s, 32 * s, 32 * s);
     HITS.push({ x, y: HZ - 20 * s, rx: 18, ry: 26 * s, obj, pri: 1 });
-    obj.ax = x; obj.ay = top - 8 * s;
+    obj.ax = x; obj.ay = top - 8 * s; obj.edge = 0;
     PORTTAGS.push(obj);
   }
 }
@@ -668,7 +718,7 @@ function drawBand() {
   const n = Math.round(W / (phone ? 9 : 7));
   for (let i = 0; i < n; i++) {
     const f = Math.pow(hash(i + 900), 1.5), y = HZ + 3 + f * (SURF - HZ - 6), span = W + 80;
-    const x = ((hash(i + 950) * span + PH * 22 * (.3 + f)) % span + span) % span - 40, len = 3 + 14 * f, a = (.05 + .16 * f) * (.6 + .4 * Math.sin(T * 2 + i));
+    const x = ((hash(i + 950) * span + PH * 22 * (.3 + f)) % span + span) % span - 40, len = 3 + 14 * f, a = (.03 + .09 * f) * (.6 + .4 * Math.sin(T * 2 + i));
     g.fillStyle = `rgba(190,230,245,${a})`; g.fillRect(x, y, len, f > .6 ? 1.4 : 1);
   }
   // the moon's path on the water
@@ -720,7 +770,7 @@ function drawWater() {
   g.save(); g.globalCompositeOperation = 'lighter';
   for (let i = 0; i < 5; i++) {
     const x0 = (i + .5) / 5 * W + Math.sin(T * .17 + i * 1.9) * 50, sw = 18 + hash(i + 5) * 30, lean = 60 + Math.sin(T * .11 + i) * 30;
-    const lg = g.createLinearGradient(0, SURF, 0, SURF + (BED - SURF) * .8); lg.addColorStop(0, `rgba(140,220,235,${.05 * (1 - storm)})`); lg.addColorStop(1, 'rgba(140,220,235,0)');
+    const lg = g.createLinearGradient(0, SURF, 0, SURF + (BED - SURF) * .8); lg.addColorStop(0, `rgba(140,220,235,${.025 * (1 - storm)})`); lg.addColorStop(1, 'rgba(140,220,235,0)');
     g.fillStyle = lg; g.beginPath(); g.moveTo(x0 - sw, SURF); g.lineTo(x0 + sw, SURF); g.lineTo(x0 + sw * 2.5 + lean, SURF + (BED - SURF) * .8); g.lineTo(x0 - sw + lean, SURF + (BED - SURF) * .8); g.closePath(); g.fill();
   }
   g.restore();
@@ -758,19 +808,35 @@ function drawBed() {
   let on = false; for (let i = 1; i < n; i++) { const x = (i - 1) * CW; if (lq(i) > .12) { on ? g.lineTo(x, BY[i] - 2) : g.moveTo(x, BY[i] - 2); on = true; } else on = false; }
   g.stroke(); g.setLineDash([]);
 }
-// kelp on the bid side, sea fans on the ask side, swaying with the current
-function drawPlants() {
-  const ppd = (W / 2) / V.r, steps = [10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000], step = steps.find(s => s * ppd >= 34) || 5000, P = B0.p;
-  for (let p = Math.ceil(PX(-20) / step) * step; p <= PX(W + 20); p += step) {
-    const h0 = hash(p / step), x = X(p) + (h0 - .5) * step * ppd * .6, yb = bedAt(x) + 2, e = elevAt(x), h = (14 + 30 * hash(p / step + 3)) * (.6 + e * .8);
-    if (h0 < .25) continue;
-    const sway = Math.sin(T * 1.2 + h0 * 9) * 4 + CUR * 9;
-    if (p < P) { g.strokeStyle = `rgba(53,200,140,${.16 + e * .2})`; g.lineWidth = 1.6;
-      for (let k = 0; k < 2; k++) { g.beginPath(); g.moveTo(x + k * 3, yb); g.quadraticCurveTo(x + k * 3 + sway * .5 - 4, yb - h * .5, x + k * 3 + sway, yb - h * (1 - k * .25)); g.stroke(); } }
-    else { g.strokeStyle = `rgba(255,110,130,${.14 + e * .2})`; g.lineWidth = 1.2; const hh = h * .7;
-      for (let k = -2; k <= 2; k++) { g.beginPath(); g.moveTo(x, yb); g.quadraticCurveTo(x + k * 3, yb - hh * .5, x + k * hh * .22 + sway * .3, yb - hh * (1 - Math.abs(k) * .12)); g.stroke(); } }
+/* ---- reading aids: the price grid, the depth scale of the floor, a line at the price --------------------------------- */
+function depthTicks() {
+  if (!LAYERS.bed || !G) return [];
+  const out = [], top = SURF + 24, bot = BED - 4;
+  for (const v of [.25, .5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000].map(m => m * 1e6)) {
+    const e = depth(v / D.B / G.ref); if (e < .1 || e > .93) continue;
+    const y = lerp(bot, top, e * .92) - 4; if (out.length && out[out.length - 1].y - y < 30) continue;
+    out.push({ v, y });
   }
+  return out.slice(-4);
 }
+function drawGrid() {
+  const step = nice(V.r * 2 / (phone ? 4 : 8));
+  g.fillStyle = 'rgba(220,235,240,.035)';
+  for (let p = Math.ceil(PX(0) / step) * step; p <= PX(W); p += step) g.fillRect(Math.round(X(p)), SURF + 6, 1, BED - SURF - 6);
+  g.setLineDash([2, 5]); g.strokeStyle = 'rgba(220,235,240,.09)'; g.lineWidth = 1;
+  for (const t of depthTicks()) { g.beginPath(); g.moveTo(0, t.y); g.lineTo(W, t.y); g.stroke(); }
+  const xp = X(B0.p); g.strokeStyle = rgba(CSS.btc, .3); g.beginPath(); g.moveTo(xp, wave(xp) + 12); g.lineTo(xp, BED); g.stroke();
+  g.setLineDash([]);
+}
+function drawDepthScale() {
+  const ts = depthTicks(); if (!ts.length) return;
+  const x = phone ? 8 : 14;
+  const hy = ts[ts.length - 1].y - 16; txt(`orders per $${D.B}`, x, hy, `600 8.5px ${FM}`, CSS.faint, 'left', 'alphabetic', 1);
+  g.font = `600 8.5px ${FM}`; TAGS.push({ x: x - 3, y: hy - 10, w: g.measureText(`orders per $${D.B}`).width + 14, h: 13 });
+  for (const t of ts) { const s = '≈ ' + (t.v >= 1e9 ? `$${fx(t.v / 1e9, 0)} mld` : t.v >= 1e6 ? `$${String(t.v / 1e6).replace('.', ',')} mln` : `$${t.v / 1e3}K`); g.font = `500 9.5px ${FM}`; const w = g.measureText(s).width + 10;
+    rrect(x - 3, t.y - 8, w, 15, 3); g.fillStyle = 'rgba(3,9,14,.7)'; g.fill(); txt(s, x + 2, t.y + 3, `500 9.5px ${FM}`, 'rgba(220,235,240,.6)'); TAGS.push({ x: x - 3, y: t.y - 8, w, h: 15 }); }
+}
+
 /* ---- wrecks (real liquidations, last 24 hours) ------------------------------------------------------------------------ */
 function drawWrecks() {
   if (!LAYERS.wreck || !WRECKS.length) return;
@@ -787,11 +853,11 @@ function drawWrecks() {
   for (const c of cl.values()) { c.p = c.pw / c.usd; drawWreck(c, c.xw / c.usd, !!selKey && Math.abs(selKey.p - c.p) < (V.r / W) * cell); }
 }
 function drawWreck(c, x, sel) {
-  const s = clamp(.4 + Math.log10(Math.max(1, c.usd / 1e4)) * .3, .4, 1.4) * (phone ? .8 : 1), age = (Date.now() - c.t) / DAY;
+  const s = clamp(.35 + Math.log10(Math.max(1, c.usd / 1e4)) * .25, .35, 1.1) * (phone ? .8 : 1), age = (Date.now() - c.t) / DAY;
   const yb = bedAt(x) + 3, seed = Math.round(c.p), d = hash(seed + 1) < .5 ? -1 : 1;
   let y = yb; if (c.born != null) y = lerp(wave(x) + 6, yb, ease(clamp((T - c.born) / 3, 0, 1)));      // a fresh one sinks first
   if (Date.now() - c.t < 10 * 6e4) { const gg = g.createRadialGradient(x, y - 6, 0, x, y - 6, 26 * s); gg.addColorStop(0, rgba(CSS.liq, .35)); gg.addColorStop(1, rgba(CSS.liq, 0)); g.fillStyle = gg; g.fillRect(x - 26 * s, y - 32 * s, 52 * s, 52 * s); }
-  g.save(); g.globalAlpha = 1 - age * .7; g.translate(x, y); g.rotate((hash(seed) - .5) * .7); g.scale(s, s);
+  g.save(); g.globalAlpha = .85 - age * .6; g.translate(x, y); g.rotate((hash(seed) - .5) * .7); g.scale(s, s);
   g.fillStyle = '#211a14'; g.beginPath(); g.moveTo(-16 * d, -6); g.lineTo(17 * d, -8); g.quadraticCurveTo(13 * d, 2, 7 * d, 4); g.lineTo(-10 * d, 4); g.quadraticCurveTo(-15 * d, 2, -16 * d, -6); g.closePath(); g.fill();
   g.strokeStyle = rgba(CSS.liq, sel ? 1 : .7); g.lineWidth = sel ? 2 : 1.3; g.beginPath(); g.moveTo(-16 * d, -6); g.lineTo(17 * d, -8); g.stroke();
   g.strokeStyle = '#6b6255'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(0, -7); g.lineTo(3 * d, -21); g.lineTo(10 * d, -17); g.stroke();       // the broken mast
@@ -837,31 +903,11 @@ function drawBuoy(L, sel) {
   HITS.push({ x, y: y - 12, rx: 14, ry: 18, obj: L, pri: 1 });
 }
 
-/* ---- life in the water ------------------------------------------------------------------------------------------------ */
+/* ---- bubbles and stirred-up sand ------------------------------------------------------------------------------------ */
 function drawLife(dt) {
-  // plankton drifting with the current
-  for (const q of PLANK) {
-    q.x = ((q.x + dt * (CUR * .012 + .002) * q.s) % 1 + 1) % 1; const x = q.x * W, y = SURF + 20 + q.y * (BED - SURF - 30) + Math.sin(T * .5 + q.s * 9) * 6;
-    if (y > bedAt(x) - 2) continue; g.fillStyle = `rgba(170,230,240,${.12 + .2 * q.s})`; g.fillRect(x, y, q.r, q.r);
-  }
-  // shoals: they swim with the buying or selling of the last ten seconds
-  for (const sc of SCHOOLS) {
-    const want = Math.abs(CUR) > .08 ? Math.sign(CUR) : sc.dir; sc.dir = want;
-    sc.x += dt * sc.dir * (.012 + Math.abs(CUR) * .05) * sc.sp; if (sc.x > 1.15) sc.x = -.15; if (sc.x < -.15) sc.x = 1.15;
-    const cx = sc.x * W, cy = SURF + sc.y * (BED - SURF) * .7;
-    for (let i = 0; i < sc.n; i++) {
-      const fx = cx + (hash(i + sc.y * 50) - .5) * 60 + Math.sin(T * 1.3 + i) * 4, fy0 = cy + (hash(i + 31 + sc.y * 50) - .5) * 26 + Math.sin(T * 2 + i * 2) * 2;
-      const fy = Math.min(fy0, bedAt(fx) - 10); if (fy < SURF + 14) continue;
-      const d = sc.dir, wig = Math.sin(T * 12 + i) * 1.2;
-      g.fillStyle = 'rgba(170,215,225,.38)'; g.beginPath(); g.ellipse(fx, fy, 5, 1.8, 0, 0, PI * 2); g.fill();
-      g.beginPath(); g.moveTo(fx - d * 4, fy); g.lineTo(fx - d * 8, fy - 2.5 + wig); g.lineTo(fx - d * 8, fy + 2.5 + wig); g.closePath(); g.fill();
-    }
-  }
-  // bubbles from the whirlpools
   for (let i = BUBS.length - 1; i >= 0; i--) { const b = BUBS[i]; b.y -= b.vy * dt; b.x += Math.sin(T * 3 + b.ph) * .3;
     if (b.y < wave(b.x) + 2) { BUBS.splice(i, 1); continue; }
-    g.strokeStyle = 'rgba(200,190,255,.35)'; g.lineWidth = .8; g.beginPath(); g.arc(b.x, b.y, b.r, 0, PI * 2); g.stroke(); }
-  // sand stirred up where a wall was eaten
+    g.strokeStyle = 'rgba(200,190,255,.25)'; g.lineWidth = .8; g.beginPath(); g.arc(b.x, b.y, b.r, 0, PI * 2); g.stroke(); }
   for (let i = SAND.length - 1; i >= 0; i--) { const s = SAND[i]; s.age += dt; if (s.age > s.life) { SAND.splice(i, 1); continue; }
     s.x += s.vx * dt; s.y += s.vy * dt; s.vy *= .985; s.vx *= .985; const a = (1 - s.age / s.life) * .3;
     const sg = g.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r * (1 + s.age)); sg.addColorStop(0, rgba(CSS.sand, a)); sg.addColorStop(1, rgba(CSS.sand, 0));
@@ -958,8 +1004,8 @@ function drawSounding() {
 
 /* ---- weather ---------------------------------------------------------------------------------------------------------- */
 function drawWeather() {
-  if (storm > .12) {
-    const n = Math.round(storm * (phone ? 90 : 160)); g.strokeStyle = `rgba(170,200,220,${.18 + storm * .2})`; g.lineWidth = 1; g.beginPath();
+  if (storm > .3) {
+    const n = Math.round(storm * (phone ? 50 : 90)); g.strokeStyle = `rgba(170,200,220,${.1 + storm * .12})`; g.lineWidth = 1; g.beginPath();
     for (let i = 0; i < n; i++) { const x = R() * (W + 100) - 50, y = R() * SURF; g.moveTo(x, y); g.lineTo(x + WIND * 6 - 3, y + 14); }
     g.stroke();
   }
@@ -967,26 +1013,27 @@ function drawWeather() {
     g.strokeStyle = `rgba(235,225,255,${1 - (T - BOLT.t0) / .3})`; g.lineWidth = 2; g.beginPath(); let bx = BOLT.x + (hash(BOLT.seed) - .5) * 80, by = 0; g.moveTo(bx, by);
     for (let k = 1; k <= 9; k++) { by = k / 9 * (wave(BOLT.x) - 2); bx = lerp(bx, BOLT.x, .3) + (hash(BOLT.seed + k) - .5) * 40; g.lineTo(bx, by); } g.stroke();
   }
-  if (FLASH > 0) { g.fillStyle = `rgba(220,215,255,${FLASH * .28})`; g.fillRect(0, 0, W, H); }
+  if (FLASH > 0) { g.fillStyle = `rgba(220,215,255,${FLASH * .12})`; g.fillRect(0, 0, W, H); }
 }
 
 /* ---- labels, the price axis, the HUD ------------------------------------------------------------------------------------ */
 function drawLabels() {
-  const wide = V.r > D.price * D.range * 2.5;          // zoomed far out: only the largest of each kind keeps its label
-  const lim = L => wide ? 1 : isWall(L) ? (phone ? 1 : 2) : (phone ? 2 : 3);
+  const wide = V.r > D.price * D.range * 2.5;          // zoomed far out, or the ladder beside: only the largest of each kind keeps its label
+  const lim = L => wide || SIDE || phone ? 1 : 2;
   const shown = L => L.rank < lim(L) || SEL?.obj === L || HOVOBJ === L;
-  for (const o of PORTTAGS) tag(o.ax, o.ay, `Vuurtoren ${o.up ? '↑' : '↓'} ${fmtP(o.p)}`, phone ? `doel · ${o.prob ?? '–'}%${o.first ? ' eerst' : ''}` : `doel · ${pct(o.p, B0.p)}${o.prob != null ? ` · ${o.prob}% kans eerst` : ''}`, o.up ? CSS.up : CSS.dn, -1, o, SEL?.obj?.key === o.key);
+  const P = B0.p;
+  for (const o of PORTTAGS) tag(o.ax, o.ay, `${o.edge < 0 ? '← ' : ''}Doel ${o.up ? '↑' : '↓'} ${fmtP(o.p)}${o.edge > 0 ? ' →' : ''}`, phone ? `${o.prob ?? '–'}%${o.first ? ' eerst' : ''}` : `${pct(o.p, P)}${o.prob != null ? ` · ${o.prob}% kans eerst` : ''}`, o.up ? CSS.up : CSS.dn, -1, o, SEL?.obj?.key === o.key);
   // the selected and hovered first, so they get the best place
   const order = [...LV].sort((a, b) => (b === SEL?.obj || b === HOVOBJ) - (a === SEL?.obj || a === HOVOBJ));
   for (const L of order) {
     if (!LAYERS[isWall(L) ? 'bed' : L.k]) continue;
     const x = X(L.p); if (x < 0 || x > W) continue;
-    const sel = SEL?.obj === L, col = CSS[colOf(L)];
+    const sel = SEL?.obj === L, col = CSS[colOf(L)], at = phone ? fmtP(L.p) : `${fmtP(L.p)} · ${pct(L.p, P)}`;
     if (isWall(L)) HITS.push({ x, y: bedAt(x) + 12, rx: 22, ry: 26, obj: L, pri: 1 });
     if (!shown(L)) continue;
-    if (L.k === 'liq') { const { ry } = poolGeo(L); tag(x, SURF - 7 - ry * 2, `Kolk · ${L.v}`, phone ? fmtP(L.p) : `${nameOf(L.k, L.above)} · ${fmtP(L.p)}`, col, -1, L, sel); }
-    else if (L.k === 'stop') tag(x, L.ay ?? SURF + 20, `Rots · ${nameOf(L.k, L.above).toLowerCase()}`, `${L.v} · ${fmtP(L.p)}`, col, 1, L, sel);
-    else tag(x, bedAt(x) + 4, `${wallLoose(L) ? 'Drijfzand' : 'Zandbank'} · ${L.v}`, phone ? fmtP(L.p) : `${nameOf(L.k, L.above).toLowerCase()} · ${fmtP(L.p)}${L.ps ? ` · ${L.ps[0]}/${L.ps[1]} u` : ''}`, col, 1, L, sel);
+    if (L.k === 'liq') { const { ry } = poolGeo(L); tag(x, SURF - 7 - ry * 2, `${nameOf(L.k, L.above)} · ${L.v}`, at, col, -1, L, sel); }
+    else if (L.k === 'stop') tag(x, L.ay ?? SURF + 20, `${nameOf(L.k, L.above)} · ${L.v}`, at, col, 1, L, sel);
+    else tag(x, bedAt(x) + 4, `${nameOf(L.k, L.above)} · ${L.v}`, at + (wallLoose(L) ? ` · nieuw ${L.ps[0]}/${L.ps[1]} u` : !phone && L.ps ? ` · ${L.ps[0]}/${L.ps[1]} u` : ''), col, 1, L, sel);
   }
 }
 function drawAxis() {
@@ -998,30 +1045,28 @@ function drawAxis() {
   if (HOVER != null && !drag) { const p = PX(HOVER); g.fillStyle = 'rgba(220,235,240,.08)'; g.fillRect(HOVER, SURF, 1, BED - SURF);
     g.font = `600 10px ${FM}`; const s = fmtP(p), tw = g.measureText(s).width + 10; rrect(HOVER - tw / 2, BED + 2, tw, 16, 3); g.fillStyle = '#16262e'; g.fill(); txt(s, HOVER, y, `600 10px ${FM}`, CSS.txt, 'center'); }
 }
-function weather() {
-  const tk = TAKER.now(), P = B0.p, rows = [];
-  rows.push(['WIND', FUND == null ? '–' : `funding ${FUND >= 0 ? '+' : '−'}${Math.abs(FUND * 100).toFixed(4).replace('.', ',')}% · ${FUND >= 0 ? 'longs betalen' : 'shorts betalen'} ${FUND >= 0 ? '→' : '←'}`, FUND == null ? CSS.dim : FUND >= 0 ? CSS.up : CSS.dn, FUND == null ? '–' : `wind ${FUND >= 0 ? '→' : '←'}`]);
-  rows.push(['STROMING', tk.seen ? `${Math.round(tk.buy * 100)}% koopdruk · ${Math.round(tk.sell * 100)}% verkoop` : '–', tk.seen ? (tk.buy >= .5 ? CSS.up : CSS.dn) : CSS.dim, tk.seen ? `${Math.round(tk.buy * 100)}% koop` : '']);
-  rows.push(['GOLVEN', RANGE24 ? `24-uursbereik ${fx(RANGE24 / P * 100, 1)}%` : '–', CSS.txt, RANGE24 ? `golf ${fx(RANGE24 / P * 100, 1)}%` : '']);
-  const r5 = RECENT.filter(q => Date.now() - q.t < 300e3).reduce((s, q) => s + q.usd, 0);
-  const w24 = WRECKS.filter(w => Date.now() - w.t < DAY), wu = w24.reduce((s, w) => s + w.usd, 0), meas = w24.filter(w => w.hit != null), hits = meas.filter(w => w.hit).length;
-  const raak = meas.length >= 5 ? Math.round(hits / meas.length * 100) : null;
-  rows.push(['WRAKKEN', w24.length ? `${w24.length} · ${fmtUsd(wu)} in 24 u${raak != null ? ` · ${raak}% bij een kolk` : ''}` : '–', w24.length ? CSS.liq : CSS.dim, raak != null ? `kolk ${raak}% raak` : w24.length ? `${w24.length} wrakken` : '']);
-  rows.push(['STORM', r5 ? `${fmtUsd(r5)} echte liq. · 5 min` : 'kalm · geen echte liq. in 5 min', r5 ? CSS.liq : CSS.dim, r5 ? `storm ${fmtUsd(r5)}` : '']);
-  return rows;
+function stats24() {
+  const tk = TAKER.now(), P = B0.p, now = Date.now();
+  const w24 = WRECKS.filter(w => now - w.t < DAY), wu = w24.reduce((s, w) => s + w.usd, 0), wl = w24.reduce((s, w) => s + (w.long ? w.usd : 0), 0);
+  const meas = w24.filter(w => w.hit != null), hits = meas.filter(w => w.hit).length;
+  const r5 = RECENT.filter(q => now - q.t < 300e3).reduce((s, q) => s + q.usd, 0);
+  const oi = Object.values(D.market || {}).reduce((s, m) => s + (m.oi || 0), 0);
+  return { tk, P, w24, wu, wl, meas, hits, raak: meas.length >= 5 ? Math.round(hits / meas.length * 100) : null, r5, oi,
+    fund: FUND == null ? null : `${FUND >= 0 ? '+' : '−'}${Math.abs(FUND * 100).toFixed(4).replace('.', ',')}%`, range: RANGE24 ? RANGE24 / P * 100 : null };
 }
 function drawHud() {
   const sat = $('sat').getBoundingClientRect().height || 0, gx = phone ? 14 : 22, y0 = sat + (phone ? 22 : 30), P = B0.p;
   const sh = g.createLinearGradient(0, 0, 0, y0 + 80); sh.addColorStop(0, 'rgba(2,5,9,.6)'); sh.addColorStop(1, 'rgba(2,5,9,0)'); g.fillStyle = sh; g.fillRect(0, 0, W, y0 + 80);
-  txt('GETIJDEN VAN BTC', gx, y0, `600 ${phone ? 9 : 10}px ${FM}`, CSS.dim, 'left', 'alphabetic', 2.2);
+  txt('BTC · ORDERBOEK & LIQUIDATIES', gx, y0, `600 ${phone ? 9 : 10}px ${FM}`, CSS.dim, 'left', 'alphabetic', 1.8);
   const big = `700 ${phone ? 24 : 32}px ${FM}`, py = y0 + (phone ? 27 : 36); txt(fmtP(P), gx, py, big, CSS.txt);
   g.font = big; const w = g.measureText(fmtP(P)).width;
   if (C24) txt(pct(P, C24) + ' 24u', gx + w + 10, py, `600 ${phone ? 10 : 11}px ${FM}`, P >= C24 ? CSS.up : CSS.dn);
   if (TG?.first) { const up = TG.first === TG.up; txt(`${up ? '↑' : '↓'} eerst naar ${fmtP(TG.first)} · ${Math.round(TG.prob * 100)}% kans`, gx, py + (phone ? 17 : 21), `500 ${phone ? 10 : 11}px ${FM}`, rgba(up ? CSS.up : CSS.dn, .9)); }
-  const rows = weather();
-  if (phone) txt(rows.map(r => r[3]).filter(Boolean).join(' · '), gx, py + 34, `500 9.5px ${FM}`, 'rgba(220,235,240,.6)');
-  else rows.forEach(([k, v, col], i) => { const y = y0 + i * 17; txt(v, W - 22, y, `500 10.5px ${FM}`, col, 'right'); g.font = `500 10.5px ${FM}`;
-    txt(k, W - 22 - g.measureText(v).width - 12, y, `600 9px ${FM}`, CSS.faint, 'right', 'alphabetic', 1.5); });
+  const m = stats24();
+  if (phone) txt([m.fund && `funding ${m.fund}`, m.range && `bereik ${fx(m.range, 1)}%`, m.w24.length && `liq. 24u ${fmtUsd(m.wu)}`].filter(Boolean).join(' · '), gx, py + 34, `500 9.5px ${FM}`, 'rgba(220,235,240,.6)');
+  else if (!SIDE) [['FUNDING 8U', m.fund ? `${m.fund} · ${FUND >= 0 ? 'longs betalen' : 'shorts betalen'}` : '–'], ['KOOPDRUK 10S', m.tk.seen ? `${Math.round(m.tk.buy * 100)}%` : '–'],
+    ['BEREIK 24U', m.range ? `${fx(m.range, 1)}%` : '–'], ['ECHTE LIQ. 24U', m.w24.length ? fmtUsd(m.wu) : '–']].forEach(([k, v], i) => { const y = y0 + i * 17;
+      txt(v, W - 22, y, `500 10.5px ${FM}`, CSS.txt, 'right'); g.font = `500 10.5px ${FM}`; txt(k, W - 22 - g.measureText(v).width - 12, y, `600 9px ${FM}`, CSS.faint, 'right', 'alphabetic', 1.2); });
   // status, bottom right above the axis
   const ago = Math.max(0, Math.round((Date.now() - updAt) / 1000));
   txt(mode === 'live' ? `${nBooks} orderboeken · ververst ${ago} s geleden` : `uurdata van GlassSphere · ${nBooks} orderboeken`, W - (phone ? 12 : 22), BED - 8, `500 9px ${FM}`, 'rgba(233,241,238,.4)', 'right');
@@ -1035,7 +1080,7 @@ function step(dt) {
   if (Math.abs(tp - B0.p) > D.price * 2e-6) B0.dir = tp > B0.p ? 1 : -1;
   if (T - B0.trailAt > .3) { B0.trailAt = T; B0.trail.push({ p: B0.p, t: T }); while (B0.trail.length && T - B0.trail[0].t > 18) B0.trail.shift(); }
   // the camera: a short glide, or following the boat once it leaves the middle of the screen
-  if (V.anim) { const a = V.anim, u = Math.min(1, (T - a.t0) / a.d), k = ease(u); V.r = a.r0 * Math.pow(a.r1 / a.r0, k); V.c = lerp(a.c0, B0.p, k); if (u >= 1) V.anim = null; }
+  if (V.anim) { const a = V.anim, u = Math.min(1, (T - a.t0) / a.d), k = ease(u); V.r = a.r0 * Math.pow(a.r1 / a.r0, k); V.c = lerp(a.c0, a.c1 ?? B0.p, k); if (u >= 1) V.anim = null; }
   else if (V.follow && !drag) { const x = X(B0.p), lo = W * .38, hi = W * .62;
     if (x < lo) V.c -= (lo - x) / (W / 2) * V.r * Math.min(1, dt * 3); else if (x > hi) V.c += (x - hi) / (W / 2) * V.r * Math.min(1, dt * 3); }
   const tk = TAKER.now(); CUR += ((tk.seen ? clamp((tk.buy - .5) * 2.5, -1, 1) : 0) - CUR) * Math.min(1, dt * .8);
@@ -1054,12 +1099,12 @@ function draw(dt) {
   if (LAYERS.liq) { for (const L of MINOR) if (L.k === 'liq') drawPoolTop(L, false); for (const L of LV) if (L.k === 'liq') drawPoolTop(L, L.key === selKey); }
   drawWater(); computeBed();
   if (LAYERS.liq) { for (const L of MINOR) if (L.k === 'liq') drawFunnel(L); for (const L of LV) if (L.k === 'liq') drawFunnel(L); }
-  drawBed(); drawPlants(); drawWrecks();
+  drawBed(); drawGrid(); drawWrecks();
   if (LAYERS.stop) { for (const L of MINOR) if (L.k === 'stop') drawRock(L, false); for (const L of LV) if (L.k === 'stop') drawRock(L, L.key === selKey); }
   drawLife(dt); drawSounding(); drawFoam(); drawWake();
   if (LAYERS.stop) for (const L of LV) if (L.k === 'stop') drawBuoy(L, L.key === selKey);
   drawBoat(selKey === 'boat'); drawDrops(dt); drawWeather();
-  drawLabels(); drawAxis(); drawHud();
+  drawDepthScale(); drawLabels(); drawAxis(); drawHud();
 }
 let last = 0, acc = 0;
 function frame(ts) {
@@ -1080,6 +1125,11 @@ function onLevels() {
   const cs = D.candles, n = cs.length;
   C24 = n > 25 ? cs[n - 25][4] : null;
   let hi = -Infinity, lo = Infinity; for (let k = Math.max(0, n - 24); k < n; k++) { hi = Math.max(hi, cs[k][2]); lo = Math.min(lo, cs[k][3]); } RANGE24 = hi - lo;
+  PORTS = [];
+  if (TG) for (const [p, up] of [[TG.up, true], [TG.dn, false]]) if (p) { const first = TG.first === p;
+    PORTS.push({ port: true, up, p, first, prob: TG.prob == null ? null : Math.round((first ? TG.prob : 1 - TG.prob) * 100), key: 'port' + (up ? 'u' : 'd') }); }
+  if (SEL?.obj?.port) SEL.obj = PORTS.find(o => o.key === SEL.obj.key) || null;
+  ladSig = '';
   if (!V.r) { V.c = D.price; V.r = defR() * 1.7; V.anim = { c0: V.c, r0: V.r, r1: defR(), t0: T, d: 1.6 }; }
   // a selected level keeps its selection across a refresh, by key, else the sounding stays at its price
   if (SEL?.obj && !SEL.obj.boat && !SEL.obj.port && !SEL.obj.wreck) SEL.obj = LV.find(L => L.key === SEL.obj.key) || null;
@@ -1090,14 +1140,14 @@ function onPrice(prev, p) {
   const lo = Math.min(prev, p), hi = Math.max(prev, p); if (hi <= lo) return;
   for (const L of LV) if (L.p > lo && L.p <= hi) cross(L, p > prev);
   for (const [tp, up] of [[TG?.up, true], [TG?.dn, false]]) if (tp > lo && tp <= hi && Date.now() - (CROSSED.get('port' + up) || 0) > 600e3) {
-    CROSSED.set('port' + up, Date.now()); toast('VUURTOREN BEREIKT', `doel ${up ? 'boven' : 'onder'} · ${fmtP(tp)}`, up ? 'up' : 'dn'); }
+    CROSSED.set('port' + up, Date.now()); toast('DOEL BEREIKT', `doel ${up ? 'boven' : 'onder'} · ${fmtP(tp)}`, up ? 'up' : 'dn'); }
 }
 function cross(L, rising) {
   const t = Date.now(); if (t - (CROSSED.get(L.key) || 0) < 120e3) return; CROSSED.set(L.key, t);
   const x = X(L.p), sub = `${nameOf(L.k, L.above)} · ${L.v} · ${fmtP(L.p)}`, big = L.rel >= .6;
   if (L.k === 'stop') { L.hit = T; if (!document.hidden) splash(x, .25 + L.rel * .4, 'stop'); (big ? toast : logEvent)('STOPS GERAAKT', sub, 'stop'); }
-  else if (L.k === 'liq') { B0.spin = T; B0.spinDir = rising ? -1 : 1; (big ? toast : logEvent)('IN DE KOLK', sub, 'liq'); }
-  else { if (!document.hidden) sandCloud(x, bedAt(x), L.rel); (big ? toast : logEvent)('DOOR DE ZANDBANK', sub, colOf(L)); }
+  else if (L.k === 'liq') { B0.spin = T; B0.spinDir = rising ? -1 : 1; (big ? toast : logEvent)('LIQUIDATIECLUSTER BEREIKT', sub, 'liq'); }
+  else { if (!document.hidden) sandCloud(x, bedAt(x), L.rel); (big ? toast : logEvent)('MUUR DOORBROKEN', sub, colOf(L)); }
 }
 // a real liquidation: gathered over 1.5 s per side, then a splash where it happened (as in Held)
 const liqBurst = { long: null, short: null };
@@ -1135,19 +1185,18 @@ function toast(title, sub, col, at) {
 }
 function renderLog() {
   const items = LOG.map(e => `<li style="border-color:${CSS[e.col]}"><time>${hhmmss(e.at)}</time><div>${e.title}<span>${e.sub}</span></div></li>`).join('');
-  $('log').innerHTML = `<button class="x" type="button" aria-label="Sluiten">×</button><div class="k">Scheepsjournaal</div>
-    ${items ? `<ol>${items}</ol>` : `<p class="note" style="margin-top:8px">Nog niets gebeurd sinds je de zee opende. Hier komen echte liquidaties vanaf $50K, en de muren, stops en kolken die de prijs passeert.</p>`}`;
+  $('log').innerHTML = `<button class="x" type="button" aria-label="Sluiten">×</button><div class="k">Journaal</div>
+    ${items ? `<ol>${items}</ol>` : `<p class="note" style="margin-top:8px">Nog niets gebeurd sinds je de pagina opende. Hier komen echte liquidaties vanaf $50K, en de muren, stops en liquidatieclusters die de prijs passeert.</p>`}`;
 }
 
 /* ---- the card: a sounding, a level, the boat, or the legend ---------------------------------------------------------- */
 function objBlock(o) {
-  const P = B0.p;
-  if (o.port) return `<div class="obj" style="border-color:${o.up ? CSS.up : CSS.dn}"><b>Vuurtoren · doel ${o.up ? 'boven' : 'onder'}</b>
+  if (o.port) return `<div class="obj" style="border-color:${o.up ? CSS.up : CSS.dn}"><b>Doel ${o.up ? 'boven' : 'onder'} de prijs</b>
     <span>${o.prob != null ? `${o.prob}% kans dat dit doel eerst valt, binnen ${HORIZON} dagen` : 'geen kans berekend'}</span></div>`;
-  const sand = wallLoose(o) ? 'Drijfzand' : 'Zandbank', col = CSS[colOf(o)], what = { ask: sand + ' · verkoopmuur', bid: sand + ' · koopmuur', stop: `Rots · ${nameOf('stop', o.above).toLowerCase()}`, liq: `Kolk · ${o.above ? 'short-liquidaties' : 'long-liquidaties'}` }[o.k];
-  const extra = isWall(o) ? (wallLoose(o) ? `pas in ${o.ps[0]} van de laatste ${o.ps[1]} uur aanwezig: deze muur kan nep zijn (spoofing) of snel weer verdwijnen`
-    : o.ps ? `aanwezig in ${o.ps[0]} van de laatste ${o.ps[1]} uur` : 'orders die op de prijs wachten') :
-    o.k === 'stop' ? 'geschat: net voorbij een top of bodem die nog niet is doorbroken' : `geschat: posities die bij deze prijs gedwongen worden ${o.above ? 'gekocht' : 'verkocht'}`;
+  const col = CSS[colOf(o)], what = { ask: 'Verkoopmuur', bid: 'Koopmuur', stop: `${nameOf('stop', o.above)} (geschat)`, liq: `${o.above ? 'Short' : 'Long'}-liquidaties (geschat)` }[o.k];
+  const extra = isWall(o) ? (wallLoose(o) ? `nieuw: pas in ${o.ps[0]} van de laatste ${o.ps[1]} uur aanwezig. Kan nep zijn (spoofing) of snel verdwijnen.`
+    : o.ps ? `aanwezig in ${o.ps[0]} van de laatste ${o.ps[1]} uur` : 'orders die op deze prijs wachten') :
+    o.k === 'stop' ? 'net voorbij een top of bodem die nog niet is doorbroken' : `posities die bij deze prijs gedwongen worden ${o.above ? 'gekocht' : 'verkocht'}`;
   return `<div class="obj" style="border-color:${col}"><b>${what} · ${o.v}</b><span>${extra}</span></div>`;
 }
 function renderCard() {
@@ -1155,66 +1204,69 @@ function renderCard() {
   const o = SEL.obj, P = B0.p;
   if (o?.boat) {
     const tk = TAKER.now();
-    c.innerHTML = `<button class="x" type="button" aria-label="Sluiten">×</button><div class="k">De boot · live prijs (OKX)</div>
+    c.innerHTML = `<button class="x" type="button" aria-label="Sluiten">×</button><div class="k">Live prijs · OKX</div>
       <div class="big" style="color:${CSS.btc}">${fmtP(P)}${C24 ? ` <span style="color:${P >= C24 ? CSS.up : CSS.dn}">${pct(P, C24)} 24u</span>` : ''}</div>
       <dl><dt>Koopdruk, 10 s</dt><dd>${tk.seen ? Math.round(tk.buy * 100) + '%' : '–'}</dd><dt>Funding (8 u)</dt><dd>${FUND == null ? '–' : fx(FUND * 100, 4) + '%'}</dd>
       <dt>24-uursbereik</dt><dd>${RANGE24 ? fmtP(RANGE24) + ' · ' + fx(RANGE24 / P * 100, 1) + '%' : '–'}</dd>
       <dt>Echte liq. sinds openen</dt><dd>${fmtUsd(STATS.real)}</dd></dl>
-      <p class="note">De boeg wijst waar de prijs het laatst heen ging; het schuimspoor is de laatste 18 seconden. Tik op de zee om te peilen wat er tussen de boot en een prijs ligt.</p>`;
+      <p class="note">De boot is de prijs: de boeg wijst waar hij het laatst heen ging, het schuimspoor is de laatste 18 seconden. Tik op een prijs om te peilen wat er tussen hier en daar ligt.</p>`;
     return;
   }
   if (o?.wreck) {
     const n = o.ws.length, rng = o.hi - o.lo < 1 ? fmtP(o.lo) : `${fmtP(o.lo)} – ${fmtP(o.hi)}`;
-    c.innerHTML = `<button class="x" type="button" aria-label="Sluiten">×</button><div class="k">${n === 1 ? 'Wrak' : 'Wrakken'} · echte liquidaties</div>
-      <div class="big" style="color:${CSS.liq}">${fmtUsd(o.usd)} <span style="color:${CSS.dim}">${n}× · ${pct(o.p, P)}</span></div>
+    c.innerHTML = `<button class="x" type="button" aria-label="Sluiten">×</button><div class="k">Echte liquidaties · ${n === 1 ? '1 wrak' : n + ' wrakken'}</div>
+      <div class="big" style="color:${CSS.liq}">${fmtUsd(o.usd)} <span style="color:${CSS.dim}">${pct(o.p, P)}</span></div>
       <dl><dt>Prijs</dt><dd>${rng}</dd><dt>Longs</dt><dd style="color:${CSS.dn}">${fmtUsd(o.long)}</dd><dt>Shorts</dt><dd style="color:${CSS.up}">${fmtUsd(o.short)}</dd>
         <dt>Beurzen</dt><dd>${[...o.ex].join(', ')}</dd><dt>Nieuwste</dt><dd>${agoTxt(o.t)} geleden</dd>
-        <dt>Bij een kolk</dt><dd>${o.meas ? `${o.hits} van ${o.meas}` : '–'}<i>${o.meas ? 'live gemeten' : 'niet live gezien'}</i></dd></dl>
+        <dt>Bij een geschat cluster</dt><dd>${o.meas ? `${o.hits} van ${o.meas}` : '–'}<i>${o.meas ? 'live gemeten' : 'niet live gezien'}</i></dd></dl>
       <p class="note">Echte liquidaties van de laatste 24 uur, op de prijs waar ze gebeurden. Een rode vlag: vooral longs, een groene: vooral shorts.</p>
-      <p class="fine">"Bij een kolk" telt alleen wat deze pagina live zag: of er op dat moment een geschatte kolk binnen $${fmtP(Math.max(D.B, D.price * .001))} lag. Wrakken van voor het openen komen uit de geschiedenis van OKX; Binance en Bybit alleen zolang de pagina open was, onthouden in deze browser.</p>`;
+      <p class="fine">"Bij een geschat cluster" telt alleen wat deze pagina live zag: of er op dat moment een geschat liquidatiecluster binnen $${fmtP(Math.max(D.B, D.price * .001))} lag. Wrakken van voor het openen komen uit de geschiedenis van OKX; Binance en Bybit alleen zolang de pagina open was, onthouden in deze browser.</p>`;
     return;
   }
   const q = SEL.p, s = sound(q), up = s.up, col = up ? CSS.up : CSS.dn;
-  const word = (s.e > .66 ? 'ondiep · een muur' : s.e > .33 ? 'middeldiep' : 'diep · vrij water') + (s.hereLoose && s.e > .2 ? ' · drijfzand' : '');
+  const word = (s.e > .66 ? 'dik · een muur' : s.e > .33 ? 'gemiddeld' : 'dun') + (s.hereLoose && s.e > .2 ? ' · nieuw' : '');
   const tot = s.liq + s.walls, ls = tot ? s.liq / tot * 100 : 0, lw = tot ? Math.min(s.loose, s.walls) / tot * 100 : 0, ratio = s.walls ? s.liq / s.walls : null;
   const lshare = s.walls ? s.loose / s.walls : 0;
-  const note = !tot ? 'Tussen de boot en hier ligt niets: vrij water.' : ratio == null || ratio >= 1.5 ? 'Meer brandstof dan rem: de liquidaties onderweg kunnen een beweging hierheen versnellen.'
-    : ratio <= .5 ? 'Meer rem dan brandstof: de muren onderweg houden een beweging hierheen eerder tegen.' : 'Brandstof en rem houden elkaar ongeveer in evenwicht.';
-  c.innerHTML = `<button class="x" type="button" aria-label="Sluiten">×</button><div class="k">Peiling</div>
+  const note = !tot ? 'Tussen de prijs en hier ligt vrijwel niets.' : ratio == null || ratio >= 1.5 ? 'Meer liquidaties dan muren: een beweging hierheen kan zichzelf versnellen.'
+    : ratio <= .5 ? 'Meer muren dan liquidaties: een beweging hierheen wordt eerder afgeremd.' : 'Liquidaties en muren houden elkaar ongeveer in evenwicht.';
+  c.innerHTML = `<button class="x" type="button" aria-label="Sluiten">×</button><div class="k">Peiling · van de prijs tot hier</div>
     <div class="big">${fmtP(q)} <span style="color:${col}">${pct(q, P)}</span></div>
     ${o ? objBlock(o) : ''}
-    <dl><dt>Diepte hier</dt><dd>${word}</dd><dt>Orders hier</dt><dd>${fmtUsd(s.here)}<i>per $${D.B}</i></dd>
-      <dt>Muren tot hier</dt><dd>${fmtUsd(s.walls)}<i>remt</i></dd>
-      <dt>waarvan drijfzand</dt><dd>${s.lzOk ? `${fmtUsd(s.loose)}<i>${Math.round(lshare * 100)}%</i>` : '–<i>nog geen uurgeschiedenis</i>'}</dd><dt>Liquidaties tot hier</dt><dd>${fmtUsd(s.liq)}<i>duwt</i></dd>
-      <dt>Stops tot hier</dt><dd>${Math.round(s.stShare * 100)}%<i>van de ${up ? 'koopstops erboven' : 'verkoopstops eronder'}</i></dd></dl>
+    <dl><dt>Orderboek hier</dt><dd>${fmtUsd(s.here)}<i>per $${D.B} · ${word}</i></dd>
+      <dt>Muren onderweg</dt><dd>${fmtUsd(s.walls)}<i>remmen</i></dd>
+      <dt>waarvan nieuw</dt><dd>${s.lzOk ? `${fmtUsd(s.loose)}<i>${Math.round(lshare * 100)}%</i>` : '–<i>nog geen uurgeschiedenis</i>'}</dd>
+      <dt>Liquidaties onderweg</dt><dd>${fmtUsd(s.liq)}<i>versnellen</i></dd>
+      <dt>Stops onderweg</dt><dd>${Math.round(s.stShare * 100)}%<i>van de ${up ? 'koopstops erboven' : 'verkoopstops eronder'}</i></dd></dl>
     <div class="bar" role="img" aria-label="Liquidaties tegenover muren: ${Math.round(ls)}% tegen ${Math.round(100 - ls)}%"><span style="width:${ls}%;background:${CSS.liq}"></span><span style="width:${tot ? 100 - ls - lw : 0}%;background:${col};opacity:.7"></span><span style="width:${lw}%;background:repeating-linear-gradient(135deg,${col} 0 3px,transparent 3px 6px);opacity:.75"></span></div>
-    <div class="barl"><span>brandstof ${Math.round(ls)}%</span><span>rem ${tot ? Math.round(100 - ls) : 0}%${lw >= .5 ? `, waarvan drijfzand ${Math.round(lw)}%` : ''}</span></div>
-    <p class="note">${note}${s.lzOk && lshare > .4 ? ' Let op: een groot deel van die rem is drijfzand, muren die er pas kort staan.' : ''}</p>
+    <div class="barl"><span>liquidaties ${Math.round(ls)}%</span><span>muren ${tot ? Math.round(100 - ls) : 0}%${lw >= .5 ? `, waarvan nieuw ${Math.round(lw)}%` : ''}</span></div>
+    <p class="note">${note}${s.lzOk && lshare > .4 ? ' Let op: een groot deel van die muren is nieuw (drijfzand) en kan snel verdwijnen.' : ''}</p>
     <p class="fine">Muren: de orderboeken van ${nBooks} beurzen, gewogen naar hun volume. Stops en liquidaties zijn schattingen, net als op de coinpagina. Geen advies.</p>`;
 }
 function renderLegend() {
   const c = $('card'); c.dataset.kind = 'legend'; c.setAttribute('aria-label', 'Uitleg');
-  const li = (col, b, t) => `<li><i style="background:${col}"></i><span><b>${b}</b> ${t}</span></li>`;
-  c.innerHTML = `<button class="x" type="button" aria-label="Sluiten">×</button><div class="k">Uitleg · de zee</div>
+  const li = (col, b, t) => `<li><i style="background:${col}"></i><span><b>${b}</b>: ${t}</span></li>`;
+  c.innerHTML = `<button class="x" type="button" aria-label="Sluiten">×</button><div class="k">Uitleg · wat je ziet</div>
     <ul class="leg">
-      ${li(CSS.btc, 'De boot', 'is de live prijs. Het schuimspoor laat zien waar hij net vandaan komt.')}
-      ${li(CSS.sand, 'De zeebodem', 'is het orderboek. Veel orders maken een zandbank vlak onder het water, daar loopt de prijs vast. Weinig orders betekent diep water, daar vaart hij vrij. Links (groen) liggen de koopmuren, rechts (rood) de verkoopmuren.')}
-      ${li(CSS.stop, 'Rotsen en boeien', 'zijn geschatte stops. Een rode boei staat bij de verkoopstops onder de prijs, een groene bij de koopstops erboven. Hoe hoger de rots, hoe meer stops.')}
-      ${li(CSS.liq, 'Draaikolken', 'zijn geschatte liquidaties. Ze trekken de prijs aan: als ze afgaan, duwen ze hem verder.')}
-      ${li('#ffffff', 'Vuurtorens', 'zijn de twee doelen. De felste valt volgens het model eerst.')}
-      ${li('#f0e4b8', 'Drijfzand', 'is een zandbank die er pas kort ligt: een muur die in hoogstens een derde van de laatste 6 uur bestond. Bleek, glinsterend, met een lopende stippellijn. Zo\'n muur kan nep zijn of snel verdwijnen.')}
-      ${li('#8a6f55', 'Wrakken', 'zijn echte liquidaties van de laatste 24 uur, op de prijs waar ze gebeurden. Een verse zinkt eerst. "Bij een kolk" laat zien hoe vaak ze vielen waar het model een kolk verwachtte.')}
-      ${li('#7fb0c4', 'Het weer', 'De wind is de funding, de stroming en de vissen volgen de koopdruk, de golven zijn het bereik van de dag. Echte liquidaties spatten op en maken storm.')}
+      ${li(CSS.btc, 'Boot', 'de live prijs (OKX).')}
+      ${li(CSS.sand, 'Zeebodem', `het orderboek van ${nBooks || 'alle'} beurzen. Hoe hoger de bodem, hoe meer orders: een muur. De schaal links geeft de orders per $${D?.B ?? 50}. Links van de prijs koopmuren, rechts verkoopmuren.`)}
+      ${li('#f0e4b8', 'Drijfzand', 'een nieuwe muur, in hoogstens 2 van de laatste 6 uur aanwezig. Kan nep zijn (spoofing) of snel verdwijnen.')}
+      ${li(CSS.stop, 'Rots met boei', 'geschatte stops. Rode boei: verkoopstops onder de prijs, groene: koopstops erboven.')}
+      ${li(CSS.liq, 'Draaikolk', 'geschatte liquidaties. Als de prijs er komt, versnellen ze de beweging.')}
+      ${li('#8a6f55', 'Wrak', 'een echte liquidatie van de laatste 24 uur, op de prijs waar hij gebeurde.')}
+      ${li('#ffffff', 'Vuurtoren', 'een doel; de felste valt volgens het model eerst.')}
+      ${li('#7fb0c4', 'Weer', 'golfhoogte is het bereik van de dag, wind de funding, storm komt van echte liquidaties.')}
     </ul>
-    <p class="note">Tik of klik op de zee om te <b>peilen</b>: je ziet hoeveel muur (rem) en liquidatie (brandstof) tussen de boot en die prijs ligt. Slepen schuift, knijpen of scrollen zoomt, dubbeltikken of <b>⌖ Volg</b> brengt je terug naar de boot.</p>`;
+    <p class="note">Tik op een prijs om te <b>peilen</b>: hoeveel muur (remt) en liquidatie (versnelt) er tussen de prijs en daar ligt. Slepen schuift, knijpen of scrollen zoomt, <b>⌖ Volg</b> of dubbeltikken gaat terug naar de prijs. Stops en liquidaties zijn schattingen; geen advies.</p>`;
 }
 function openCard(kind) {
   const c = $('card'); if (kind === 'legend') renderLegend(); else renderCard();
   c.hidden = false; $('help').setAttribute('aria-pressed', String(kind === 'legend'));
   if (phone && !$('log').hidden) setLog(false);
+  if (!SIDE && $('side').classList.contains('open')) setSide(false);
+  ladSig = '';
 }
-function closeCard() { $('card').hidden = true; $('help').setAttribute('aria-pressed', 'false'); if ($('card').dataset.kind === 'sel') SEL = null; }
-const setLog = on => { $('log').hidden = !on; $('logb').setAttribute('aria-pressed', String(on)); if (on) { renderLog(); if (phone) $('card').hidden = true; } };
+function closeCard() { $('card').hidden = true; $('help').setAttribute('aria-pressed', 'false'); if ($('card').dataset.kind === 'sel') SEL = null; ladSig = ''; }
+const setLog = on => { $('log').hidden = !on; $('logb').setAttribute('aria-pressed', String(on)); if (on) { renderLog(); if (phone) $('card').hidden = true; if (!SIDE) setSide(false); } };
 $('card').addEventListener('click', e => { if (e.target.closest('.x')) { closeCard(); cv.focus(); } });
 $('log').addEventListener('click', e => { if (e.target.closest('.x')) setLog(false); });
 $('logb').onclick = () => setLog($('log').hidden);
@@ -1222,9 +1274,61 @@ $('help').onclick = () => { if (!$('card').hidden && $('card').dataset.kind === 
 $('follow').onclick = () => { if (D) home(); };
 for (const b of document.querySelectorAll('[data-layer]')) {
   const k = b.dataset.layer; b.setAttribute('aria-pressed', String(LAYERS[k]));
-  b.onclick = () => { LAYERS[k] = !LAYERS[k]; b.setAttribute('aria-pressed', String(LAYERS[k])); try { localStorage.setItem('zee-layers', JSON.stringify(LAYERS)); } catch (e) {} };
+  b.onclick = () => { LAYERS[k] = !LAYERS[k]; b.setAttribute('aria-pressed', String(LAYERS[k])); ladSig = ''; renderSide(); try { localStorage.setItem('zee-layers', JSON.stringify(LAYERS)); } catch (e) {} };
 }
 setInterval(() => { if (!$('card').hidden && $('card').dataset.kind === 'sel' && SEL) renderCard(); }, 2000);
+
+/* ---- the side panel: market, odds, and the ladder of levels ------------------------------------------------------- */
+let ladSig = '', ladAbove = -1;
+const ladderItems = () => [...(LAYERS.port ? PORTS : []), ...LV.filter(L => LAYERS[isWall(L) ? 'bed' : L.k])].sort((a, b) => b.p - a.p);
+function rowHtml(o) {
+  const col = o.port ? (o.up ? CSS.up : CSS.dn) : CSS[colOf(o)];
+  const ic = o.port ? 'port' : isWall(o) ? 'wall' : o.k === 'stop' ? 'stop' + (o.above ? '' : ' dn') : 'liq';
+  const name = o.port ? `Doel ${o.up ? 'boven' : 'onder'}` : o.k === 'liq' ? `${o.above ? 'Short' : 'Long'}-liquidaties` : nameOf(o.k, o.above);
+  const size = o.port ? (o.prob != null ? `${o.prob}% eerst` : '–') : o.v;
+  const extra = o.port ? (o.first ? '<em>eerst volgens model</em>' : '') : isWall(o) ? (wallLoose(o) ? `<em class="new">nieuw ${o.ps[0]}/${o.ps[1]} u</em>` : o.ps ? `<em>${o.ps[0]}/${o.ps[1]} u</em>` : '') : '<em>geschat</em>';
+  return `<li><button class="row${SEL?.obj === o ? ' sel' : ''}" type="button" data-key="${o.key}" style="--c:${col}"><i class="ic ${ic}"></i><span>${name}</span><span class="sz">${size}</span>
+    <span class="sub"><span>${fmtP(o.p)}</span><span class="ds">${pct(o.p, B0.p)}</span>${extra}</span></button></li>`;
+}
+function renderSide() {
+  if (!D || B0.p == null) return;
+  const m = stats24(), P = B0.p, side = $('side');
+  if (!SIDE && !side.classList.contains('open')) return;
+  const row = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
+  $('mk').innerHTML = row('Prijs (OKX)', `${fmtP(P)}${C24 ? ` <i style="color:${P >= C24 ? CSS.up : CSS.dn}">${pct(P, C24)}</i>` : ''}`)
+    + row('Funding (8 u)', m.fund ? `${m.fund}<i>${FUND >= 0 ? 'longs betalen' : 'shorts betalen'}</i>` : '–')
+    + row('Koopdruk (10 s)', m.tk.seen ? `${Math.round(m.tk.buy * 100)}%<i>van de trades</i>` : '–')
+    + row('Bereik (24 u)', m.range ? `${fx(m.range, 1)}%<i>$${fmtP(RANGE24)}</i>` : '–')
+    + row('Open interest', m.oi ? fmtUsd(m.oi) : '–')
+    + row('Echte liq. (24 u)', m.w24.length ? `${fmtUsd(m.wu)}<i>${Math.round(m.wl / m.wu * 100)}% longs</i>` : '–')
+    + row('Bij geschat cluster', m.raak != null ? `${m.raak}%<i>n = ${m.meas.length}</i>` : `–<i>${m.meas.length}/5 gemeten</i>`)
+    + row('Echte liq. (5 min)', fmtUsd(m.r5))
+    + row('Bron', `${nBooks} orderboeken<i>${mode === 'live' ? Math.max(0, Math.round((Date.now() - updAt) / 1000)) + ' s' : 'uurdata'}</i>`);
+  const up = PORTS.find(o => o.up), dn = PORTS.find(o => !o.up);
+  $('odds').innerHTML = up && dn && up.prob != null ? `<div class="odds" role="img" aria-label="Kans: ${dn.prob}% eerst naar ${fmtP(dn.p)}, ${up.prob}% eerst naar ${fmtP(up.p)}">
+      <span style="width:${dn.prob}%;background:${CSS.dn};opacity:.8"></span><span style="width:${up.prob}%;background:${CSS.up};opacity:.8"></span></div>
+    <div class="oddl"><span style="color:${CSS.dn}">↓ ${fmtP(dn.p)} · ${dn.prob}%</span><span style="color:${CSS.up}">${up.prob}% · ${fmtP(up.p)} ↑</span></div>` : '<p class="empty">Geen twee doelen in bereik.</p>';
+  const items = ladderItems(), nAbove = items.filter(o => o.p > P).length, sig = items.map(o => o.key).join() + '|' + nAbove + '|' + (SEL?.obj?.key || '');
+  if (sig !== ladSig) {
+    ladSig = sig; const sc = SIDE ? $('ladsec') : side, keep = sc.scrollTop;
+    $('lad').innerHTML = items.length ? items.slice(0, nAbove).map(rowHtml).join('') + `<li class="now" id="nowp">${fmtP(P)}</li>` + items.slice(nAbove).map(rowHtml).join('') : '<p class="empty">Geen niveaus.</p>';
+    // the price row in the middle of the list: at the start, and whenever the price passes a level
+    sc.scrollTop = keep;
+    const np = $('nowp'); if (np && nAbove !== ladAbove) { ladAbove = nAbove; sc.scrollTop = Math.max(0, np.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - sc.clientHeight / 2); }
+  } else {
+    for (const b of $('lad').querySelectorAll('.row')) { const o = items.find(x => x.key === b.dataset.key); if (o) b.querySelector('.ds').textContent = pct(o.p, P); }
+    const np = $('nowp'); if (np) np.textContent = fmtP(P);
+  }
+}
+const objByKey = k => PORTS.find(o => o.key === k) || LV.find(L => L.key === k);
+$('lad').addEventListener('click', e => { const b = e.target.closest('.row'); if (!b) return; const o = objByKey(b.dataset.key); if (!o) return;
+  SEL = { p: o.p, obj: o, t0: T }; centerOn(o.p); openCard('sel'); ladSig = ''; renderSide(); });
+$('lad').addEventListener('mouseover', e => { const b = e.target.closest('.row'); const o = b && objByKey(b.dataset.key); HOVOBJ = o && !o.port ? o : null; });
+$('lad').addEventListener('mouseleave', () => { HOVOBJ = null; });
+const setSide = on => { $('side').classList.toggle('open', on); $('sideb').setAttribute('aria-pressed', String(on)); if (on) { $('card').hidden = true; setLog(false); ladSig = ''; ladAbove = -1; renderSide(); } };
+$('sideb').onclick = () => setSide(!$('side').classList.contains('open'));
+$('side').querySelector('.x').onclick = () => setSide(false);
+setInterval(renderSide, 1000);
 
 /* ---- input: tap to sound or select, drag to pan, pinch or wheel to zoom --------------------------------------------- */
 const ptrs = new Map(); let drag = null, pinch = null, lastTap = 0;
@@ -1268,7 +1372,7 @@ cv.addEventListener('keydown', e => {
   if (!D) return; const k = e.key;
   if (k === 'ArrowLeft' || k === 'ArrowRight') { V.c += (k === 'ArrowLeft' ? -1 : 1) * V.r * .15; setFollow(false); V.anim = null; }
   else if (k === '+' || k === '=') zoomAt(V.r / 1.25, W / 2); else if (k === '-' || k === '_') zoomAt(V.r * 1.25, W / 2);
-  else if (k === '0') home(); else if (k === 'Escape') { closeCard(); setLog(false); }
+  else if (k === '0') home(); else if (k === 'Escape') { closeCard(); setLog(false); setSide(false); }
   else if (k === 'Enter' || k === ' ') { SEL = { p: V.c, obj: null, t0: T }; openCard('sel'); }
   else return;
   e.preventDefault();
@@ -1285,7 +1389,7 @@ cv.addEventListener('keydown', e => {
   let seen = false; try { seen = localStorage.getItem('zee-seen') === '1'; localStorage.setItem('zee-seen', '1'); } catch (e) {}
   if (!seen && D) openCard('legend');
 })();
-window.ZEE = { get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, get V() { return V; }, realLiq, showRealLiq, onPrice, WRECKS, X, bedAt, get LZ() { return LZ; }, wallLoose, cross, live, sound, B0, tap, LAYERS };
+window.ZEE = { get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, get V() { return V; }, realLiq, showRealLiq, onPrice, WRECKS, get PORTS() { return PORTS; }, renderSide, X, bedAt, get LZ() { return LZ; }, wallLoose, cross, live, sound, B0, tap, LAYERS };
 })();
 </script>
 </body>

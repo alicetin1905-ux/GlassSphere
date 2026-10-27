@@ -413,15 +413,17 @@ const baseOf = (type, rel) => TY[type].u === 'pct' ? 0 : Math.max(1, Math.min(MA
 
 // row spacing: a tall phone screen spreads the rows out so the well fills the height (cubes stay cubes)
 // the width: the tiles stand in two columns, half of the exchanges left of the prices and half right of the amounts;
-// on a phone the bars are 9 long, on a wide screen they run longer and the tiles are bigger, so the well fills the width
+// on a phone the bars are 18.5 long, on a wide screen they run longer and the tiles are bigger, so the well fills the width
+// the price, what it is and the amount are written in the tube itself, so beside the tubes there is only a margin (LL, RR)
+const LL = 0.6, RR = 0.8;
 const LAY = (() => {
   const w = stage.clientWidth || 400, h = stage.clientHeight || 700, asp = w / h, wide = asp > 1.15 && w >= 700;
-  const TC = 2, TSC = wide ? 1.6 : 1.15, LW = 3.3 * TSC + 0.4, side = LW + 6.9 + 4.3 + 3.3 * TSC + 0.8;
-  const BW = wide ? Math.max(10, Math.min(28, (27 + 2.4) * asp / 1.03 * 0.95 - side)) : 9;
+  const TC = 2, TSC = wide ? 1.6 : 1.15, LW = 3.3 * TSC + 0.4, side = LW + LL + RR + 3.3 * TSC + 0.8;
+  const BW = wide ? Math.max(14, Math.min(36, (27 + 2.4) * asp / 1.03 * 0.95 - side)) : 18.5;
   return { BW, TC, TSC, LW, W: side + BW };
 })();
-const BW = LAY.BW, TL = BW + 4.25, WFIT = LAY.W;   // bar length, left edge of the tiles, width in view
-const CX = -6.9 - LAY.LW + WFIT / 2, RW = 6.9 + BW + 4.3, RX = (BW - 2.6) / 2;   // view centre, row width and its centre
+const BW = LAY.BW, TL = BW + RR - 0.05, WFIT = LAY.W;   // bar length, left edge of the tiles, width in view
+const CX = -LL - LAY.LW + WFIT / 2, RW = LL + BW + RR, RX = (BW + RR - LL) / 2;   // view centre, row width and its centre
 const COMPACT = (stage.clientWidth || 400) < 560;   // phone: bigger labels without the distance column
 const RS = (() => { const w = stage.clientWidth || 400, h = stage.clientHeight || 700, tanH = Math.tan(17.5 * Math.PI / 180);
   const visH = WFIT / (w / h) * 1.03 + 2.4 * tanH; return Math.max(1, Math.min(1.85, (visH * 0.94 - 2.4) / 27)); })();
@@ -527,17 +529,17 @@ const trPts = new THREE.Points(trGeo, new THREE.PointsMaterial({ size: 0.26, map
 trPts.frustumCulled = false; scene.add(trPts);
 
 // backdrop: table row lines, the well wall, drifting dust
-const floor = new THREE.Mesh(new THREE.BoxGeometry(TL + 7.2, 0.1, 1.2), new THREE.MeshBasicMaterial({ color: 0x2f6b58, transparent: true, opacity: 0.6, blending: ADD }));
+const floor = new THREE.Mesh(new THREE.BoxGeometry(TL + LL + 0.3, 0.1, 1.2), new THREE.MeshBasicMaterial({ color: 0x2f6b58, transparent: true, opacity: 0.6, blending: ADD }));
 let ctrY = -13.5 * RS - 1.1;   // the floor follows the lowest level
 {
   const pos = [];
-  for (let y = -13; y <= 14; y++) pos.push(-6.9, (y - 0.5) * RS, -0.7, TL - 0.5, (y - 0.5) * RS, -0.7);
-  for (let x = 0; x <= Math.round(BW + 3); x++) pos.push(x - 0.05, -13.5 * RS, -0.7, x - 0.05, 13.5 * RS, -0.7);
+  for (let y = -13; y <= 14; y++) pos.push(-LL, (y - 0.5) * RS, -0.7, TL - 0.2, (y - 0.5) * RS, -0.7);
+  for (let x = 0; x <= Math.round(BW); x++) pos.push(x - 0.05, -13.5 * RS, -0.7, x - 0.05, 13.5 * RS, -0.7);
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   scene.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x1a2622, transparent: true, opacity: 0.8 })));
   const wall = new THREE.Mesh(new THREE.BoxGeometry(0.1, 27.2 * RS, 0.1), new THREE.MeshBasicMaterial({ color: 0x2f6b58, transparent: true, opacity: 0.9, blending: ADD }));
   wall.position.set(-0.22, 0, 0); scene.add(wall);
-  floor.position.set((TL - 6.9) / 2, -13 * RS - 0.62, 0); scene.add(floor);
+  floor.position.set((TL - LL) / 2, -13 * RS - 0.62, 0); scene.add(floor);
 }
 const SN = 320, sPos = new Float32Array(SN * 3), sSpd = new Float32Array(SN);
 for (let i = 0; i < SN; i++) { sPos[i * 3] = rnd(-30, 38); sPos[i * 3 + 1] = rnd(-30, 30); sPos[i * 3 + 2] = rnd(-30, -4); sSpd[i] = rnd(0.2, 1.4); }
@@ -581,27 +583,31 @@ function drawLabel(r) {
   if (d === r.lblStr) return; r.lblStr = d;
   const { g, c, t } = r.lbl; g.clearRect(0, 0, c.width, c.height);
   g.textBaseline = 'middle'; const my = c.height / 2;
-  const ps = fmtP(r.price), pf = Math.min(COMPACT ? 62 : 40, (COMPACT ? 300 : 200) / (ps.length * 0.6));
-  g.font = `700 ${pf}px "JetBrains Mono", monospace`; g.fillStyle = '#f4fbf8'; g.shadowColor = r.t.c; g.shadowBlur = 12; g.fillText(ps, 4, my + 1); g.shadowBlur = 0;
-  let px = Math.max(COMPACT ? 238 : 160, g.measureText(ps).width + 16);
-  if (!COMPACT) { g.font = '500 29px "JetBrains Mono", monospace'; g.fillStyle = '#8fa39a'; g.fillText(d, px, my + 1); px = Math.max(290, px + g.measureText(d).width + 14); }
-  g.font = `600 ${COMPACT ? 40 : 29}px Inter, system-ui, sans-serif`;
-  const tw = g.measureText(r.t.n).width, pw = tw + 36, ph = COMPACT ? 74 : 58;
-  roundRect(g, px, my - ph / 2 + 8, 7, ph - 16, 3.5); g.fillStyle = r.t.c; g.shadowColor = r.t.c; g.shadowBlur = 12; g.fill(); g.shadowBlur = 0;
-  g.fillStyle = r.t.c; g.fillText(r.t.n, px + 18, my + 2);
+  const ps = fmtP(r.price), pf = Math.min(COMPACT ? 62 : 44, (COMPACT ? 300 : 220) / (ps.length * 0.6));
+  const fP = `800 ${pf}px "JetBrains Mono", monospace`, fD = '600 30px "JetBrains Mono", monospace', fT = `700 ${COMPACT ? 42 : 32}px Inter, system-ui, sans-serif`;
+  const wOf = (f, txt) => { g.font = f; return g.measureText(txt).width; };
+  const x1 = 18 + wOf(fP, ps) + 22, x2 = COMPACT ? x1 : x1 + wOf(fD, d) + 20, end = Math.min(c.width - 2, x2 + wOf(fT, r.t.n) + 16);
+  roundRect(g, 2, 3, end - 2, c.height - 6, Math.min(16, c.height / 3)); g.fillStyle = 'rgba(5,4,12,.82)'; g.fill();
+  g.lineWidth = 3; g.strokeStyle = r.t.c + '99'; g.stroke();
+  g.font = fP; g.fillStyle = '#ffffff'; g.fillText(ps, 18, my + 1);
+  if (!COMPACT) { g.font = fD; g.fillStyle = '#9fb3aa'; g.fillText(d, x1, my + 1); }
+  g.font = fT; g.fillStyle = new THREE.Color(r.t.c).lerp(WHITE, 0.35).getStyle(); g.fillText(r.t.n, x2, my + 2);
   t.needsUpdate = true;
 }
 function drawSize(r) {
   const s = r.cleared && r.t.u !== 'pct' ? 'geveegd' : valStr(r);
   if (s === r.sizeStr) return; r.sizeStr = s;
   const { g, c, t } = r.sz; g.clearRect(0, 0, c.width, c.height);
-  g.textBaseline = 'middle'; g.font = `700 ${COMPACT ? 52 : 38}px "JetBrains Mono", monospace`;
-  g.shadowColor = r.t.c; g.shadowBlur = r.cleared ? 0 : 18; g.fillStyle = r.cleared ? '#5d6e67' : '#f4fbf8'; g.fillText(s, 6, c.height / 2 + 1);
+  g.textBaseline = 'middle'; g.textAlign = 'right'; g.font = `800 ${COMPACT ? 52 : 40}px "JetBrains Mono", monospace`;
+  const w = g.measureText(s).width + 34;
+  roundRect(g, c.width - 2 - w, 3, w, c.height - 6, Math.min(16, c.height / 3)); g.fillStyle = 'rgba(5,4,12,.82)'; g.fill();
+  g.lineWidth = 3; g.strokeStyle = r.t.c + '99'; g.stroke();
+  g.fillStyle = r.cleared ? '#8a9a93' : '#ffffff'; g.fillText(s, c.width - 18, c.height / 2 + 1);
   t.needsUpdate = true;
 }
 
 // the current price: a laser line across the bars in the colour of the last tick (green up, red down) with a spark
-// running along it, and a price tag over the label column with the change and how far the nearest walls are
+// running along it, and a price tag in the middle with the change and how far the nearest walls are
 const slab = new THREE.Group(); scene.add(slab);
 const slabEdge = new THREE.Mesh(new THREE.PlaneGeometry(TL + 0.2, 0.07), new THREE.MeshBasicMaterial({ color: 0x7ff0d0, transparent: true, opacity: 1, blending: ADD, depthWrite: false }));
 slabEdge.position.set((TL - 0.2) / 2, 0, 0.75); slab.add(slabEdge);
@@ -609,7 +615,7 @@ const laserGlow = new THREE.Mesh(new THREE.PlaneGeometry(TL + 0.5, 1.0), new THR
 laserGlow.position.set((TL - 0.2) / 2, 0, 0.7); slab.add(laserGlow);
 const sweep = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.9), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.9, blending: ADD, depthWrite: false }));
 sweep.position.z = 0.8; slab.add(sweep);
-const TAGH = Math.min(1.45, RS * 1.12), slabL = textPlane(1536, 180, TAGH * 8.53, TAGH); slabL.m.material.opacity = 1; slabL.m.position.set(-6.9 + TAGH * 4.27, 0, 0.9); slab.add(slabL.m);
+const TAGH = Math.min(1.45, RS * 1.12), slabL = textPlane(1536, 180, TAGH * 8.53, TAGH); slabL.m.material.opacity = 1; slabL.m.position.set(BW / 2, 0, 0.9); slabL.m.renderOrder = 4; slab.add(slabL.m);   // in the middle of the tubes, between the prices and the amounts
 let slabStr = '', tagDir = 0, tagFlash = 0;
 const UPC = '#35ffb0', DNC = '#ff4d6a', NTC = '#7ff0d0';
 function drawSlab() {
@@ -646,8 +652,6 @@ const sideLbl = (txt, css) => { const tp = textPlane(512, 64, 4.8, 0.6); tp.m.ma
   g.fillText(txt, 256, 33); tp.t.needsUpdate = true; tp.m.position.set(BW / 2, 0, 0.1); scene.add(tp.m); return tp.m; };
 const sideLblUp = sideLbl('▲  VERKOOPZIJDE  ▲', '#ff6b81'), sideLblDn = sideLbl('▼  KOOPZIJDE  ▼', '#35ffb0');
 const hGrad = canvasTex(256, 4, g => { const gr = g.createLinearGradient(0, 0, 256, 0); gr.addColorStop(0, 'rgba(5,3,9,.92)'); gr.addColorStop(0.82, 'rgba(5,3,9,.78)'); gr.addColorStop(1, 'rgba(5,3,9,0)'); g.fillStyle = gr; g.fillRect(0, 0, 256, 4); });
-const lblStrip = new THREE.Mesh(new THREE.PlaneGeometry(7.8, 1), new THREE.MeshBasicMaterial({ map: hGrad, transparent: true, depthWrite: false }));
-lblStrip.position.set(-3.3, 0, -0.3); lblStrip.renderOrder = -2; scene.add(lblStrip);   // drawn before the labels, never over them
 // the dark board the neon is mounted on, with a thin frame
 const board = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0x07050d, transparent: true, opacity: 0.85, depthWrite: false }));
 const boardEdge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(1, 1)), new THREE.LineBasicMaterial({ color: 0x2a2540, transparent: true, opacity: 0.9 }));
@@ -665,7 +669,7 @@ function shockRing(y, col, delay = 0) { const m = ringPool[ringHead = (ringHead 
 
 // scan beam + row flashes + floating texts
 const beam = new THREE.Mesh(new THREE.PlaneGeometry(RW + 1.4, 0.7), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.22, blending: ADD, depthWrite: false }));
-beam.position.set(RX, 0, 0.6); scene.add(beam);
+beam.position.set(RX, 0, 0.6); beam.visible = false; scene.add(beam);   // no sweep over the tubes: only the pulses to and from the exchanges move
 const flashes = [...Array(8)].map(() => { const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: ADD, depthWrite: false })); m.position.z = 0.7; m.visible = false; m.userData.t = 0; scene.add(m); return m; });
 let flHead = 0;
 function flashRow(y, col) { const m = flashes[flHead = (flHead + 1) % flashes.length]; m.position.set(RX, y, 0.7); m.material.color.copy(col).lerp(new THREE.Color(1, 1, 1), 0.6); m.userData.t = 0.45; m.visible = true; }
@@ -690,7 +694,7 @@ const REGS = {};
 // a column of tiles on each side of the bars, top to bottom along the well; the drawer opens towards the bars
 const regBodyGeo = new THREE.BoxGeometry(3, 1.7, 0.6), regDrawGeo = new THREE.BoxGeometry(0.28, 1.2, 0.45), regEdgeGeo = new THREE.EdgesGeometry(regBodyGeo);
 let tileTop = 13.5 * RS - 0.9, tileStep = 27 * RS / (12 / LAY.TC - 1), tileSc = 1;
-const tileX = col => col ? TL + 1.5 * tileSc : -7.2 - 1.5 * tileSc;   // column 0 left of the prices, 1 right of the amounts
+const tileX = col => col ? TL + 1.5 * tileSc : -LL - 0.3 - 1.5 * tileSc;   // column 0 left of the prices, 1 right of the amounts
 function drawReg(R) {
   const fl = R.flash > 0 ? R.fTxt : '', st = R.on + '|' + R.tot + '|' + fl + '|' + (R.hist ? R.hist.length : 0);
   if (st === R.str) return; R.str = st;
@@ -854,7 +858,6 @@ function absorbAt(r, x, col) {
   r.units = Math.min(CAP, r.units + 1); r.pulse = Math.min(1.5, r.pulse + 0.45);
   emit(x, r.yd + r.thS / 2, 0.4, r.t.col, 6, 3); snd('zap');
   r.trend = Math.min(1, (r.trend || 0) + 0.22);
-  const rc = (col || r.t.col).clone().lerp(WHITE, 0.45); ripple(r, x, rc, -1, 14, 0.6, 1); ripple(r, x, rc, 1, 14, 0.6, 1);
 }
 const barPt = (r, x) => { const v = new THREE.Vector3(); return () => v.set(x, r.yd, 0.35); };
 function zap(src, r, n, delay = 0) {   // n units of orders from a register to a bar
@@ -899,6 +902,7 @@ function makeRow(lv) {
   const lh = COMPACT ? Math.min(1.05, 0.86 * RS) : 0.8;   // label height: as tall as the row allows on a phone
   r.lbl = textPlane(640, Math.round(lh * 100), 6.4, lh); scene.add(r.lbl.m);
   r.sz = textPlane(360, Math.round(lh * 100), 3.6, lh); scene.add(r.sz.m);
+  r.lbl.m.renderOrder = r.sz.m.renderOrder = 3;   // over the glass
   r.halo = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: glowTex, color: t.col, transparent: true, opacity: 0, blending: ADD, depthWrite: false }));
   r.halo.position.z = -0.6; scene.add(r.halo);
   r.band = new THREE.Mesh(bandGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false })); r.band.position.z = -0.68; r.band.renderOrder = -3; scene.add(r.band);
@@ -1021,7 +1025,7 @@ function applyLevels(L) {
     if (r.isNew) { r.isNew = false; r.born = T;
       if (r.base) fillRow(r, r.base, firstApply ? 0.25 + (r.y / RS + 13) * 0.07 : rnd(0, 0.4));
       else for (let x = 0; x < BW; x += 0.7) emit(x, r.y + 2, 0.3, r.t.col, 4, 2, { vy: -3 }); }
-    if (r.delta && !quiet) { floatText(r.endX + 2, r.y + 0.9, (r.delta > 0 ? '+' : '−') + fmtUsd(Math.abs(r.delta)), r.delta > 0 ? '#eef4f0' : '#8fa39a'); r.delta = 0; }
+    if (r.delta && !quiet) { floatText(r.endX - 2, r.y + 0.9, (r.delta > 0 ? '+' : '−') + fmtUsd(Math.abs(r.delta)), r.delta > 0 ? '#eef4f0' : '#8fa39a'); r.delta = 0; }
   }
   firstApply = false; fit();
   if (!nextP) makeNext();
@@ -1260,7 +1264,7 @@ function showLiq(long, q, usd, ex) {
     R.open = 1; R.flash = 1.6; R.fTxt = 'LIQ ' + fmtUsd(usd); R.fCss = TY.sliq.c;
     for (let n = 0; n < 3; n++) { const pv = new THREE.Vector3(rnd(0, BW), 0, 0.8); bolt(regPos(k), null, TY.sliq.col, n * 0.12, 0.5, null, tileCurve(k, () => pv.setY(slab.position.y))); } }
   const big = Math.max(0, Math.min(1, Math.log10(Math.max(1, usd / 1e4)) / 2.5)), sy = slab.position.y, col = TY.sliq.col;
-  for (let x = -6; x < 13.5; x += 1.4) emit(x, sy, 0.8, col, Math.round(3 + big * 10), 3 + big * 7, { vy: long ? -4 : 4, vz: 2, life: 1.2 });
+  for (let x = 0; x < BW; x += 1.4) emit(x, sy, 0.8, col, Math.round(3 + big * 10), 3 + big * 7, { vy: long ? -4 : 4, vz: 2, life: 1.2 });
   shake = Math.max(shake, 0.08 + big * 0.5); liqFlash = Math.max(liqFlash, 0.25 + big * 0.75);
   flashRow(sy, col);
   const near = liveRows().filter(r => r.type === (long ? 'lliq' : 'sliq')).sort((a, b) => Math.abs(a.price - q) - Math.abs(b.price - q))[0];
@@ -1562,7 +1566,7 @@ function update(dt) {
   for (const tr of trades.splice(0)) {
     nTrades++;
     const col = tr.buy ? BUYC : SELLC, n = Math.min(6, Math.max(1, Math.ceil(Math.log10(tr.usd / 2e3))));
-    if (budget > 0) { emit(rnd(-6, 13), sy, 0.8, col, n, 1.5, { vy: tr.buy ? 5 : -5, life: 0.7, sx: 0.4 }); budget -= n; }
+    if (budget > 0) { emit(rnd(0, BW), sy, 0.8, col, n, 1.5, { vy: tr.buy ? 5 : -5, life: 0.7, sx: 0.4 }); budget -= n; }
     if (tr.usd >= 250e3) {
       const side = liveRows().filter(r => (tr.buy ? r.type === 'ask' : r.type === 'bid') && !r.cleared && r.units);
       const tgt = side.sort((a, b) => Math.abs(a.yd - sy) - Math.abs(b.yd - sy))[0];
@@ -1631,7 +1635,7 @@ function update(dt) {
       }
       case 'pop':
         b.t -= dt;
-        if (b.t <= 0) launch(b, rnd(-6, 10), b.dir * rnd(4, 12), rnd(6, 16), rnd(1.3, 2));
+        if (b.t <= 0) launch(b, rnd(-4, 4), b.dir * rnd(4, 12), rnd(6, 16), rnd(1.3, 2));
         break;
       case 'fly':
         b.vy -= g * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
@@ -1752,7 +1756,7 @@ function render(rdt) {
       const zN = Math.max(0, 1 - Math.abs(r.price - p) / Math.max(bucket * 3, p * 0.002));
       // a new tube strikes like neon (a few false starts), a gone one flickers out
       const ig = r.gone ? (Math.random() < r.goneT / 0.9 ? 1 : 0.05) : T - r.born < 0.7 ? (Math.random() < 0.55 ? 1 : 0.08) : 1;
-      let br = 1 + 0.35 * Math.min(1, r.thS / 0.9) + 0.6 * Math.exp(-((y - scanY) ** 2) * 1.4) + 0.5 * r.pulse + 0.35 * r.hl + (exS > 0 ? 0.3 + exS : 0) + 0.9 * wb + (Math.abs(y - sy) < 1.2 * RS ? 0.2 : 0) + (fl ? 0.6 * Math.abs(Math.sin(t * 26)) : 0);
+      let br = 1 + 0.35 * Math.min(1, r.thS / 0.9) + 0.5 * r.pulse + 0.35 * r.hl + (exS > 0 ? 0.3 + exS : 0) + 0.9 * wb + (Math.abs(y - sy) < 1.2 * RS ? 0.2 : 0) + (fl ? 0.6 * Math.abs(Math.sin(t * 26)) : 0);
       if (r.glass) br *= 0.75 + 0.35 * Math.abs(Math.sin(t * 7 + y));
       // the gas glows in the colour of the kind and flickers a little, like a neon sign; a wall that has only just
       // appeared (glass) flickers harder and glows weaker
@@ -1774,14 +1778,13 @@ function render(rdt) {
       r.wire.geometry.attributes.position.needsUpdate = true; r.wire.material.color.copy(REGS[wk].col); r.wire.material.opacity = fade * ig * 0.14 * dim;
       r.bar.visible = r.gas.visible = r.glowA.visible = r.edge.visible = r.thS > 0.01; r.wire.visible = r.thS > 0.01 && !COMPACT;   // on a phone the wires would cross the amounts
     }
-    r.lbl.m.position.set(-3.6 - (1 - fadeL) * 1.4, y, r.gone ? -0.1 : 0.05); r.sz.m.position.set(r.endX + 0.25 + 1.8, y, 0.1); r.hit.position.set(RX, y, 0.5);
+    r.lbl.m.position.set(3.6 - (1 - fadeL) * 1.4, y, 0.65); r.sz.m.position.set(r.endX - 0.4 - 1.8, y, 0.65); r.hit.position.set(RX, y, 0.5);
     if (!r.gone) drawSize(r);
     const near = Math.max(0, 1 - Math.abs(y - sy) / (3 * RS));
     r.hl += ((r === selRow ? 1 : 0) - r.hl) * Math.min(1, rdt * 4);
     r.halo.scale.set(Math.max(1.5, r.endX + 1.6), 1.7 + near * 0.6, 1);
     r.halo.position.set(r.endX / 2, y, -0.6);
     r.band.position.set(RX, y, -0.68); r.band.material.opacity = (r.gone ? 0 : Math.abs(Math.round(r.y / RS)) % 2 ? 0.035 : 0) * dim;
-    if (r.bar && !r.gone && r.units && (r.glT = (r.glT ?? rnd(1, 7)) - rdt) <= 0) { r.glT = rnd(5, 10); ripple(r, 0, WHITE, 1, BW / 1.5, 1.5, 1.1); }
     r.halo.material.opacity = fade * (r.cleared ? 0.03 : 0.16 + 0.07 * Math.sin(t * 2.2 + y * 0.7) + near * 0.22 + r.hl * 0.45 + 0.7 * wb + (r.flare > 0 ? 0.35 * Math.abs(Math.sin(t * 22)) : 0));
     const lo = (r.gone ? fadeL : T - r.born < 0.35 ? 0 : r.cleared ? 0.3 : 1) * (exS === 0 ? 0.35 : 1);
     r.lbl.m.material.opacity = r.gone ? Math.min(r.lbl.m.material.opacity, lo) : r.lbl.m.material.opacity + (lo - r.lbl.m.material.opacity) * Math.min(1, rdt * 6);
@@ -1800,7 +1803,6 @@ function render(rdt) {
   sideDn.scale.y += (-sideBot - sideDn.scale.y) * Math.min(1, rdt * 4); sideDn.position.y = -sideDn.scale.y / 2;
   sideLblUp.position.y = sideUp.scale.y + 0.5; sideLblDn.position.y = -sideDn.scale.y - 0.62;
   sideUp.material.opacity = 0.09 + 0.03 * Math.sin(t * 0.8); sideDn.material.opacity = 0.09 + 0.03 * Math.sin(t * 0.8 + 2);
-  lblStrip.scale.y = sideUp.scale.y + sideDn.scale.y + 2; lblStrip.position.y = (sideUp.scale.y - sideDn.scale.y) / 2;
   for (const m of [board, boardEdge]) { m.scale.set(BW + 1, sideUp.scale.y + sideDn.scale.y + 0.7, 1); m.position.y = (sideUp.scale.y - sideDn.scale.y) / 2; }
   // ripples and glints along the bars
   { let k = 0;

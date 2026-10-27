@@ -778,19 +778,48 @@ const boltPool = [...Array(BN)].map(() => {
   return { line, line2, head, busy: false };
 });
 const BV = new THREE.Vector3(), BD = new THREE.Vector3();
-function bolt(a, b, col, delay, dur, onHit) {
+function bolt(a, b, col, delay, dur, onHit, path) {
   const slot = boltPool.find(x => !x.busy); if (!slot) { if (onHit) onHit(); return; }
-  slot.busy = true; bolts.push({ slot, a: a.clone(), b, col: col.clone(), t: -delay, dur, onHit, hit: false, flash: 0 });
+  slot.busy = true; bolts.push({ slot, a: a.clone(), b, col: col.clone(), t: -delay, dur, onHit, hit: false, flash: 0, path });
 }
+// the wire from a tube's right cap (s = 0) to an exchange tile (s = 1)
+function wirePt(r, k, s, out) {
+  const W0 = regPos(k), y = r.yd ?? r.y, iu = 1 - s, a0 = BW + 0.2, c1 = BW + 1.4, c2 = W0.x - 1.2;
+  return out.set(iu ** 3 * a0 + 3 * iu * iu * s * c1 + 3 * iu * s * s * c2 + s ** 3 * W0.x,
+    iu ** 3 * y + 3 * iu * iu * s * y + 3 * iu * s * s * W0.y + s ** 3 * W0.y, -0.25 + s * (W0.z + 0.25));
+}
+// a pulse's route: out of the tile, along the wire to the cap, then through the gas to x (u = 0..1, back reverses it)
+function wireRoute(r, k, x, back) {
+  return (u, out) => {
+    if (back) u = 1 - u;
+    const W0 = regPos(k), y = r.yd ?? r.y, lA = Math.hypot(W0.x - BW, W0.y - y) * 1.2 + 0.5, lB = Math.max(0.1, BW + 0.1 - x), fA = lA / (lA + lB);
+    return u < fA ? wirePt(r, k, 1 - u / fA, out) : out.set(BW + 0.1 - (u - fA) / (1 - fA) * lB, y, 0.02);
+  };
+}
+const BP = new THREE.Vector3();
 function updateBolts(dt) {
   for (let i = bolts.length - 1; i >= 0; i--) {
     const q = bolts[i], { line, line2, head } = q.slot;
     if (q.t < 0) { q.t += dt; continue; }
-    const B = typeof q.b === 'function' ? q.b() : q.b;
+    const B = q.path ? q.path(1, BP) : typeof q.b === 'function' ? q.b() : q.b;
     let e = 1;
     if (!q.hit) { q.t += dt / q.dur; e = Math.min(1, q.t);
       if (e >= 1) { q.hit = true; q.flash = 0.22; emit(B.x, B.y, B.z, q.col, 10, 4.5, { life: 0.5 }); if (q.onHit) q.onHit(); } }
     else { q.flash -= dt; if (q.flash <= 0) { for (const o of [line, line2, head]) o.visible = false; q.slot.busy = false; bolts.splice(i, 1); continue; } }
+    if (q.path) {   // a pulse running along its wire: a bright comet with the wire lit up behind it
+      const e0 = Math.max(0, e - 0.12), op = q.hit ? q.flash / 0.22 : 1;
+      for (const [ln, u0, k0] of [[line, e0, 1], [line2, 0, 0]]) {
+        const arr = ln.geometry.attributes.position.array;
+        for (let k = 0; k <= BSEG; k++) { q.path(u0 + (e - u0) * k / BSEG, BV); arr[k * 3] = BV.x; arr[k * 3 + 1] = BV.y + (k0 ? (Math.random() - 0.5) * 0.05 : 0); arr[k * 3 + 2] = BV.z; }
+        ln.geometry.attributes.position.needsUpdate = true;
+        ln.material.color.copy(q.col).multiplyScalar(k0 ? 1.8 : 0.7); ln.material.opacity = op * (k0 ? 1 : 0.35); ln.visible = true;
+      }
+      q.path(e, BV);
+      head.position.copy(BV); head.material.color.copy(q.col).lerp(WHITE, 0.5); head.material.opacity = op;
+      head.scale.setScalar(q.hit ? 2.4 : 1.2 + Math.random() * 0.5); head.visible = true;
+      if (!q.hit && Math.random() < 0.6) emit(BV.x, BV.y, BV.z, q.col, 1, 0.8, { life: 0.35 });
+      continue;
+    }
     BD.subVectors(B, q.a); const len = BD.length() || 1, px = -BD.y / len, py = BD.x / len, amp = Math.min(1.1, 0.25 + len * 0.05);
     for (const [ln, k0] of [[line, 1], [line2, 0.55]]) {
       const arr = ln.geometry.attributes.position.array;
@@ -821,12 +850,12 @@ const barPt = (r, x) => { const v = new THREE.Vector3(); return () => v.set(x, r
 function zap(src, r, n, delay = 0) {   // n units of orders from a register to a bar
   r.inbound += n;
   const col = (REGS[src] || REGS.model).col;
-  for (let k = 0; k < n; k++) { const x = rnd(0.5, BW - 0.5); bolt(regPos(src), barPt(r, x), col, delay + k * 0.07, rnd(0.28, 0.42), () => absorbAt(r, x, col)); }
+  for (let k = 0; k < n; k++) { const x = rnd(0.5, BW - 0.5); bolt(regPos(src), barPt(r, x), col, delay + k * 0.12, rnd(0.6, 0.8), () => absorbAt(r, x, col), wireRoute(r, src, x)); }
 }
 function zapBack(r, dst, n, delay = 0) {   // n units pulled back from a bar into a register
   for (let k = 0; k < n; k++) { const x = rnd(0.5, BW - 0.5);
     emit(x, r.yd, 0.4, (REGS[dst] || REGS.model).col, 4, 2);
-    bolt(new THREE.Vector3(x, r.yd, 0.35), regPos(dst), (REGS[dst] || REGS.model).col, delay + k * 0.07, rnd(0.3, 0.45), () => { const R = REGS[dst]; if (R) R.open = 1; snd('back'); }); }
+    bolt(new THREE.Vector3(x, r.yd, 0.35), regPos(dst), (REGS[dst] || REGS.model).col, delay + k * 0.12, rnd(0.6, 0.85), () => { const R = REGS[dst]; if (R) R.open = 1; snd('back'); }, wireRoute(r, dst, x, true)); }
 }
 // a block on its way from a to c in an arc: into a bar (absorb), back into a register (withdraw) or a burst
 function pathTo(b, a, c, dur, end) { b.state = 'path'; b.ax = a.x; b.ay = a.y; b.az = a.z; b.cx = c[0]; b.cy = c[1]; b.cz = c[2]; b.dur = dur; b.end = end; b.t = 0; b.s0 = b.s1 = b.s > 0.01 ? b.s : 0.8; }
@@ -1729,10 +1758,8 @@ function render(rdt) {
       if (dF > 0 && dF < 4 * RS) { r.refl.visible = true; r.refl.position.set(BW / 2, 2 * fy - y, -0.1); r.refl.scale.set(BW + 0.4, 0.25 + r.thS * 0.8, 1); r.refl.material.opacity = go * 0.22 * (1 - dF / (4 * RS)); }
       else r.refl.visible = false;
       // a wire from the right cap to the tile that feeds it most (the estimate for stops and liquidations)
-      const wk = r.per ? Object.entries(r.per).filter(([k]) => REGS[k]).sort((a, b) => b[1] - a[1])[0]?.[0] || 'model' : 'model', W0 = regPos(wk), wa = r.wire.geometry.attributes.position.array;
-      for (let i = 0; i < WIREN; i++) { const u = i / (WIREN - 1), a0 = BW + 0.2, c1 = BW + 1.4, c2 = W0.x - 1.2, iu = 1 - u;
-        wa[i * 3] = iu ** 3 * a0 + 3 * iu * iu * u * c1 + 3 * iu * u * u * c2 + u ** 3 * W0.x;
-        wa[i * 3 + 1] = iu ** 3 * y + 3 * iu * iu * u * y + 3 * iu * u * u * W0.y + u ** 3 * W0.y; wa[i * 3 + 2] = -0.25 + u * (W0.z + 0.25); }
+      const wk = r.per ? Object.entries(r.per).filter(([k]) => REGS[k]).sort((a, b) => b[1] - a[1])[0]?.[0] || 'model' : 'model', wa = r.wire.geometry.attributes.position.array;
+      for (let i = 0; i < WIREN; i++) { wirePt(r, wk, i / (WIREN - 1), BV); wa[i * 3] = BV.x; wa[i * 3 + 1] = BV.y; wa[i * 3 + 2] = BV.z; }
       r.wire.geometry.attributes.position.needsUpdate = true; r.wire.material.color.copy(REGS[wk].col); r.wire.material.opacity = fade * ig * 0.14 * dim;
       r.bar.visible = r.gas.visible = r.glowA.visible = r.edge.visible = r.thS > 0.01; r.wire.visible = r.thS > 0.01 && !COMPACT;   // on a phone the wires would cross the amounts
     }

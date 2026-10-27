@@ -13,7 +13,8 @@
 <style>
 /* Zee: the order book as a sea. The live price is a boat on the surface; the book is the sea floor under it (many orders:
    a sandbank close to the surface, few: deep water), estimated stops are rocks with a buoy, estimated liquidations are
-   whirlpools, the two targets are lighthouses on the horizon. Funding is the wind, aggressive buying or selling the
+   whirlpools, the two targets are lighthouses on the horizon. A wall that was not there an hour or two ago is quicksand;
+   the real liquidations of the last 24 hours lie on the floor as wrecks, where they happened. Funding is the wind, aggressive buying or selling the
    current, the day's range the waves, real liquidations a splash and a storm. Tap the sea to take a sounding.
    Stand-alone like Held; the data part is copied from held.html, so it computes exactly what the coin page shows. */
 :root{
@@ -96,6 +97,7 @@ dd i{font-style:normal;color:var(--faint);margin-left:6px}
   <button type="button" data-layer="stop" aria-pressed="true"><span class="dot" style="background:var(--stop)"></span>Rotsen</button>
   <button type="button" data-layer="liq" aria-pressed="true"><span class="dot" style="background:var(--liq)"></span>Kolken</button>
   <button type="button" data-layer="port" aria-pressed="true"><span class="dot" style="background:#fff"></span>Vuurtorens</button>
+  <button type="button" data-layer="wreck" aria-pressed="true"><span class="dot" style="background:#8a6f55"></span>Wrakken</button>
   <button id="logb" type="button" aria-pressed="false">≡ Journaal</button>
   <button id="help" type="button" aria-pressed="false">? Uitleg</button>
 </div>
@@ -405,7 +407,7 @@ const isWall = L => L.k === 'ask' || L.k === 'bid';
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // layers, remembered per viewer
-const LAYERS = { bed: true, stop: true, liq: true, port: true };
+const LAYERS = { bed: true, stop: true, liq: true, port: true, wreck: true };
 try { Object.assign(LAYERS, JSON.parse(localStorage.getItem('zee-layers') || '{}')); } catch (e) {}
 
 /* ---- canvas and layout ------------------------------------------------------------------------------------------- */
@@ -451,7 +453,24 @@ function grid() {
   const B = D.B, ds = [];
   for (let p = P * (1 - D.range); p < P * (1 + D.range); p += B) ds.push(book(p, p + B) / B);
   ds.sort((x, y) => x - y); G.ref = ds[Math.floor(ds.length * .93)] || 1;
+  loose();
 }
+// drijfzand: in how many of the last 6 hours (before this one) the book held at least half the size it has now, per $100
+// bucket, as "aanwezig" in "Alle niveaus". A wall that was there in at most a third of them is quicksand: new, maybe a spoof.
+function loose() {
+  const HB = A.histBin, hr = Math.floor(D.ts / 3.6e6) * 3.6e6, P = D.price;
+  const prev = (D.bookHist || []).filter(h => h.t < hr).slice(-6).map(e => new Map(e.b.map(([p, b, a]) => [p, b + a])));
+  LZ = { HB, of: prev.length, m: new Map() };
+  if (prev.length < 2) return;
+  for (let i = Math.floor(P * .94 / HB); i * HB <= P * 1.06; i++) {
+    const k = +(i * HB).toFixed(digits(HB)), now = book(k, k + HB); if (!(now > 0)) continue;
+    LZ.m.set(k, prev.filter(h => (h.get(k) || 0) >= now * .5).length);
+  }
+}
+const lzN = p => LZ.of < 2 ? null : LZ.m.get(+(Math.floor(p / LZ.HB + 1e-9) * LZ.HB).toFixed(digits(LZ.HB))) ?? null;
+const looseQ = p => { const n = lzN(p); return n == null ? 0 : clamp((1 - n / LZ.of - .5) * 2, 0, 1); };     // 0 there most hours .. 1 never
+const isLoose = p => { const n = lzN(p); return n != null && n / LZ.of <= 1 / 3; };
+const wallLoose = L => isWall(L) && !!L.ps && L.ps[1] >= 2 && L.ps[0] / L.ps[1] <= 1 / 3;
 // the smaller stop and liquidation clusters further out, unlabelled scenery beside the levels of "Alle niveaus"
 function minor(a, k, above) {
   const P = D.price, B = D.B, out = [], top = LV.find(L => L.k === k), mx = top ? top.s / top.rel : null;
@@ -467,6 +486,8 @@ let T = 0, AMP = 4, PH = 0, CUR = 0, WIND = 0, FUND = null, storm = 0, FLASH = 0
 const B0 = { p: null, dir: 1, trail: [], trailAt: 0, spin: null, sandAt: 0 };     // the boat
 const RINGS = [], DROPS = [], SAND = [], BUBS = [], RECENT = [], LOG = [], CROSSED = new Map();
 const STATS = { real: 0 };
+let LZ = { HB: 100, of: 0, m: new Map() };      // drijfzand: per $100 bucket, in how many of the last hours the book stood there
+const WRECKS = [], DAY = 24 * 3.6e6;            // real liquidations of the last 24 hours, where they happened
 const CLOUDS = Array.from({ length: 7 }, (_, i) => ({ x: hash(i + 40), y: .18 + hash(i + 50) * .5, s: .6 + hash(i + 60) * .9 }));
 const PLANK = Array.from({ length: 90 }, (_, i) => ({ x: hash(i + 200), y: hash(i + 300), r: .5 + hash(i + 400) * 1.1, s: .3 + hash(i + 500) }));
 const SCHOOLS = Array.from({ length: 3 }, (_, i) => ({ x: hash(i + 600), y: .35 + i * .18, n: 6 + Math.round(hash(i + 700) * 6), sp: .7 + hash(i + 800) * .6, dir: 1 }));
@@ -479,6 +500,38 @@ const TAKER = (() => {
       for (const [t, v] of sec) { if (t < k - 60) { sec.delete(t); continue; } if (t > k - 10) { bb += v.b; ss += v.s; } }
       const tot = bb + ss; avg = avg ? avg + (tot - avg) * .002 : tot; return { buy: tot ? bb / tot : .5, sell: tot ? ss / tot : .5, act: avg ? tot / avg : 1, seen }; } };
 })();
+// a wreck per real liquidation: what was seen live (OKX, Binance, Bybit) is kept in this browser for 24 hours,
+// OKX's own history fills in the hours before the page was opened
+const WK = 'zee-wrecks', WIDS = new Set(); let wSave = 0;
+try { for (const w of JSON.parse(localStorage.getItem(WK) || '[]')) if (Date.now() - w.t < DAY && !WIDS.has(w.id)) { WIDS.add(w.id); WRECKS.push(w); } } catch (e) {}
+// at the moment it happens: was there a whirlpool on the map within a bucket or 0.1%? (the labelled ones, and the larger of the others)
+function nearKolk(p, long) {
+  const tol = Math.max(D.B, D.price * .001);
+  return [...LV, ...MINOR].some(L => L.k === 'liq' && L.above === !long && (!L.minor || L.rel >= .25) && Math.abs(L.p - p) <= tol);
+}
+function addWreck(ex, long, p, usd, t, seen) {
+  if (!(usd >= 1000) || !(p > 0)) return;
+  const id = ex + '|' + p + '|' + Math.round(usd); if (WIDS.has(id)) return; WIDS.add(id);
+  WRECKS.push({ id, t, p, usd: Math.round(usd), long, ex, hit: seen && D ? nearKolk(p, long) : null, born: seen ? T : null });
+  if (!wSave) wSave = setTimeout(saveWrecks, 3000);
+}
+function saveWrecks() {
+  wSave = 0; const now = Date.now();
+  for (let i = WRECKS.length - 1; i >= 0; i--) if (now - WRECKS[i].t > DAY) { WIDS.delete(WRECKS[i].id); WRECKS.splice(i, 1); }
+  WRECKS.sort((a, b) => a.t - b.t); while (WRECKS.length > 4000) WIDS.delete(WRECKS.shift().id);
+  try { localStorage.setItem(WK, JSON.stringify(WRECKS.map(({ born, ...w }) => w))); } catch (e) {}
+}
+async function backfillWrecks() {
+  const base = `https://www.okx.com/api/v5/public/liquidation-orders?instType=SWAP&uly=${A.okx.replace(/-SWAP$/, '')}&state=filled&limit=100`;
+  let after = '';
+  for (let page = 0; page < 12; page++) {
+    let det; try { det = (await getJSON(base + (after ? '&after=' + after : ''))).data?.find(d => d.instId === A.okx)?.details || []; } catch (e) { break; }
+    if (!det.length) break;
+    for (const x of det) { const t = +x.ts, p = +x.bkPx; if (Date.now() - t < DAY) addWreck('OKX', x.posSide === 'long' || (x.posSide !== 'short' && x.side === 'sell'), p, +x.sz * A.okxCt * p, t, false); }
+    const oldest = Math.min(...det.map(x => +x.ts)); if (Date.now() - oldest > DAY || String(oldest) === after) break; after = String(oldest);
+  }
+}
+const agoTxt = t => { const m = Math.round((Date.now() - t) / 6e4); return m < 60 ? `${m} min` : `${fx(m / 60, 1)} u`; };
 async function loadFunding() {
   try { FUND = +(await getJSON(`https://www.okx.com/api/v5/public/funding-rate?instId=${A.okx}`)).data[0].fundingRate; } catch (e) {}
 }
@@ -495,19 +548,20 @@ const slope = (x, h = 6) => (wave(x + h) - wave(x - h)) / (2 * h);
 /* ---- the sea floor, one column every 3 px ---------------------------------------------------------------------------- */
 // how close to the surface a stretch of book comes: 1 at many times the usual thickness, never a flat top
 const depth = x => 1 - Math.exp(-1.15 * Math.pow(Math.max(0, x), .8));
-const CW = 3; let BY = new Float32Array(0), BE = new Float32Array(0);
+const CW = 3; let BY = new Float32Array(0), BE = new Float32Array(0), BL = new Float32Array(0);
 function computeBed() {
   const n = Math.ceil(W / CW) + 3, raw = new Float32Array(n), ppd = (W / 2) / V.r;
-  if (BY.length !== n) { BY = new Float32Array(n); BE = new Float32Array(n); }
+  if (BY.length !== n) { BY = new Float32Array(n); BE = new Float32Array(n); BL = new Float32Array(n); }
+  const rawL = new Float32Array(n); if (LAYERS.bed && LZ.of >= 2) for (let i = 0; i < n; i++) rawL[i] = looseQ(PX((i - 1) * CW));
   if (LAYERS.bed && G) for (let i = 0; i < n; i++) { const x = (i - 1) * CW, p0 = PX(x - CW / 2), p1 = PX(x + CW / 2); raw[i] = book(p0, p1) / (p1 - p0) / G.ref; }
   const sig = clamp(D.B * .9 * ppd / CW, 1.5, 30), rad = Math.ceil(sig * 2.5), ker = [];
   for (let k = -rad; k <= rad; k++) ker.push(Math.exp(-k * k / (2 * sig * sig)));
   const kt = ker.reduce((s, v) => s + v, 0), top = SURF + 24, bot = BED - 4;
   for (let i = 0; i < n; i++) {
-    let s = 0; for (let k = -rad; k <= rad; k++) s += raw[clamp(i + k, 0, n - 1)] * ker[k + rad];
+    let s = 0, sl = 0; for (let k = -rad; k <= rad; k++) { const j = clamp(i + k, 0, n - 1); s += raw[j] * ker[k + rad]; sl += rawL[j] * ker[k + rad]; }
     const e = depth(s / kt), p = PX((i - 1) * CW), u = p / V.r;
     const nz = (Math.sin(u * 31) * .5 + Math.sin(u * 73 + 1.3) * .3 + Math.sin(u * 167 + 2.1) * .2) * 6 * (1 - e);
-    BE[i] = e; BY[i] = lerp(bot, top, e * .92) - nz - 4;
+    BE[i] = e; BL[i] = e > .12 ? sl / kt : 0; BY[i] = lerp(bot, top, e * .92) - nz - 4 + Math.sin(T * 2.2 + u * 40) * 2.5 * BL[i] * e;
   }
 }
 const bedAt = x => { const f = clamp(x / CW + 1, 0, BY.length - 1.001), i = Math.floor(f); return BY[i] + (f - i) * (BY[i + 1] - BY[i]); };
@@ -694,6 +748,15 @@ function drawBed() {
   for (let i = 1; i < n; i++) { const e = BE[i]; if (e < .22) continue; const x = (i - 1) * CW;
     g.strokeStyle = rgba(x < xp ? CSS.up : CSS.dn, (e - .22) * .9); g.beginPath(); g.moveTo(x - CW / 2, (BY[i - 1] + BY[i]) / 2); g.lineTo(x + CW / 2, (BY[i] + BY[Math.min(n - 1, i + 1)]) / 2); g.stroke(); }
   g.strokeStyle = 'rgba(220,210,170,.18)'; g.lineWidth = 1; g.beginPath(); g.moveTo(-CW, BY[0]); for (let i = 1; i < n; i++) g.lineTo((i - 1) * CW, BY[i]); g.stroke();
+  // drijfzand: pale, glittering, its edge a running dashed line
+  const lq = i => BL[i] * Math.min(1, BE[i] * 2), tick = Math.floor(T * 3);
+  for (let i = 1; i < n; i += 2) { const q = lq(i); if (q < .06) continue; const x = (i - 1) * CW;
+    const pg = g.createLinearGradient(0, BY[i] - 3, 0, BY[i] + 46 * q + 8); pg.addColorStop(0, `rgba(240,228,184,${.42 * q})`); pg.addColorStop(1, 'rgba(240,228,184,0)');
+    g.fillStyle = pg; g.fillRect(x - CW, BY[i] - 3, CW * 2, 46 * q + 11);
+    for (let k = 0; k < 4; k++) { const h = hash(i * 7 + k * 3.1 + tick + Math.floor(hash(i + k) * 3)); g.fillStyle = `rgba(255,248,215,${.95 * q * h})`; g.fillRect(x + (hash(i + k * 13) - .5) * CW * 2, BY[i] + 1 + hash(i * 3 + k) * 34 * q, 1.6, 1.6); } }
+  g.setLineDash([4, 4]); g.lineDashOffset = -T * 14; g.lineWidth = 1.8; g.strokeStyle = 'rgba(255,246,210,.9)'; g.beginPath();
+  let on = false; for (let i = 1; i < n; i++) { const x = (i - 1) * CW; if (lq(i) > .12) { on ? g.lineTo(x, BY[i] - 2) : g.moveTo(x, BY[i] - 2); on = true; } else on = false; }
+  g.stroke(); g.setLineDash([]);
 }
 // kelp on the bid side, sea fans on the ask side, swaying with the current
 function drawPlants() {
@@ -708,6 +771,36 @@ function drawPlants() {
       for (let k = -2; k <= 2; k++) { g.beginPath(); g.moveTo(x, yb); g.quadraticCurveTo(x + k * 3, yb - hh * .5, x + k * hh * .22 + sway * .3, yb - hh * (1 - Math.abs(k) * .12)); g.stroke(); } }
   }
 }
+/* ---- wrecks (real liquidations, last 24 hours) ------------------------------------------------------------------------ */
+function drawWrecks() {
+  if (!LAYERS.wreck || !WRECKS.length) return;
+  const now = Date.now(), cl = new Map(), cell = phone ? 26 : 24;
+  for (const w of WRECKS) {
+    if (now - w.t > DAY) continue; const x = X(w.p); if (x < -20 || x > W + 20) continue;
+    const k = Math.floor(x / cell); let c = cl.get(k);
+    if (!c) cl.set(k, c = { key: 'wreck' + k, wreck: true, ws: [], usd: 0, xw: 0, pw: 0, lo: Infinity, hi: 0, t: 0, long: 0, short: 0, hits: 0, meas: 0, ex: new Set(), born: null });
+    c.ws.push(w); c.usd += w.usd; c.xw += x * w.usd; c.pw += w.p * w.usd; c.lo = Math.min(c.lo, w.p); c.hi = Math.max(c.hi, w.p); c.t = Math.max(c.t, w.t);
+    c[w.long ? 'long' : 'short'] += w.usd; c.ex.add(w.ex); if (w.hit != null) { c.meas++; if (w.hit) c.hits++; }
+    if (w.born != null && T - w.born < 3) c.born = Math.max(c.born ?? -1, w.born);
+  }
+  const selKey = SEL?.obj?.wreck ? SEL.obj : null;
+  for (const c of cl.values()) { c.p = c.pw / c.usd; drawWreck(c, c.xw / c.usd, !!selKey && Math.abs(selKey.p - c.p) < (V.r / W) * cell); }
+}
+function drawWreck(c, x, sel) {
+  const s = clamp(.4 + Math.log10(Math.max(1, c.usd / 1e4)) * .3, .4, 1.4) * (phone ? .8 : 1), age = (Date.now() - c.t) / DAY;
+  const yb = bedAt(x) + 3, seed = Math.round(c.p), d = hash(seed + 1) < .5 ? -1 : 1;
+  let y = yb; if (c.born != null) y = lerp(wave(x) + 6, yb, ease(clamp((T - c.born) / 3, 0, 1)));      // a fresh one sinks first
+  if (Date.now() - c.t < 10 * 6e4) { const gg = g.createRadialGradient(x, y - 6, 0, x, y - 6, 26 * s); gg.addColorStop(0, rgba(CSS.liq, .35)); gg.addColorStop(1, rgba(CSS.liq, 0)); g.fillStyle = gg; g.fillRect(x - 26 * s, y - 32 * s, 52 * s, 52 * s); }
+  g.save(); g.globalAlpha = 1 - age * .7; g.translate(x, y); g.rotate((hash(seed) - .5) * .7); g.scale(s, s);
+  g.fillStyle = '#211a14'; g.beginPath(); g.moveTo(-16 * d, -6); g.lineTo(17 * d, -8); g.quadraticCurveTo(13 * d, 2, 7 * d, 4); g.lineTo(-10 * d, 4); g.quadraticCurveTo(-15 * d, 2, -16 * d, -6); g.closePath(); g.fill();
+  g.strokeStyle = rgba(CSS.liq, sel ? 1 : .7); g.lineWidth = sel ? 2 : 1.3; g.beginPath(); g.moveTo(-16 * d, -6); g.lineTo(17 * d, -8); g.stroke();
+  g.strokeStyle = '#6b6255'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(0, -7); g.lineTo(3 * d, -21); g.lineTo(10 * d, -17); g.stroke();       // the broken mast
+  g.fillStyle = c.long >= c.short ? CSS.dn : CSS.up; g.beginPath(); g.moveTo(3 * d, -21); g.lineTo(3 * d + 7, -22); g.lineTo(3 * d + 2, -17); g.closePath(); g.fill();
+  g.restore();
+  if (sel) { g.strokeStyle = rgba(CSS.liq, .9); g.lineWidth = 1; g.beginPath(); g.ellipse(x, yb - 7 * s, 22 * s + 4, 14 * s + 4, 0, 0, PI * 2); g.stroke(); }
+  HITS.push({ x, y: yb - 8 * s, rx: 18 * s + 4, ry: 14 * s + 6, obj: c, pri: 1 });
+}
+
 /* ---- rocks and buoys (estimated stops) ---------------------------------------------------------------------------------- */
 function rockTop(L, x) { const yb = bedAt(x); return L.minor ? yb - Math.max(8, (yb - SURF) * (.12 + .3 * L.rel)) : SURF + 14 + (1 - L.rel) * .55 * Math.max(10, yb - SURF - 14); }
 function drawRock(L, sel) {
@@ -842,8 +935,11 @@ function sound(q) {
   const walls = up ? S(G.ask, P, q) : S(G.bid, q, P);
   const st = up ? S(G.stB, P, q) : S(G.stS, q, P), stAll = up ? S(G.stB, P, P * 1.15) : S(G.stS, P * .85, P);
   const liq = up ? S(G.lqS, P, q) : S(G.lqL, q, P);
-  const here = book(q - B / 2, q + B / 2), e = depth(here / B / G.ref);
-  return { up, walls, stShare: stAll ? st / stAll : 0, liq, here, e };
+  const here = book(q - B / 2, q + B / 2), e = depth(here / B / G.ref), lzOk = LZ.of >= 2;
+  let loose = 0;
+  if (lzOk) { const a = up ? G.ask : G.bid, lo = Math.min(P, q), hi = Math.max(P, q), HB = LZ.HB;
+    for (let k = Math.floor(lo / HB) * HB; k < hi; k += HB) if (isLoose(k + HB / 2)) loose += S(a, Math.max(k, lo), Math.min(k + HB, hi)); }
+  return { up, walls, stShare: stAll ? st / stAll : 0, liq, here, e, loose, lzOk, hereLoose: isLoose(q) };
 }
 function drawSounding() {
   if (!SEL) return;
@@ -890,7 +986,7 @@ function drawLabels() {
     if (!shown(L)) continue;
     if (L.k === 'liq') { const { ry } = poolGeo(L); tag(x, SURF - 7 - ry * 2, `Kolk · ${L.v}`, phone ? fmtP(L.p) : `${nameOf(L.k, L.above)} · ${fmtP(L.p)}`, col, -1, L, sel); }
     else if (L.k === 'stop') tag(x, L.ay ?? SURF + 20, `Rots · ${nameOf(L.k, L.above).toLowerCase()}`, `${L.v} · ${fmtP(L.p)}`, col, 1, L, sel);
-    else tag(x, bedAt(x) + 4, `Zandbank · ${L.v}`, phone ? fmtP(L.p) : `${nameOf(L.k, L.above).toLowerCase()} · ${fmtP(L.p)}${L.ps ? ` · ${L.ps[0]}/${L.ps[1]} u` : ''}`, col, 1, L, sel);
+    else tag(x, bedAt(x) + 4, `${wallLoose(L) ? 'Drijfzand' : 'Zandbank'} · ${L.v}`, phone ? fmtP(L.p) : `${nameOf(L.k, L.above).toLowerCase()} · ${fmtP(L.p)}${L.ps ? ` · ${L.ps[0]}/${L.ps[1]} u` : ''}`, col, 1, L, sel);
   }
 }
 function drawAxis() {
@@ -908,6 +1004,9 @@ function weather() {
   rows.push(['STROMING', tk.seen ? `${Math.round(tk.buy * 100)}% koopdruk · ${Math.round(tk.sell * 100)}% verkoop` : '–', tk.seen ? (tk.buy >= .5 ? CSS.up : CSS.dn) : CSS.dim, tk.seen ? `${Math.round(tk.buy * 100)}% koop` : '']);
   rows.push(['GOLVEN', RANGE24 ? `24-uursbereik ${fx(RANGE24 / P * 100, 1)}%` : '–', CSS.txt, RANGE24 ? `golf ${fx(RANGE24 / P * 100, 1)}%` : '']);
   const r5 = RECENT.filter(q => Date.now() - q.t < 300e3).reduce((s, q) => s + q.usd, 0);
+  const w24 = WRECKS.filter(w => Date.now() - w.t < DAY), wu = w24.reduce((s, w) => s + w.usd, 0), meas = w24.filter(w => w.hit != null), hits = meas.filter(w => w.hit).length;
+  const raak = meas.length >= 5 ? Math.round(hits / meas.length * 100) : null;
+  rows.push(['WRAKKEN', w24.length ? `${w24.length} · ${fmtUsd(wu)} in 24 u${raak != null ? ` · ${raak}% bij een kolk` : ''}` : '–', w24.length ? CSS.liq : CSS.dim, raak != null ? `kolk ${raak}% raak` : w24.length ? `${w24.length} wrakken` : '']);
   rows.push(['STORM', r5 ? `${fmtUsd(r5)} echte liq. · 5 min` : 'kalm · geen echte liq. in 5 min', r5 ? CSS.liq : CSS.dim, r5 ? `storm ${fmtUsd(r5)}` : '']);
   return rows;
 }
@@ -955,7 +1054,7 @@ function draw(dt) {
   if (LAYERS.liq) { for (const L of MINOR) if (L.k === 'liq') drawPoolTop(L, false); for (const L of LV) if (L.k === 'liq') drawPoolTop(L, L.key === selKey); }
   drawWater(); computeBed();
   if (LAYERS.liq) { for (const L of MINOR) if (L.k === 'liq') drawFunnel(L); for (const L of LV) if (L.k === 'liq') drawFunnel(L); }
-  drawBed(); drawPlants();
+  drawBed(); drawPlants(); drawWrecks();
   if (LAYERS.stop) { for (const L of MINOR) if (L.k === 'stop') drawRock(L, false); for (const L of LV) if (L.k === 'stop') drawRock(L, L.key === selKey); }
   drawLife(dt); drawSounding(); drawFoam(); drawWake();
   if (LAYERS.stop) for (const L of LV) if (L.k === 'stop') drawBuoy(L, L.key === selKey);
@@ -983,7 +1082,7 @@ function onLevels() {
   let hi = -Infinity, lo = Infinity; for (let k = Math.max(0, n - 24); k < n; k++) { hi = Math.max(hi, cs[k][2]); lo = Math.min(lo, cs[k][3]); } RANGE24 = hi - lo;
   if (!V.r) { V.c = D.price; V.r = defR() * 1.7; V.anim = { c0: V.c, r0: V.r, r1: defR(), t0: T, d: 1.6 }; }
   // a selected level keeps its selection across a refresh, by key, else the sounding stays at its price
-  if (SEL?.obj && !SEL.obj.boat && !SEL.obj.port) SEL.obj = LV.find(L => L.key === SEL.obj.key) || null;
+  if (SEL?.obj && !SEL.obj.boat && !SEL.obj.port && !SEL.obj.wreck) SEL.obj = LV.find(L => L.key === SEL.obj.key) || null;
   msg(''); if (SEL && $('card').dataset.kind === 'sel') renderCard();
 }
 function onPrice(prev, p) {
@@ -1004,6 +1103,7 @@ function cross(L, rising) {
 const liqBurst = { long: null, short: null };
 function realLiq(ex, long, p, usd) {
   if (!(usd > 0) || !(p > 0) || !D) return;
+  addWreck(ex, long, p, usd, Date.now(), true);
   const k = long ? 'long' : 'short', b = liqBurst[k] || (liqBurst[k] = { usd: 0, pw: 0, ex: new Set(), at: Date.now() });
   b.usd += usd; b.pw += p * usd; b.ex.add(ex);
   if (!b.timer) b.timer = setTimeout(() => { liqBurst[k] = null; showRealLiq(long, b.pw / b.usd, b.usd, [...b.ex], b.at); }, 1500);
@@ -1044,8 +1144,9 @@ function objBlock(o) {
   const P = B0.p;
   if (o.port) return `<div class="obj" style="border-color:${o.up ? CSS.up : CSS.dn}"><b>Vuurtoren · doel ${o.up ? 'boven' : 'onder'}</b>
     <span>${o.prob != null ? `${o.prob}% kans dat dit doel eerst valt, binnen ${HORIZON} dagen` : 'geen kans berekend'}</span></div>`;
-  const col = CSS[colOf(o)], what = { ask: 'Zandbank · verkoopmuur', bid: 'Zandbank · koopmuur', stop: `Rots · ${nameOf('stop', o.above).toLowerCase()}`, liq: `Kolk · ${o.above ? 'short-liquidaties' : 'long-liquidaties'}` }[o.k];
-  const extra = isWall(o) ? (o.ps ? `aanwezig in ${o.ps[0]} van de laatste ${o.ps[1]} uur` : 'orders die op de prijs wachten') :
+  const sand = wallLoose(o) ? 'Drijfzand' : 'Zandbank', col = CSS[colOf(o)], what = { ask: sand + ' · verkoopmuur', bid: sand + ' · koopmuur', stop: `Rots · ${nameOf('stop', o.above).toLowerCase()}`, liq: `Kolk · ${o.above ? 'short-liquidaties' : 'long-liquidaties'}` }[o.k];
+  const extra = isWall(o) ? (wallLoose(o) ? `pas in ${o.ps[0]} van de laatste ${o.ps[1]} uur aanwezig: deze muur kan nep zijn (spoofing) of snel weer verdwijnen`
+    : o.ps ? `aanwezig in ${o.ps[0]} van de laatste ${o.ps[1]} uur` : 'orders die op de prijs wachten') :
     o.k === 'stop' ? 'geschat: net voorbij een top of bodem die nog niet is doorbroken' : `geschat: posities die bij deze prijs gedwongen worden ${o.above ? 'gekocht' : 'verkocht'}`;
   return `<div class="obj" style="border-color:${col}"><b>${what} · ${o.v}</b><span>${extra}</span></div>`;
 }
@@ -1062,20 +1163,33 @@ function renderCard() {
       <p class="note">De boeg wijst waar de prijs het laatst heen ging; het schuimspoor is de laatste 18 seconden. Tik op de zee om te peilen wat er tussen de boot en een prijs ligt.</p>`;
     return;
   }
+  if (o?.wreck) {
+    const n = o.ws.length, rng = o.hi - o.lo < 1 ? fmtP(o.lo) : `${fmtP(o.lo)} – ${fmtP(o.hi)}`;
+    c.innerHTML = `<button class="x" type="button" aria-label="Sluiten">×</button><div class="k">${n === 1 ? 'Wrak' : 'Wrakken'} · echte liquidaties</div>
+      <div class="big" style="color:${CSS.liq}">${fmtUsd(o.usd)} <span style="color:${CSS.dim}">${n}× · ${pct(o.p, P)}</span></div>
+      <dl><dt>Prijs</dt><dd>${rng}</dd><dt>Longs</dt><dd style="color:${CSS.dn}">${fmtUsd(o.long)}</dd><dt>Shorts</dt><dd style="color:${CSS.up}">${fmtUsd(o.short)}</dd>
+        <dt>Beurzen</dt><dd>${[...o.ex].join(', ')}</dd><dt>Nieuwste</dt><dd>${agoTxt(o.t)} geleden</dd>
+        <dt>Bij een kolk</dt><dd>${o.meas ? `${o.hits} van ${o.meas}` : '–'}<i>${o.meas ? 'live gemeten' : 'niet live gezien'}</i></dd></dl>
+      <p class="note">Echte liquidaties van de laatste 24 uur, op de prijs waar ze gebeurden. Een rode vlag: vooral longs, een groene: vooral shorts.</p>
+      <p class="fine">"Bij een kolk" telt alleen wat deze pagina live zag: of er op dat moment een geschatte kolk binnen $${fmtP(Math.max(D.B, D.price * .001))} lag. Wrakken van voor het openen komen uit de geschiedenis van OKX; Binance en Bybit alleen zolang de pagina open was, onthouden in deze browser.</p>`;
+    return;
+  }
   const q = SEL.p, s = sound(q), up = s.up, col = up ? CSS.up : CSS.dn;
-  const word = s.e > .66 ? 'ondiep · een muur' : s.e > .33 ? 'middeldiep' : 'diep · vrij water';
-  const tot = s.liq + s.walls, ls = tot ? s.liq / tot * 100 : 0, ratio = s.walls ? s.liq / s.walls : null;
+  const word = (s.e > .66 ? 'ondiep · een muur' : s.e > .33 ? 'middeldiep' : 'diep · vrij water') + (s.hereLoose && s.e > .2 ? ' · drijfzand' : '');
+  const tot = s.liq + s.walls, ls = tot ? s.liq / tot * 100 : 0, lw = tot ? Math.min(s.loose, s.walls) / tot * 100 : 0, ratio = s.walls ? s.liq / s.walls : null;
+  const lshare = s.walls ? s.loose / s.walls : 0;
   const note = !tot ? 'Tussen de boot en hier ligt niets: vrij water.' : ratio == null || ratio >= 1.5 ? 'Meer brandstof dan rem: de liquidaties onderweg kunnen een beweging hierheen versnellen.'
     : ratio <= .5 ? 'Meer rem dan brandstof: de muren onderweg houden een beweging hierheen eerder tegen.' : 'Brandstof en rem houden elkaar ongeveer in evenwicht.';
   c.innerHTML = `<button class="x" type="button" aria-label="Sluiten">×</button><div class="k">Peiling</div>
     <div class="big">${fmtP(q)} <span style="color:${col}">${pct(q, P)}</span></div>
     ${o ? objBlock(o) : ''}
     <dl><dt>Diepte hier</dt><dd>${word}</dd><dt>Orders hier</dt><dd>${fmtUsd(s.here)}<i>per $${D.B}</i></dd>
-      <dt>Muren tot hier</dt><dd>${fmtUsd(s.walls)}<i>remt</i></dd><dt>Liquidaties tot hier</dt><dd>${fmtUsd(s.liq)}<i>duwt</i></dd>
+      <dt>Muren tot hier</dt><dd>${fmtUsd(s.walls)}<i>remt</i></dd>
+      <dt>waarvan drijfzand</dt><dd>${s.lzOk ? `${fmtUsd(s.loose)}<i>${Math.round(lshare * 100)}%</i>` : '–<i>nog geen uurgeschiedenis</i>'}</dd><dt>Liquidaties tot hier</dt><dd>${fmtUsd(s.liq)}<i>duwt</i></dd>
       <dt>Stops tot hier</dt><dd>${Math.round(s.stShare * 100)}%<i>van de ${up ? 'koopstops erboven' : 'verkoopstops eronder'}</i></dd></dl>
-    <div class="bar" role="img" aria-label="Liquidaties tegenover muren: ${Math.round(ls)}% tegen ${Math.round(100 - ls)}%"><span style="width:${ls}%;background:${CSS.liq}"></span><span style="width:${tot ? 100 - ls : 0}%;background:${col};opacity:.7"></span></div>
-    <div class="barl"><span>brandstof ${Math.round(ls)}%</span><span>rem ${tot ? Math.round(100 - ls) : 0}%</span></div>
-    <p class="note">${note}</p>
+    <div class="bar" role="img" aria-label="Liquidaties tegenover muren: ${Math.round(ls)}% tegen ${Math.round(100 - ls)}%"><span style="width:${ls}%;background:${CSS.liq}"></span><span style="width:${tot ? 100 - ls - lw : 0}%;background:${col};opacity:.7"></span><span style="width:${lw}%;background:repeating-linear-gradient(135deg,${col} 0 3px,transparent 3px 6px);opacity:.75"></span></div>
+    <div class="barl"><span>brandstof ${Math.round(ls)}%</span><span>rem ${tot ? Math.round(100 - ls) : 0}%${lw >= .5 ? `, waarvan drijfzand ${Math.round(lw)}%` : ''}</span></div>
+    <p class="note">${note}${s.lzOk && lshare > .4 ? ' Let op: een groot deel van die rem is drijfzand, muren die er pas kort staan.' : ''}</p>
     <p class="fine">Muren: de orderboeken van ${nBooks} beurzen, gewogen naar hun volume. Stops en liquidaties zijn schattingen, net als op de coinpagina. Geen advies.</p>`;
 }
 function renderLegend() {
@@ -1088,6 +1202,8 @@ function renderLegend() {
       ${li(CSS.stop, 'Rotsen en boeien', 'zijn geschatte stops. Een rode boei staat bij de verkoopstops onder de prijs, een groene bij de koopstops erboven. Hoe hoger de rots, hoe meer stops.')}
       ${li(CSS.liq, 'Draaikolken', 'zijn geschatte liquidaties. Ze trekken de prijs aan: als ze afgaan, duwen ze hem verder.')}
       ${li('#ffffff', 'Vuurtorens', 'zijn de twee doelen. De felste valt volgens het model eerst.')}
+      ${li('#f0e4b8', 'Drijfzand', 'is een zandbank die er pas kort ligt: een muur die in hoogstens een derde van de laatste 6 uur bestond. Bleek, glinsterend, met een lopende stippellijn. Zo\'n muur kan nep zijn of snel verdwijnen.')}
+      ${li('#8a6f55', 'Wrakken', 'zijn echte liquidaties van de laatste 24 uur, op de prijs waar ze gebeurden. Een verse zinkt eerst. "Bij een kolk" laat zien hoe vaak ze vielen waar het model een kolk verwachtte.')}
       ${li('#7fb0c4', 'Het weer', 'De wind is de funding, de stroming en de vissen volgen de koopdruk, de golven zijn het bereik van de dag. Echte liquidaties spatten op en maken storm.')}
     </ul>
     <p class="note">Tik of klik op de zee om te <b>peilen</b>: je ziet hoeveel muur (rem) en liquidatie (brandstof) tussen de boot en die prijs ligt. Slepen schuift, knijpen of scrollen zoomt, dubbeltikken of <b>⌖ Volg</b> brengt je terug naar de boot.</p>`;
@@ -1160,7 +1276,7 @@ cv.addEventListener('keydown', e => {
 
 /* ---- start ------------------------------------------------------------------------------------------------------------ */
 (async () => {
-  resize(); live.start(); liqFeeds(); loadFunding(); setInterval(loadFunding, 5 * 60e3);
+  resize(); live.start(); liqFeeds(); loadFunding(); backfillWrecks(); setInterval(loadFunding, 5 * 60e3);
   requestAnimationFrame(frame);
   site = await loadSite(); if (site) setData(site, 'site');
   if (await loadLive()) setInterval(loadLive, 15e3);
@@ -1169,7 +1285,7 @@ cv.addEventListener('keydown', e => {
   let seen = false; try { seen = localStorage.getItem('zee-seen') === '1'; localStorage.setItem('zee-seen', '1'); } catch (e) {}
   if (!seen && D) openCard('legend');
 })();
-window.ZEE = { get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, get V() { return V; }, realLiq, showRealLiq, onPrice, cross, live, sound, B0, tap, LAYERS };
+window.ZEE = { get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, get V() { return V; }, realLiq, showRealLiq, onPrice, WRECKS, X, bedAt, get LZ() { return LZ; }, wallLoose, cross, live, sound, B0, tap, LAYERS };
 })();
 </script>
 </body>

@@ -412,19 +412,19 @@ const thOf = u => u > 0 ? 0.12 + 0.78 * Math.min(1, u / MAXB) : 0;   // units ->
 const baseOf = (type, rel) => TY[type].u === 'pct' ? 0 : Math.max(1, Math.min(MAXB, Math.round(rel * MAXB)));
 
 // row spacing: a tall phone screen spreads the rows out so the well fills the height (cubes stay cubes)
-// the width: on a phone the bars are 10 long and the tiles stand in one column; on a wide screen the bars run longer and
-// the tiles stand in two bigger columns, so the well fills the width
+// the width: the tiles stand in two columns, half of the exchanges left of the prices and half right of the amounts;
+// on a phone the bars are 9 long, on a wide screen they run longer and the tiles are bigger, so the well fills the width
 const LAY = (() => {
-  const w = stage.clientWidth || 400, h = stage.clientHeight || 700, asp = w / h;
-  if (!(asp > 1.15 && w >= 700)) return { BW: 10, TC: 1, TSC: 1.1, W: 24.8 };
-  const TC = 2, TSC = 1.6, BW = Math.max(10, Math.min(28, (27 + 2.4) * asp / 1.03 * 0.95 - 6.9 - 4.3 - TC * 3.3 * TSC - 0.8));
-  return { BW, TC, TSC, W: 6.9 + BW + 4.3 + TC * 3.3 * TSC + 0.8 };
+  const w = stage.clientWidth || 400, h = stage.clientHeight || 700, asp = w / h, wide = asp > 1.15 && w >= 700;
+  const TC = 2, TSC = wide ? 1.6 : 1.15, LW = 3.3 * TSC + 0.4, side = LW + 6.9 + 4.3 + 3.3 * TSC + 0.8;
+  const BW = wide ? Math.max(10, Math.min(28, (27 + 2.4) * asp / 1.03 * 0.95 - side)) : 9;
+  return { BW, TC, TSC, LW, W: side + BW };
 })();
 const BW = LAY.BW, TL = BW + 4.25, WFIT = LAY.W;   // bar length, left edge of the tiles, width in view
-const CX = -6.9 + WFIT / 2, RW = 6.9 + BW + 4.3, RX = (BW - 2.6) / 2;   // view centre, row width and its centre
+const CX = -6.9 - LAY.LW + WFIT / 2, RW = 6.9 + BW + 4.3, RX = (BW - 2.6) / 2;   // view centre, row width and its centre
 const COMPACT = (stage.clientWidth || 400) < 560;   // phone: bigger labels without the distance column
 const RS = (() => { const w = stage.clientWidth || 400, h = stage.clientHeight || 700, tanH = Math.tan(17.5 * Math.PI / 180);
-  const visH = WFIT / (w / h) * 1.03 + 2.4 * tanH; return Math.max(1, Math.min(1.7, (visH * 0.94 - 2.4) / 27)); })();
+  const visH = WFIT / (w / h) * 1.03 + 2.4 * tanH; return Math.max(1, Math.min(1.85, (visH * 0.94 - 2.4) / 27)); })();
 
 /* ---------- three.js scene ---------- */
 const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
@@ -687,10 +687,10 @@ const EXN = { binance: ['Binance', '#f3ba2f'], okx: ['OKX', '#eef2f5'], bybit: [
 const EXKEY = { OKX: 'okx', Binance: 'binance', Bybit: 'bybit' };
 const SHORT = { hyperliquid: 'Hyper', cryptocom: 'Crypto', model: 'Schat.' };
 const REGS = {};
-// a column of tiles to the right of the bars, top to bottom along the well; the drawer opens towards the bars
+// a column of tiles on each side of the bars, top to bottom along the well; the drawer opens towards the bars
 const regBodyGeo = new THREE.BoxGeometry(3, 1.7, 0.6), regDrawGeo = new THREE.BoxGeometry(0.28, 1.2, 0.45), regEdgeGeo = new THREE.EdgesGeometry(regBodyGeo);
 let tileTop = 13.5 * RS - 0.9, tileStep = 27 * RS / (12 / LAY.TC - 1), tileSc = 1;
-const tileX = col => TL + 1.5 * tileSc + col * 3.3 * tileSc;
+const tileX = col => col ? TL + 1.5 * tileSc : -7.2 - 1.5 * tileSc;   // column 0 left of the prices, 1 right of the amounts
 function drawReg(R) {
   const fl = R.flash > 0 ? R.fTxt : '', st = R.on + '|' + R.tot + '|' + fl + '|' + (R.hist ? R.hist.length : 0);
   if (st === R.str) return; R.str = st;
@@ -720,12 +720,12 @@ Object.keys(EXN).forEach((k, i) => {
   g.add(new THREE.Mesh(regBodyGeo, new THREE.MeshBasicMaterial({ color: 0x0a0812 })));
   const edge = new THREE.LineSegments(regEdgeGeo, new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.4, blending: ADD })); g.add(edge);
   const scr = textPlane(512, 274, 2.8, 1.5); scr.m.material.opacity = 1; scr.m.position.set(0.08, 0, 0.31); g.add(scr.m);
-  const drawer = new THREE.Mesh(regDrawGeo, new THREE.MeshBasicMaterial({ map: blockTex, color: col.clone().multiplyScalar(0.5) })); drawer.position.set(-1.38, 0, 0); g.add(drawer);
-  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.9), new THREE.MeshBasicMaterial({ map: glowTex, color: col, transparent: true, opacity: 0, blending: ADD, depthWrite: false })); glow.position.set(-1.7, 0, 0.35); g.add(glow);
-  REGS[k] = { k, name, css, col, g, edge, scr, drawer, glow, open: 0, flash: 0, fTxt: '', fCss: css, tot: 0, on: false, str: '', seed: Math.random() * 9 };
+  const drawer = new THREE.Mesh(regDrawGeo, new THREE.MeshBasicMaterial({ map: blockTex, color: col.clone().multiplyScalar(0.5) })); drawer.position.set(tc ? -1.38 : 1.38, 0, 0); g.add(drawer);
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.9), new THREE.MeshBasicMaterial({ map: glowTex, color: col, transparent: true, opacity: 0, blending: ADD, depthWrite: false })); glow.position.set(tc ? -1.7 : 1.7, 0, 0.35); g.add(glow);
+  REGS[k] = { k, side: tc ? 1 : -1, name, css, col, g, edge, scr, drawer, glow, open: 0, flash: 0, fTxt: '', fCss: css, tot: 0, on: false, str: '', seed: Math.random() * 9 };
   drawReg(REGS[k]);
 });
-const regPos = k => { const R = REGS[k] || REGS.model, sc = R.g.scale.x; return new THREE.Vector3(R.g.position.x - (1.45 + R.open * 0.55) * sc, R.g.position.y, R.g.position.z + 0.2); };
+const regPos = k => { const R = REGS[k] || REGS.model, sc = R.g.scale.x; return new THREE.Vector3(R.g.position.x - R.side * (1.45 + R.open * 0.55) * sc, R.g.position.y, R.g.position.z + 0.2); };
 function regSend(k, txt, css) { const R = REGS[k]; if (!R) return; R.open = 1; R.flash = 1.3; R.fTxt = txt; R.fCss = css; const q = regPos(k); emit(q.x, q.y, q.z + 0.4, R.col, 6, 2.5, { vy: 1.5, life: 0.6, sx: 1.2 }); }
 const unitVal = (r, n) => r.t.u === 'usd' ? fmtUsd(r.val / Math.max(1, r.base) * n) : Math.round(r.val / Math.max(1, r.base) * n) + ' pnt';
 // which register a block of this level comes from (sign +) or goes back to: the books whose part grew or shrank most
@@ -782,18 +782,19 @@ function bolt(a, b, col, delay, dur, onHit, path) {
   const slot = boltPool.find(x => !x.busy); if (!slot) { if (onHit) onHit(); return; }
   slot.busy = true; bolts.push({ slot, a: a.clone(), b, col: col.clone(), t: -delay, dur, onHit, hit: false, flash: 0, path });
 }
-// the wire from a tube's right cap (s = 0) to an exchange tile (s = 1)
+// the wire from a tube's cap on the tile's side (s = 0) to an exchange tile (s = 1)
 function wirePt(r, k, s, out) {
-  const W0 = regPos(k), y = r.yd ?? r.y, iu = 1 - s, a0 = BW + 0.2, c1 = BW + 1.4, c2 = W0.x - 1.2;
+  const sd = (REGS[k] || REGS.model).side, W0 = regPos(k), y = r.yd ?? r.y, iu = 1 - s, a0 = sd > 0 ? BW + 0.2 : -0.2, c1 = a0 + sd * 1.2, c2 = W0.x - sd * 1.2;
   return out.set(iu ** 3 * a0 + 3 * iu * iu * s * c1 + 3 * iu * s * s * c2 + s ** 3 * W0.x,
     iu ** 3 * y + 3 * iu * iu * s * y + 3 * iu * s * s * W0.y + s ** 3 * W0.y, -0.25 + s * (W0.z + 0.25));
 }
-// a pulse's route: out of the tile, along the wire to the cap, then through the gas to x (u = 0..1, back reverses it)
+// a pulse's route: out of the tile, along the wire to the cap on its side, then through the gas to x (u = 0..1, back reverses it)
 function wireRoute(r, k, x, back) {
   return (u, out) => {
     if (back) u = 1 - u;
-    const W0 = regPos(k), y = r.yd ?? r.y, lA = Math.hypot(W0.x - BW, W0.y - y) * 1.2 + 0.5, lB = Math.max(0.1, BW + 0.1 - x), fA = lA / (lA + lB);
-    return u < fA ? wirePt(r, k, 1 - u / fA, out) : out.set(BW + 0.1 - (u - fA) / (1 - fA) * lB, y, 0.02);
+    const sd = (REGS[k] || REGS.model).side, cx = sd > 0 ? BW + 0.1 : -0.1, W0 = regPos(k), y = r.yd ?? r.y;
+    const lA = Math.hypot(W0.x - cx, W0.y - y) * 1.2 + 0.5, lB = Math.max(0.1, Math.abs(cx - x)), fA = lA / (lA + lB);
+    return u < fA ? wirePt(r, k, 1 - u / fA, out) : out.set(cx - sd * (u - fA) / (1 - fA) * lB, y, 0.02);
   };
 }
 const BP = new THREE.Vector3();
@@ -1704,7 +1705,7 @@ function render(rdt) {
 
   for (const k in REGS) { const R = REGS[k];
     R.open = Math.max(0, R.open - rdt * 1.4); R.flash = Math.max(0, R.flash - rdt);
-    R.drawer.position.x = -1.38 - R.open * 0.55; R.glow.material.opacity = R.open * 0.9;
+    R.drawer.position.x = -R.side * (1.38 + R.open * 0.55); R.glow.material.opacity = R.open * 0.9;
     const ky = Math.min(1, rdt * 4); R.g.position.y += (tileTop - R.g.userData.row * tileStep - R.g.position.y) * ky; R.g.position.x += (tileX(R.g.userData.col) - R.g.position.x) * ky;
     R.g.scale.setScalar(R.g.scale.x + (tileSc - R.g.scale.x) * ky);
     R.edge.material.opacity = selEx === k ? 0.8 + 0.2 * Math.sin(t * 6) : (R.on ? 0.3 : 0.12) + 0.6 * R.open + 0.06 * Math.sin(t * 2 + R.seed);

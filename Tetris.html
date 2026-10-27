@@ -69,35 +69,39 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
 .tip h4{margin:0 0 6px;font-family:var(--sans);font-size:13px;color:var(--tc)}
 .tip .r{display:flex;justify-content:space-between;gap:14px;color:var(--dim)}
 .tip .r b{color:var(--txt);font-weight:600}
-.note{position:absolute;left:max(12px,env(safe-area-inset-left,0px));bottom:8px;margin:0;font-family:var(--mono);font-size:10px;color:var(--faint);pointer-events:none}
+.note{position:absolute;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));bottom:8px;margin:0;font-family:var(--mono);font-size:10px;color:var(--faint);pointer-events:none}
 .ctl{padding-block:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-top:1px solid var(--line);background:var(--panel)}
-.ctl button{font:inherit;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--txt);background:#121a17;border:1px solid #2a3630;border-radius:20px;
-  padding:7px 14px;cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s}
-.ctl button:hover{border-color:#3d4d46}
-.ctl button:focus-visible{outline:2px solid var(--now);outline-offset:2px}
+.ctl button,.ctl a{font:inherit;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--txt);background:#121a17;border:1px solid #2a3630;border-radius:20px;
+  padding:7px 14px;cursor:pointer;text-decoration:none;transition:background .15s,border-color .15s,box-shadow .15s}
+.ctl button:hover,.ctl a:hover{border-color:#3d4d46}
+.ctl button:focus-visible,.ctl a:focus-visible{outline:2px solid var(--now);outline-offset:2px}
 .ctl button[aria-pressed="true"]{border-color:var(--stop);color:var(--stop);box-shadow:0 0 12px #ffc85744}
 #b-up{color:var(--up);border-color:#35ffb055}
 #b-dn{color:var(--dn);border-color:#ff4d6a55}
-#b-up:active{box-shadow:0 0 16px #35ffb088}
-#b-dn:active{box-shadow:0 0 16px #ff4d6a88}
 .ctl .sp{flex:1}
-.ctl .hint{font-family:var(--mono);font-size:10px;color:var(--faint)}
+.st{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;color:var(--dim);padding:6px 10px;border:1px solid var(--line);border-radius:20px;white-space:nowrap}
+.st i{width:7px;height:7px;border-radius:50%;background:var(--faint)}
+.st.live i{background:var(--up);box-shadow:0 0 8px var(--up);animation:blink 1.6s ease-in-out infinite}
+.st.site i{background:var(--stop)}
+.st.demo i{background:var(--liq)}
+@keyframes blink{50%{opacity:.35}}
 @media (max-width:520px){
   .stats{grid-template-columns:repeat(4,1fr);width:100%}
   .stats div{align-items:flex-start}
-  .ctl .hint{display:none}
   .feed{top:58px}
+  .ctl a{display:none}
 }
+@media (prefers-reduced-motion:reduce){.st.live i{animation:none}}
 </style>
 </head>
 <body>
 <div class="app">
   <header class="hud band">
-    <div class="tick"><span class="coin" aria-hidden="true"></span><span class="sym">BTC</span><b id="px">80.050</b><span id="chg">0,00%</span></div>
+    <div class="tick"><span class="coin" aria-hidden="true"></span><span class="sym">BTC</span><b id="px">—</b><span id="chg"></span></div>
     <div class="stats">
       <div><span>Geveegd</span><b id="s-clr">0</b></div>
       <div><span>Opgegeten</span><b id="s-eat">$0</b></div>
-      <div><span>Orders</span><b id="s-ord">0</b></div>
+      <div><span>Trades</span><b id="s-trd">0</b></div>
       <div><span>Combo</span><b id="s-cmb">×0</b></div>
     </div>
   </header>
@@ -107,15 +111,16 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
     <ul class="feed" id="feed" aria-live="polite"></ul>
     <div class="banner" id="banner" aria-hidden="true"></div>
     <div class="tip" id="tip" hidden></div>
-    <p class="note">Momentopname 13:21 · beweging gesimuleerd</p>
+    <p class="note" id="note">laden…</p>
   </main>
   <footer class="ctl band">
-    <button id="b-up" type="button">▲ Pomp</button>
-    <button id="b-dn" type="button">▼ Dump</button>
-    <button id="b-turbo" type="button" aria-pressed="false">Turbo</button>
+    <span class="st" id="st"><i></i><span id="st-t">laden…</span></span>
+    <button id="b-mode" type="button">Demo</button>
+    <button id="b-up" type="button" hidden>▲ Pomp</button>
+    <button id="b-dn" type="button" hidden>▼ Dump</button>
     <button id="b-pause" type="button" aria-pressed="false">Pauze</button>
     <span class="sp"></span>
-    <span class="hint">sleep om te draaien · tik op een rij</span>
+    <a href="./">GlassSphere</a>
   </footer>
 </div>
 
@@ -130,65 +135,229 @@ try {
     new Promise(r => setTimeout(r, 1800))]);
 } catch (e) {}
 
-// ---------- data: the level table from the screenshot (13:21) ----------
-const P0 = 80050;
+/* ---------- data: the same sources and estimates as index.html (BTC) ---------- */
+const A = { name: 'BTC', file: 'glasssphere-data.json', okx: 'BTC-USDT-SWAP', okxCt: 0.01, usdt: 'BTCUSDT', gate: 'BTC_USDT', gateMul: 1e-4, gateIv: '10',
+  htx: 'BTC-USDT', htxCt: 0.001, deribit: 'BTC-PERPETUAL', deribitUsd: true, bitmex: 'XBTUSD', cdc: 'BTCUSD-PERP', hl: 'BTC', hlSig: 3, dydx: 'BTC-USD',
+  bin: 10, auto: { 0.015: 50, 0.03: 100, 0.06: 250, 0.12: 500 }, dec: 0 };
+const digits = step => Math.max(0, -Math.floor(Math.log10(step))) + 3;
+const nice = x => { const m = 10 ** Math.floor(Math.log10(x));
+  return [1, 2, 2.5, 5, 10].map(c => c * m).reduce((a, b) => Math.abs(Math.log(x / b)) < Math.abs(Math.log(x / a)) ? b : a); };
+const LEV = [[5, .30], [10, .35], [25, .25], [50, .10]];
+const MAINT = 0.004, HALF_LIFE_H = 168, HZ_MIN = 0.3, READ_RANGE = 0.15;
+async function getJSON(url, opts = {}) {
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 9000);
+  try { const r = await fetch(url, { ...opts, signal: ctl.signal }); if (!r.ok) throw new Error(r.status); return await r.json(); }
+  finally { clearTimeout(t); }
+}
+const hlPost = body => getJSON('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+function binLevels(rows, side) {
+  const m = {}, B = A.bin;
+  for (const [p, usd] of rows) {
+    if (!(usd > 0)) continue;
+    const k = +((side === 'b' ? Math.floor(p / B + 1e-9) : Math.ceil(p / B - 1e-9)) * B).toFixed(digits(B));
+    m[k] = (m[k] || 0) + usd;
+  }
+  return Object.entries(m).map(([k, v]) => [+k, Math.round(v)]);
+}
+const BOOKS = {
+  okx: async () => { const b = (await getJSON(`https://www.okx.com/api/v5/market/books-full?instId=${A.okx}&sz=5000`)).data[0];
+    const f = r => [+r[0], +r[1] * A.okxCt * +r[0]]; return { b: b.bids.map(f), a: b.asks.map(f) }; },
+  binance: async () => { const j = await getJSON(`https://fapi.binance.com/fapi/v1/depth?symbol=${A.usdt}&limit=1000`);
+    const f = r => [+r[0], +r[1] * +r[0]]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
+  deribit: async () => { const j = (await getJSON(`https://www.deribit.com/api/v2/public/get_order_book?instrument_name=${A.deribit}&depth=10000`)).result;
+    const f = A.deribitUsd ? r => r : r => [r[0], r[1] * r[0]]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
+  gate: async () => { const j = await getJSON(`https://api.gateio.ws/api/v4/futures/usdt/order_book?contract=${A.gate}&limit=300&interval=${A.gateIv}`);
+    const f = r => [+r.p, r.s * A.gateMul * +r.p]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
+  hyperliquid: async () => { const j = await hlPost({ type: 'l2Book', coin: A.hl, nSigFigs: A.hlSig });
+    const f = r => [+r.px, +r.sz * +r.px]; return { b: j.levels[0].map(f), a: j.levels[1].map(f) }; },
+  bybit: async () => { const r = (await getJSON(`https://api.bybit.com/v5/market/orderbook?category=linear&symbol=${A.usdt}&limit=500`)).result;
+    const f = x => [+x[0], +x[1] * +x[0]]; return { b: r.b.map(f), a: r.a.map(f) }; },
+  bitget: async () => { const d = (await getJSON(`https://api.bitget.com/api/v2/mix/market/merge-depth?productType=usdt-futures&symbol=${A.usdt}&limit=max&precision=scale2`)).data;
+    const f = x => [+x[0], +x[1] * +x[0]]; return { b: d.bids.map(f), a: d.asks.map(f) }; },
+  htx: async () => { const t = (await getJSON(`https://api.hbdm.com/linear-swap-ex/market/depth?contract_code=${A.htx}&type=step0`)).tick;
+    const f = x => [x[0], x[1] * A.htxCt * x[0]]; return { b: t.bids.map(f), a: t.asks.map(f) }; },
+  bitmex: async () => { const j = await getJSON(`https://www.bitmex.com/api/v1/orderBook/L2?symbol=${A.bitmex}&depth=0`);
+    const f = x => [x.price, x.size]; return { b: j.filter(x => x.side === 'Buy').map(f), a: j.filter(x => x.side === 'Sell').map(f) }; },
+  cryptocom: async () => { const d = (await getJSON(`https://api.crypto.com/exchange/v1/public/get-book?instrument_name=${A.cdc}&depth=150`)).result.data[0];
+    const f = x => [+x[0], +x[1] * +x[0]]; return { b: d.bids.map(f), a: d.asks.map(f) }; },
+  dydx: async () => { const j = await getJSON(`https://indexer.dydx.trade/v4/orderbooks/perpetualMarket/${A.dydx}`);
+    const f = x => [+x.price, +x.size * +x.price]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
+};
+const MARKET = {
+  okx: async () => { const [o, t, f] = await Promise.all([getJSON(`https://www.okx.com/api/v5/public/open-interest?instType=SWAP&instId=${A.okx}`),
+      getJSON(`https://www.okx.com/api/v5/market/ticker?instId=${A.okx}`), getJSON(`https://www.okx.com/api/v5/public/funding-rate?instId=${A.okx}`)]);
+    return { oi: +o.data[0].oiUsd, vol: +t.data[0].volCcy24h * +t.data[0].last, fund: +f.data[0].fundingRate }; },
+  gate: async () => { const [t] = await getJSON(`https://api.gateio.ws/api/v4/futures/usdt/tickers?contract=${A.gate}`);
+    return { oi: +t.total_size * A.gateMul * +t.mark_price, vol: +t.volume_24h_quote, fund: +t.funding_rate }; },
+  bitget: async () => { const t = (await getJSON(`https://api.bitget.com/api/v2/mix/market/ticker?symbol=${A.usdt}&productType=usdt-futures`)).data[0];
+    return { oi: +t.holdingAmount * +t.lastPr, vol: +t.usdtVolume, fund: +t.fundingRate }; },
+  htx: async () => ({ vol: +(await getJSON(`https://api.hbdm.com/linear-swap-ex/market/detail/merged?contract_code=${A.htx}`)).tick.trade_turnover }),
+  deribit: async () => { const r = (await getJSON(`https://www.deribit.com/api/v2/public/get_book_summary_by_instrument?instrument_name=${A.deribit}`)).result[0];
+    return { oi: A.deribitUsd ? r.open_interest : r.open_interest * r.mark_price, vol: r.volume_usd, fund: r.funding_8h || 0 }; },
+  cryptocom: async () => { const t = (await getJSON(`https://api.crypto.com/exchange/v1/public/get-tickers?instrument_name=${A.cdc}`)).result.data[0];
+    return { oi: +t.oi * +t.a, vol: +t.vv }; },
+  hyperliquid: async () => { const [m, c] = await hlPost({ type: 'metaAndAssetCtxs' });
+    const x = c[m.universe.findIndex(u => u.name === A.hl)]; return { oi: +x.openInterest * +x.markPx, vol: +x.dayNtlVlm, fund: +x.funding * 8 }; },
+  dydx: async () => { const x = (await getJSON(`https://indexer.dydx.trade/v4/perpetualMarkets?ticker=${A.dydx}`)).markets[A.dydx];
+    return { oi: +x.openInterest * +x.oraclePrice, vol: +x.volume24H, fund: +x.nextFundingRate * 8 }; },
+  binance: async () => { const [o, t, f] = await Promise.all([getJSON(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${A.usdt}`),
+      getJSON(`https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=${A.usdt}`), getJSON(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${A.usdt}`)]);
+    return { oi: +o.openInterest * +f.markPrice, vol: +t.quoteVolume, fund: +f.lastFundingRate }; },
+  bybit: async () => { const t = (await getJSON(`https://api.bybit.com/v5/market/tickers?category=linear&symbol=${A.usdt}`)).result.list[0];
+    return { oi: +t.openInterestValue, vol: +t.turnover24h, fund: +t.fundingRate }; },
+  bitmex: async () => { const [x] = await getJSON(`https://www.bitmex.com/api/v1/instrument?symbol=${A.bitmex}`);
+    return { oi: x.openInterest, vol: x.foreignNotional24h || 0, fund: x.fundingRate }; },
+};
+async function fetchAll(table, wrap) {
+  const out = {};
+  await Promise.all(Object.entries(table).map(async ([k, fn]) => { try { out[k] = wrap(await fn(), k); } catch (e) {} }));
+  return out;
+}
+const fetchBooks = () => fetchAll(BOOKS, r => ({ b: binLevels(r.b, 'b'), a: binLevels(r.a, 'a') }));
+const fetchMarket = () => fetchAll(MARKET, r => r);
+async function fetchSeries() {
+  const base = 'https://www.okx.com/api/v5/market/', toC = r => [+r[0], +r[1], +r[2], +r[3], +r[4], +r[7]];
+  const rows = (await getJSON(base + `candles?instId=${A.okx}&bar=1H&limit=300`)).data;
+  try { rows.push(...(await getJSON(base + `history-candles?instId=${A.okx}&bar=1H&limit=100&after=${rows[rows.length - 1][0]}`)).data); } catch (e) {}
+  const candles = rows.map(toC).sort((a, b) => a[0] - b[0]).slice(-400);
+  const st = await getJSON(`https://api.gateio.ws/api/v4/futures/usdt/contract_stats?contract=${A.gate}&interval=1h&from=${candles[0][0] / 1000}&limit=1000`);
+  return { candles, oi: st.map(r => [r.time * 1000, Math.round(r.open_interest_usd)]), taker: st.map(r => [r.time * 1000, r.lsr_taker / (1 + r.lsr_taker)]) };
+}
+function estimateStops(candles, price, lo, hi) {
+  const out = [], n = candles.length, now = candles[n - 1][0];
+  const sufHi = new Float64Array(n + 1).fill(-Infinity), sufLo = new Float64Array(n + 1).fill(Infinity);
+  for (let i = n - 1; i >= 0; i--) { sufHi[i] = Math.max(sufHi[i + 1], candles[i][2]); sufLo[i] = Math.min(sufLo[i + 1], candles[i][3]); }
+  for (const [L, mult] of [[4, 1], [12, 2]]) {
+    for (let i = L; i < n - L; i++) {
+      const h = candles[i][2], l = candles[i][3];
+      let isH = true, isL = true;
+      for (let k = i - L; k <= i + L; k++) { if (k === i) continue; if (candles[k][2] >= h) isH = false; if (candles[k][3] <= l) isL = false; }
+      if (!isH && !isL) continue;
+      const rec = Math.pow(0.5, (now - candles[i][0]) / 3.6e6 / HALF_LIFE_H);
+      let vol = 0; for (let k = Math.max(0, i - 2); k <= Math.min(n - 1, i + 2); k++) vol += candles[k][5];
+      const w = vol * rec * mult;
+      if (isH && !(sufHi[i + 1] > h)) out.push({ p: h * 1.001, side: 'buy', w });
+      if (isL && !(sufLo[i + 1] < l)) out.push({ p: l * 0.999, side: 'sell', w });
+    }
+  }
+  const ws = out.map(o => o.w).sort((a, b) => a - b), med = ws.length ? ws[ws.length >> 1] : 1;
+  const rs = nice(price * 0.012);
+  for (let i = Math.ceil(lo / rs); i * rs <= hi; i++) {
+    const p = i * rs; out.push({ p: p > price ? p + rs * 0.05 : p - rs * 0.05, side: p > price ? 'buy' : 'sell', w: med * 0.25 });
+  }
+  return out.filter(o => (o.side === 'buy') === (o.p > price));
+}
+function estimateLiqs(candles, oi, taker) {
+  const oiAt = new Map(oi), tkAt = new Map(taker || []); let pos = [];
+  candles.forEach(([t, o, h, l, c]) => {
+    pos = pos.filter(q => q.side === 'long' ? l > q.p : h < q.p);
+    const a = oiAt.get(t), b = oiAt.get(t + 3.6e6), d = a != null && b != null ? b - a : null;
+    if (d != null && d < 0) { const r = b / a; pos.forEach(q => q.usd *= r); }
+    else if (d != null) {
+      let share = h > l ? (c - l) / (h - l) : 0.5;
+      const tk = tkAt.get(t); if (tk != null) share = 0.5 * share + 0.5 * tk;
+      const entry = (o + h + l + c) / 4;
+      for (const [L, w] of LEV) {
+        pos.push({ p: entry * (1 - 1 / L + MAINT), side: 'long', usd: d * share * w });
+        pos.push({ p: entry * (1 + 1 / L - MAINT), side: 'short', usd: d * (1 - share) * w });
+      }
+    }
+  });
+  return pos;
+}
+function volumeWeights(books, market, P) {
+  const depth = {};
+  for (const [ex, bk] of Object.entries(books)) {
+    let s = 0; for (const [p, v] of bk.b) if (p >= P * 0.99) s += v; for (const [p, v] of bk.a) if (p <= P * 1.01) s += v; depth[ex] = s;
+  }
+  const has = Object.keys(depth).filter(e => market[e]?.vol > 0);
+  const dT = has.reduce((s, e) => s + depth[e], 0), vT = has.reduce((s, e) => s + market[e].vol, 0);
+  const w = {};
+  for (const e of Object.keys(depth)) w[e] = has.includes(e) && dT && vT && depth[e] ? Math.min(1, (market[e].vol / vT) / (depth[e] / dT)) : 1;
+  return w;
+}
+function poolsOf(stops, liqs, P) {
+  const B = nice(P * 0.0012), lo = P * (1 - READ_RANGE), hi = P * (1 + READ_RANGE), bins = new Map();
+  const add = (p, kind, v) => { if (p < lo || p > hi) return; const k = Math.floor(p / B + 1e-9) * B;
+    const o = bins.get(k) || { stop: 0, liq: 0 }; o[kind] += v; bins.set(k, o); };
+  stops.forEach(s => add(s.p, 'stop', s.w)); liqs.forEach(q => add(q.p, 'liq', q.usd));
+  let mS = 1e-9, mL = 1e-9; for (const o of bins.values()) { if (o.stop > mS) mS = o.stop; if (o.liq > mL) mL = o.liq; }
+  return [...bins].map(([k, o]) => ({ p: k + B / 2, v: o.stop / mS + o.liq / mL }));
+}
+function targetsOf(cs, pools, P, days) {
+  const n = cs.length, ranges = [];
+  for (let e = n; e >= 24 && ranges.length < 14; e -= 24) { let h = -Infinity, l = Infinity;
+    for (let k = e - 24; k < e; k++) { if (cs[k][2] > h) h = cs[k][2]; if (cs[k][3] < l) l = cs[k][3]; } ranges.push(h - l); }
+  const range24 = ranges.reduce((s, x) => s + x, 0) / ranges.length, rH = range24 * Math.sqrt(days), minD = HZ_MIN * rH;
+  const best = arr => arr.length ? arr.reduce((x, y) => y.v > x.v ? y : x) : undefined;
+  const tUp = best(pools.filter(q => q.p - P > minD && q.p - P <= rH)), tDn = best(pools.filter(q => P - q.p > minD && P - q.p <= rH));
+  return { tUp, tDn, pUp: tUp && tDn ? (P - tDn.p) / (tUp.p - tDn.p) : null };
+}
+// the levels table of index.html: the 4 largest of each kind on each side, in the "Doelen" range with the automatic
+// bucket, all exchanges volume-weighted, plus the two targets of the 1-day reading
+function levelsOf(raw) {
+  const P = raw.price, market = raw.market || {}, weights = volumeWeights(raw.books, market, P);
+  const gateOi = raw.oi?.length ? raw.oi[raw.oi.length - 1][1] : 0, total = Object.values(market).reduce((s, m) => s + (m.oi || 0), 0);
+  const scale = gateOi && total > gateOi ? total / gateOi : 1;
+  const liqs = estimateLiqs(raw.candles, raw.oi || [], raw.taker).map(q => ({ ...q, usd: q.usd * scale }));
+  const stops = estimateStops(raw.candles, P, P * 0.85, P * 1.15);
+  const tg = targetsOf(raw.candles, poolsOf(stops, liqs, P), P, 1);
+  let first = null, prob = null;
+  if (tg.pUp != null) { const upF = tg.pUp >= 0.5; prob = upF ? tg.pUp : 1 - tg.pUp; first = upF ? tg.tUp : tg.tDn; }
+  const far = Math.max(tg.tUp ? tg.tUp.p / P - 1 : 0, tg.tDn ? 1 - tg.tDn.p / P : 0);
+  const rg = far ? Math.max(0.012, Math.min(0.25, far * 1.22)) : 0.03;
+  const ks = Object.keys(A.auto).map(Number), B = A.auto[ks.reduce((a, b) => Math.abs(Math.log(b / rg)) < Math.abs(Math.log(a / rg)) ? b : a)];
+  const lo = P * (1 - rg), hi = P * (1 + rg), i0 = Math.floor(lo / B), i1 = Math.ceil(hi / B), N = i1 - i0 + 1;
+  const bid = new Float64Array(N), ask = new Float64Array(N), stop = new Float64Array(N), liq = new Float64Array(N);
+  const idx = p => Math.floor(p / B + 1e-9) - i0;
+  for (const [ex, bk] of Object.entries(raw.books)) { const w = weights[ex] ?? 1;
+    for (const [side, arr] of [['b', bid], ['a', ask]]) for (const [p, v] of bk[side]) { const j = idx(p); if (j >= 0 && j < N) arr[j] += v * w; } }
+  for (const s of stops) { const j = idx(s.p); if (j >= 0 && j < N) stop[j] += s.w; }
+  for (const q of liqs) { const j = idx(q.p); if (j >= 0 && j < N) liq[j] += q.usd; }
+  const mx = a => { let m = 1e-9; for (const v of a) if (v > m) m = v; return m; };
+  const mBook = Math.max(mx(bid), mx(ask)), mStop = mx(stop), mLiq = mx(liq);
+  const top = (arr, above) => { const out = [];
+    for (let j = 0; j < N; j++) { const mid = (i0 + j + 0.5) * B; if ((mid > P) === above && arr[j] > 0) out.push([mid, arr[j]]); }
+    return out.sort((a, b) => b[1] - a[1]).slice(0, 4); };
+  const rows = [];
+  for (const [type, arr, above, m] of [['ask', ask, true, mBook], ['bid', bid, false, mBook], ['bstop', stop, true, mStop], ['sstop', stop, false, mStop], ['sliq', liq, true, mLiq], ['lliq', liq, false, mLiq]])
+    for (const [p, v] of top(arr, above)) rows.push({ type, price: p, val: type.endsWith('stop') ? Math.round(v / m * 100) : v, rel: v / m });
+  if (prob != null) for (const [q, up] of [[tg.tUp, true], [tg.tDn, false]]) {
+    if (!q || q.p < i0 * B || q.p > (i1 + 1) * B) continue;
+    rows.push({ type: up ? 'tup' : 'tdn', price: q.p, val: q === first ? prob : 1 - prob, first: q === first, rel: 1 });
+  }
+  const cs = raw.candles;
+  return { P, ts: raw.ts, rows, B, nBooks: Object.keys(raw.books).length, ref24: cs[Math.max(0, cs.length - 25)][4] };
+}
+
+/* ---------- kinds, formatting ---------- */
 const TY = {
-  ask:   { n: 'Verkoopmuur',  c: '#ff4d6a', u: 'usd',   max: 80,  up: true },
-  bid:   { n: 'Koopmuur',     c: '#35ffb0', u: 'usd',   max: 80,  up: false },
-  bstop: { n: 'Koopstops',    c: '#ffc857', u: 'score', max: 100, up: true },
-  sstop: { n: 'Verkoopstops', c: '#ffc857', u: 'score', max: 100, up: false },
-  sliq:  { n: 'Short-liq.',   c: '#b48cff', u: 'usd',   max: 175, up: true },
-  lliq:  { n: 'Long-liq.',    c: '#b48cff', u: 'usd',   max: 175, up: false },
-  tup:   { n: 'Doel ▲',       c: '#35ffb0', u: 'pct',   up: true },
-  tdn:   { n: 'Doel ▼',       c: '#ff4d6a', u: 'pct',   up: false },
+  ask:   { n: 'Verkoopmuur',  c: '#ff4d6a', u: 'usd',   up: true,  o: 0 },
+  bid:   { n: 'Koopmuur',     c: '#35ffb0', u: 'usd',   up: false, o: 1 },
+  bstop: { n: 'Koopstops',    c: '#ffc857', u: 'score', up: true,  o: 2 },
+  sstop: { n: 'Verkoopstops', c: '#ffc857', u: 'score', up: false, o: 3 },
+  sliq:  { n: 'Short-liq.',   c: '#b48cff', u: 'usd',   up: true,  o: 4 },
+  lliq:  { n: 'Long-liq.',    c: '#b48cff', u: 'usd',   up: false, o: 5 },
+  tup:   { n: 'Doel ▲',       c: '#35ffb0', u: 'pct',   up: true,  o: 6 },
+  tdn:   { n: 'Doel ▼',       c: '#ff4d6a', u: 'pct',   up: false, o: 7 },
 };
 for (const k in TY) TY[k].col = new THREE.Color(TY[k].c);
-const SRC = [
-  [81325, 'sliq', 20.3], [81175, 'sliq', 32.4], [81075, 'bstop', 26], [81075, 'sliq', 27.7], [81025, 'sliq', 36.0],
-  [80975, 'bstop', 19], [80950, 'tup', 52], [80925, 'bstop', 100], [80525, 'ask', 37.4], [80425, 'bstop', 10],
-  [80175, 'ask', 37.0], [80125, 'ask', 77.9], [80075, 'ask', 73.7],
-  null,
-  [80025, 'bid', 57.5], [79975, 'bid', 67.9], [79925, 'bid', 52.8], [79575, 'bid', 43.8], [79325, 'sstop', 27],
-  [79225, 'sstop', 48], [79075, 'sstop', 86], [79075, 'lliq', 80.9], [79050, 'tdn', 48], [79025, 'lliq', 54.6],
-  [78975, 'sstop', 7], [78975, 'lliq', 107.8], [78825, 'lliq', 173.6],
-];
 const MAXB = 10, CAP = 13;
+const fx = (x, d) => x.toFixed(d).replace('.', ',');
+const fmtP = p => p.toLocaleString('nl-NL', { minimumFractionDigits: A.dec, maximumFractionDigits: A.dec });
+const fmtPct = x => Math.abs(x) < 0.005 ? '0,00%' : (x > 0 ? '+' : '') + fx(x, 2) + '%';
+const fmtUsd = v => v >= 1e9 ? '$' + fx(v / 1e9, 2) + ' mld' : v >= 1e6 ? '$' + fx(v / 1e6, 1) + ' mln' : v >= 1e3 ? '$' + fx(v / 1e3, 0) + 'K' : '$' + fx(v, 0);
+const valStr = r => r.t.u === 'usd' ? fmtUsd(r.val) : r.t.u === 'score' ? 'score ' + Math.round(r.val) : (r.first ? 'eerst · ' : '') + Math.round(r.val * 100) + '%';
+const hhmmss = ts => new Date(ts).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const rnd = (a, b) => a + Math.random() * (b - a);
+const gauss = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
+const baseOf = (type, rel) => TY[type].u === 'pct' ? 0 : Math.max(1, Math.min(MAXB, Math.round(rel * MAXB)));
+
 // row spacing: a tall phone screen spreads the rows out so the well fills the height (cubes stay cubes)
 const RS = (() => { const w = stage.clientWidth || 400, h = stage.clientHeight || 700, tanH = Math.tan(17.5 * Math.PI / 180);
   const visH = 21.6 / (w / h) * 1.03 + 2.4 * tanH; return Math.max(1, Math.min(1.7, (visH * 0.9 - 2.4) / 27)); })();
-const rows = [];
-SRC.forEach((s, i) => {
-  if (!s) return;
-  const [price, type, val] = s, t = TY[type];
-  rows.push({ price, type, t, val, ri: 13 - i, y: (13 - i) * RS, base: t.u === 'pct' ? 0 : Math.max(1, Math.round(val / t.max * MAXB)),
-    blocks: [], cleared: false, clearedAt: -9, flare: 0, decayT: Math.random() * 2, hl: 0, endX: 0, lblStr: '', sizeStr: '' });
-});
 
-// ---------- formatting (nl) ----------
-const fmtP = p => Math.round(p).toLocaleString('nl-NL');
-const fmtPct = x => Math.abs(x) < 0.005 ? '0,00%' : (x > 0 ? '+' : '') + x.toFixed(2).replace('.', ',') + '%';
-const fmtUsd = m => m >= 1000 ? '$' + (m / 1000).toFixed(2).replace('.', ',') + ' mrd' : '$' + m.toFixed(1).replace('.', ',') + ' mln';
-const curVal = r => r.base ? r.val * r.blocks.length / r.base : r.val;
-const valStr = (r, v) => r.t.u === 'usd' ? fmtUsd(v) : 'score ' + Math.min(100, Math.round(v));
-const rnd = (a, b) => a + Math.random() * (b - a);
-const gauss = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
-
-// price -> y on the well (rows are table rows, not a linear price scale)
-const anc = (() => {
-  const m = new Map();
-  rows.forEach(r => { (m.get(r.price) || m.set(r.price, []).get(r.price)).push(r.y); });
-  m.set(P0, [0]);
-  return [...m].map(([p, ys]) => [p, ys.reduce((a, b) => a + b) / ys.length]).sort((a, b) => a[0] - b[0]);
-})();
-function yOf(p) {
-  const L = anc.length - 1;
-  if (p <= anc[0][0]) return anc[0][1] + (p - anc[0][0]) / 150;
-  if (p >= anc[L][0]) return anc[L][1] + (p - anc[L][0]) / 150;
-  for (let i = 0; i < L; i++) { const [p0, y0] = anc[i], [p1, y1] = anc[i + 1]; if (p <= p1) return y0 + (y1 - y0) * (p - p0) / (p1 - p0); }
-  return 0;
-}
-
-// ---------- three.js ----------
+/* ---------- three.js scene ---------- */
 const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setClearColor(0x060908, 1);
@@ -264,16 +433,16 @@ function emit(x, y, z, col, n, spd, o = {}) {
   }
 }
 
-// per-row objects: label plane, size label, halo, hit plane
+// text planes
 function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
 function textPlane(w, h, pw, ph) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const t = new THREE.CanvasTexture(c); t.anisotropy = 4;
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false }));
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, opacity: 0 }));
   return { c, g: c.getContext('2d'), t, m };
 }
-function drawLabel(r, price) {
-  const d = fmtPct((r.price / price - 1) * 100);
+function drawLabel(r) {
+  const d = fmtPct((r.price / p - 1) * 100);
   if (d === r.lblStr) return; r.lblStr = d;
   const { g, c, t } = r.lbl; g.clearRect(0, 0, c.width, c.height);
   g.textBaseline = 'middle';
@@ -287,29 +456,12 @@ function drawLabel(r, price) {
   t.needsUpdate = true;
 }
 function drawSize(r) {
-  const s = r.t.u === 'pct' ? (r.type === 'tup' ? 'eerst · ' : '') + r.val + '%' : r.cleared ? 'geveegd' : valStr(r, curVal(r));
+  const s = r.cleared && r.t.u !== 'pct' ? 'geveegd' : valStr(r);
   if (s === r.sizeStr) return; r.sizeStr = s;
   const { g, c, t } = r.sz; g.clearRect(0, 0, c.width, c.height);
   g.textBaseline = 'middle'; g.font = '700 38px "JetBrains Mono", monospace';
   g.shadowColor = r.t.c; g.shadowBlur = r.cleared ? 0 : 10; g.fillStyle = r.cleared ? '#5d6e67' : '#eef4f0'; g.fillText(s, 6, 41);
   t.needsUpdate = true;
-}
-const hitPlanes = [];
-for (const r of rows) {
-  r.lbl = textPlane(640, 80, 6.4, 0.8); r.lbl.m.position.set(-3.6, r.y, 0.05); scene.add(r.lbl.m);
-  r.sz = textPlane(360, 80, 3.6, 0.8); r.sz.m.position.set(2, r.y, 0.1); scene.add(r.sz.m);
-  r.halo = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: glowTex, color: r.t.col, transparent: true, opacity: 0.25, blending: ADD, depthWrite: false }));
-  r.halo.position.set(0, r.y, -0.6); scene.add(r.halo);
-  const hp = new THREE.Mesh(new THREE.PlaneGeometry(20.6, 0.98 * RS), new THREE.MeshBasicMaterial()); hp.visible = false; hp.position.set(3.4, r.y, 0.5); hp.userData.row = r; scene.add(hp); hitPlanes.push(hp);
-  if (r.t.u === 'pct') {
-    const tex = chevTex(r.type === 'tup');
-    const gm = new THREE.Mesh(new THREE.BoxGeometry(10, 0.56, 0.56), new THREE.MeshBasicMaterial({ map: tex, color: r.t.col, transparent: true, opacity: 0.7, blending: ADD, depthWrite: false }));
-    gm.position.set(5, r.y, 0); scene.add(gm);
-    const ge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(10, 0.8, 0.8)), new THREE.LineBasicMaterial({ color: r.t.col, transparent: true, opacity: 0.9, blending: ADD }));
-    ge.position.copy(gm.position); scene.add(ge);
-    r.gate = { m: gm, e: ge, tex }; r.endX = 10;
-  }
-  drawLabel(r, P0); drawSize(r);
 }
 
 // current-price slab (the app's own "HUIDIGE PRIJS" row, as a glass bar that moves)
@@ -320,20 +472,21 @@ const slabEdge = new THREE.LineSegments(new THREE.EdgesGeometry(slabBox.geometry
 slabEdge.position.x = 3.4; slab.add(slabEdge);
 const sweep = new THREE.Mesh(new THREE.PlaneGeometry(3, 1.1), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.6, blending: ADD, depthWrite: false }));
 sweep.position.z = 0.78; slab.add(sweep);
-const slabL = textPlane(1024, 96, 8.53, 0.8); slabL.m.position.set(-6.9 + 4.27, 0, 0.8); slab.add(slabL.m);
+const slabL = textPlane(1024, 96, 8.53, 0.8); slabL.m.material.opacity = 1; slabL.m.position.set(-6.9 + 4.27, 0, 0.8); slab.add(slabL.m);
 let slabStr = '';
-function drawSlab(p) {
-  const s = fmtP(p) + '|' + fmtPct((p / P0 - 1) * 100); if (s === slabStr) return; slabStr = s;
+function drawSlab() {
+  const d = ref24 ? fmtPct((p / ref24 - 1) * 100) + ' 24u' : fmtPct((p / P0 - 1) * 100);
+  const s = fmtP(p) + '|' + d; if (s === slabStr) return; slabStr = s;
   const { g, c, t } = slabL; g.clearRect(0, 0, c.width, c.height); g.textBaseline = 'middle';
   g.font = '800 64px "JetBrains Mono", monospace'; g.shadowColor = '#35ffb0'; g.shadowBlur = 18; g.fillStyle = '#7ff0d0'; g.fillText(fmtP(p), 6, 50);
-  g.shadowBlur = 0; g.font = '700 38px "JetBrains Mono", monospace'; g.fillStyle = '#eef4f0'; g.fillText(fmtPct((p / P0 - 1) * 100), 262, 50);
+  g.shadowBlur = 0; g.font = '700 30px "JetBrains Mono", monospace'; g.fillStyle = '#eef4f0'; g.fillText(d, 262, 50);
+  const lx = ref24 ? 500 : 442;
   g.font = '700 32px Inter, system-ui, sans-serif'; const tw = g.measureText('HUIDIGE PRIJS').width;
-  roundRect(g, 442, 14, tw + 70, 68, 34); g.fillStyle = 'rgba(127,240,208,.10)'; g.fill(); g.lineWidth = 3; g.strokeStyle = 'rgba(238,244,240,.8)'; g.stroke();
-  g.fillStyle = '#35ffb0'; g.beginPath(); g.arc(472, 49, 7, 0, 7); g.fill();
-  g.fillStyle = '#eef4f0'; g.fillText('HUIDIGE PRIJS', 492, 50);
+  roundRect(g, lx, 14, tw + 70, 68, 34); g.fillStyle = 'rgba(127,240,208,.10)'; g.fill(); g.lineWidth = 3; g.strokeStyle = 'rgba(238,244,240,.8)'; g.stroke();
+  g.fillStyle = '#35ffb0'; g.beginPath(); g.arc(lx + 30, 49, 7, 0, 7); g.fill();
+  g.fillStyle = '#eef4f0'; g.fillText('HUIDIGE PRIJS', lx + 50, 50);
   t.needsUpdate = true;
 }
-drawSlab(P0);
 
 // scan beam + row flashes + floating texts
 const beam = new THREE.Mesh(new THREE.PlaneGeometry(22, 0.7), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.22, blending: ADD, depthWrite: false }));
@@ -341,7 +494,7 @@ beam.position.set(3.4, 0, 0.6); scene.add(beam);
 const flashes = [...Array(8)].map(() => { const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: ADD, depthWrite: false })); m.position.z = 0.7; m.visible = false; m.userData.t = 0; scene.add(m); return m; });
 let flHead = 0;
 function flashRow(y, col) { const m = flashes[flHead = (flHead + 1) % flashes.length]; m.position.set(3.4, y, 0.7); m.material.color.copy(col).lerp(new THREE.Color(1, 1, 1), 0.6); m.userData.t = 0.45; m.visible = true; }
-const floats = [...Array(10)].map(() => { const c = document.createElement('canvas'); c.width = 320; c.height = 72; const t = new THREE.CanvasTexture(c);
+const floats = [...Array(12)].map(() => { const c = document.createElement('canvas'); c.width = 320; c.height = 72; const t = new THREE.CanvasTexture(c);
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, depthTest: false })); s.scale.set(3.2, 0.72, 1); s.visible = false; s.userData = { c, t, life: 0 }; scene.add(s); return s; });
 let ftHead = 0;
 function floatText(x, y, txt, css) {
@@ -351,113 +504,200 @@ function floatText(x, y, txt, css) {
   t.needsUpdate = true; s.position.set(x, y, 1.6); s.userData.life = 1.3; s.visible = true;
 }
 
-// ---------- blocks ----------
+/* ---------- blocks ---------- */
 let blocks = [];
-const WHITE = new THREE.Color(1, 1, 1);
+const WHITE = new THREE.Color(1, 1, 1), BUYC = new THREE.Color('#35ffb0'), SELLC = new THREE.Color('#ff4d6a');
 function newBlock(col) { const b = { col, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, rx: 0, ry: 0, rz: 0, wx: 0, wy: 0, wz: 0, s: 0.0001, flash: 0, state: 'idle', t: 0, delay: 0, life: 1, max: 1, row: null, dead: false }; blocks.push(b); return b; }
 function fillRow(r, n, delay) {
   for (let k = 0; k < n; k++) {
-    const b = newBlock(r.t.col); b.row = r; b.state = 'drop'; b.x = r.blocks.length + 0.5; b.y = r.y + 10 + k * 0.5 + Math.random() * 2; b.vy = 0; b.delay = delay + k * 0.05; b.s = 0.0001;
+    const b = newBlock(r.t.col); b.row = r; b.state = 'drop'; b.x = r.blocks.length + 0.5; b.y = r.yd + 10 + k * 0.5 + Math.random() * 2; b.vy = 0; b.delay = delay + k * 0.05; b.s = 0.0001;
     r.blocks.push(b);
   }
 }
 function launch(b, vx, vy, vz, life) { b.row = null; b.state = 'fly'; b.vx = vx; b.vy = vy; b.vz = vz; b.wx = rnd(-9, 9); b.wy = rnd(-9, 9); b.wz = rnd(-9, 9); b.life = b.max = life; }
 
-// ---------- game state ----------
-let T = 0, p = P0, pv = 0, anchorOff = 0, spikeUntil = 0, boost = 0, lastPx = P0;
-let speed = 1, paused = false, shake = 0;
-let nCleared = 0, eaten = 0, orders = 0, combo = 0, lastClearT = -99, pending = [], pendingT = 0;
-const tm = { piece: 1.2, small: 3.5, big: 16, flare: 4, eat: 1.5, dist: 0 };
-const pieces = [];
+/* ---------- rows (levels on screen) ---------- */
+let rows = [];
+const keyOf = lv => lv.type + '|' + lv.price;
+function makeRow(lv) {
+  const t = TY[lv.type];
+  const r = { key: keyOf(lv), type: lv.type, t, price: lv.price, val: lv.val, rel: lv.rel, first: !!lv.first, base: baseOf(lv.type, lv.rel),
+    y: 0, yd: null, blocks: [], cleared: false, clearedAt: -9, gone: false, goneT: 0, born: T, flare: 0, decayT: 0, hl: 0, endX: 0, lblStr: '', sizeStr: '' };
+  r.lbl = textPlane(640, 80, 6.4, 0.8); scene.add(r.lbl.m);
+  r.sz = textPlane(360, 80, 3.6, 0.8); scene.add(r.sz.m);
+  r.halo = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: glowTex, color: t.col, transparent: true, opacity: 0, blending: ADD, depthWrite: false }));
+  r.halo.position.z = -0.6; scene.add(r.halo);
+  r.hit = new THREE.Mesh(new THREE.PlaneGeometry(20.6, 0.98 * RS), new THREE.MeshBasicMaterial()); r.hit.visible = false; r.hit.userData.row = r; scene.add(r.hit);
+  if (t.u === 'pct') {
+    const tex = chevTex(lv.type === 'tup');
+    const gm = new THREE.Mesh(new THREE.BoxGeometry(10, 0.56, 0.56), new THREE.MeshBasicMaterial({ map: tex, color: t.col, transparent: true, opacity: 0, blending: ADD, depthWrite: false }));
+    gm.position.x = 5; scene.add(gm);
+    const ge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(10, 0.8, 0.8)), new THREE.LineBasicMaterial({ color: t.col, transparent: true, opacity: 0, blending: ADD }));
+    ge.position.x = 5; scene.add(ge);
+    r.gate = { m: gm, e: ge, tex }; r.endX = 10;
+  }
+  rows.push(r); drawLabel(r);
+  return r;
+}
+function disposeRow(r) {
+  const objs = [r.lbl.m, r.sz.m, r.halo, r.hit]; if (r.gate) objs.push(r.gate.m, r.gate.e);
+  for (const o of objs) { scene.remove(o); o.geometry.dispose(); if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+}
+function removeRow(r, quiet) {
+  if (r.gone) return;
+  r.gone = true; r.goneT = 0.9;
+  r.blocks.splice(0).forEach((b, k) => { b.row = null; b.state = 'dying'; b.t = -k * 0.03; });
+  if (!quiet && !r.cleared && r.rel >= 0.6 && r.t.u === 'usd')
+    feed(`<b>${r.t.n} ${fmtP(r.price)}</b> weggetrokken · ${fmtUsd(r.val)}`, r.t.c);
+  if (selRow === r) { selRow = null; tip.hidden = true; }
+}
+const liveRows = () => rows.filter(r => !r.gone);
+// slots: the levels above the price stack upwards from the price row, the ones below downwards, highest price on top
+function layout() {
+  const lv = liveRows(), ord = (a, b) => b.price - a.price || a.t.o - b.t.o;
+  const up = lv.filter(r => r.t.up).sort(ord), dn = lv.filter(r => !r.t.up).sort(ord);
+  up.forEach((r, i) => r.y = (up.length - i) * RS); dn.forEach((r, i) => r.y = -(i + 1) * RS);
+  for (const r of lv) if (r.yd == null) r.yd = r.y;
+}
+// price -> y on the well (rows are table rows, not a linear price scale)
+function yOf(price) {
+  const m = new Map();
+  for (const r of rows) if (!r.gone) (m.get(r.price) || m.set(r.price, []).get(r.price)).push(r.y);
+  m.set(refP, [0]);
+  const anc = [...m].map(([q, ys]) => [q, ys.reduce((a, b) => a + b) / ys.length]).sort((a, b) => a[0] - b[0]);
+  const L = anc.length - 1, step = (bucket || 50) * 2;
+  if (!L) return (price - refP) / step * RS;
+  if (price <= anc[0][0]) return anc[0][1] + (price - anc[0][0]) / step * RS;
+  if (price >= anc[L][0]) return anc[L][1] + (price - anc[L][0]) / step * RS;
+  for (let i = 0; i < L; i++) { const [p0, y0] = anc[i], [p1, y1] = anc[i + 1]; if (price <= p1) return y0 + (y1 - y0) * (price - p0) / (p1 - p0); }
+  return 0;
+}
+
+/* ---------- state ---------- */
+const P0 = 80050;
+let mode = 'live', T = 0, p = P0, pv = 0, refP = P0, ref24 = 0, bucket = 50, anchorOff = 0, spikeUntil = 0, boost = 0, lastPx = 0;
+let paused = false, shake = 0, firstApply = true, armed = false;   // armed: the levels are current, crossings count
+let nCleared = 0, eaten = 0, nTrades = 0, combo = 0, lastClearT = -99, pending = [], pendingT = 0;
+const tm = { piece: 1.2, small: 3.5, big: 16, flare: 4, dist: 0, demo: 0 };
+const pieces = [], trades = [];
 const SHAPES = { I: [[0, 0], [1, 0], [2, 0], [3, 0]], O: [[0, 0], [1, 0], [0, 1], [1, 1]], T: [[0, 0], [1, 0], [2, 0], [1, 1]], L: [[0, 0], [1, 0], [2, 0], [2, 1]],
-  J: [[0, 0], [1, 0], [2, 0], [0, 1]], S: [[0, 0], [1, 0], [1, 1], [2, 1]], Z: [[1, 0], [2, 0], [0, 1], [1, 1]] };
-const KEYS = Object.keys(SHAPES);
+  J: [[0, 0], [1, 0], [2, 0], [0, 1]], S: [[0, 0], [1, 0], [1, 1], [2, 1]], Z: [[1, 0], [2, 0], [0, 1], [1, 1]],
+  i3: [[0, 0], [1, 0], [2, 0]], l3: [[0, 0], [1, 0], [1, 1]], d2: [[0, 0], [1, 0]], v2: [[0, 0], [0, 1]], m1: [[0, 0]] };
+const BY_SIZE = { 1: ['m1'], 2: ['d2', 'v2'], 3: ['i3', 'l3'], 4: ['I', 'O', 'T', 'L', 'J', 'S', 'Z'] };
 let nextP = null;
 
-// intro: every bar drops in, bottom row first
-for (const r of rows) if (r.base) fillRow(r, r.base, 0.25 + (r.y + 13) * 0.07);
+// apply a fresh set of levels: known ones change size (their bar grows or shrinks block by block), new ones drop in,
+// gone ones dissolve; a level that was swept and is still listed on its side rebuilds
+function applyLevels(L) {
+  refP = L.P; ref24 = L.ref24 || 0; bucket = L.B || bucket;
+  if (mode === 'live' && !tick.fresh()) p = L.P;
+  const seen = new Set(), quiet = firstApply || !armed, now = mode === 'live' ? tick.fresh() : null;
+  for (const lv of L.rows) {
+    const k = keyOf(lv);
+    let r = rows.find(x => !x.gone && x.key === k);
+    if (!r && now && (TY[lv.type].up ? lv.price <= now : lv.price >= now)) continue;   // the price is already past it
+    seen.add(k);
+    if (!r) {
+      r = makeRow(lv); r.isNew = true;
+      if (!quiet && r.rel >= 0.6 && r.t.u !== 'pct') feed(`Nieuw: <b>${r.t.n} ${fmtP(r.price)}</b> · ${valStr(r)}`, r.t.c);
+      if (!quiet && r.t.u === 'pct') feed(`Nieuw <b>${r.t.n}</b> ${fmtP(r.price)} · ${valStr(r)}`, r.t.c);
+      continue;
+    }
+    const old = r.val;
+    r.val = lv.val; r.rel = lv.rel; r.first = !!lv.first; r.base = baseOf(lv.type, lv.rel);
+    if (r.t.u === 'usd' && !r.cleared && Math.abs(r.val - old) >= Math.max(3e6, old * 0.15)) r.delta = r.val - old;
+    if (r.cleared && (r.t.up ? p < r.price : p > r.price)) { r.cleared = false; r.isNew = true; }
+  }
+  for (const r of liveRows()) if (!seen.has(r.key)) removeRow(r, quiet);
+  layout();
+  for (const r of liveRows()) {
+    if (r.isNew) { r.isNew = false; r.born = T;
+      if (r.base) fillRow(r, r.base, firstApply ? 0.25 + (r.y / RS + 13) * 0.07 : rnd(0, 0.4));
+      else for (let x = 0; x < 10; x += 0.7) emit(x, r.y + 2, 0.3, r.t.col, 4, 2, { vy: -3 }); }
+    if (r.delta && !quiet) { floatText(r.endX + 2, r.y + 0.9, (r.delta > 0 ? '+' : '−') + fmtUsd(Math.abs(r.delta)), r.delta > 0 ? '#eef4f0' : '#8fa39a'); r.delta = 0; }
+  }
+  firstApply = false;
+  if (!nextP) makeNext();
+}
 
+function deficit(r) { return r.base - r.blocks.length - pieces.filter(q => q.row === r).reduce((s, q) => s + q.cells.length, 0); }
 function pickRow() {
-  const cand = rows.filter(r => r.base && !r.cleared && !r.flare && r.blocks.length + 4 <= CAP && !pieces.some(q => q.row === r));
+  const cand = liveRows().filter(r => r.base && !r.cleared && !pieces.some(q => q.row === r) && deficit(r) > 0);
   if (!cand.length) return null;
-  const w = cand.map(r => 1 + Math.max(0, r.base - r.blocks.length) * 2.5 + (Math.abs(r.y - yOf(p)) < 4 ? 1.5 : 0));
+  const w = cand.map(r => deficit(r) + (Math.abs(r.y - yOf(p)) < 4 * RS ? 1 : 0));
   let s = Math.random() * w.reduce((a, b) => a + b);
   for (let i = 0; i < cand.length; i++) if ((s -= w[i]) <= 0) return cand[i];
   return cand[0];
 }
-function makeNext() { const r = pickRow(); nextP = r ? { row: r, key: KEYS[Math.floor(Math.random() * KEYS.length)] } : null; drawNext(); }
+function makeNext() {
+  const r = pickRow();
+  if (!r) { nextP = null; drawNext(); return; }
+  const opts = BY_SIZE[Math.min(4, deficit(r))];
+  nextP = { row: r, key: opts[Math.floor(Math.random() * opts.length)] }; drawNext();
+}
 const mini = $('mini'); for (let i = 0; i < 8; i++) mini.appendChild(document.createElement('i'));
 function drawNext() {
   const cells = mini.children;
   for (const c of cells) c.className = '';
-  if (!nextP) { $('who').textContent = '—'; return; }
+  if (!nextP) { $('who').textContent = 'wacht op orders'; return; }
   mini.style.setProperty('--mc', nextP.row.t.c);
   for (const [dx, dy] of SHAPES[nextP.key]) cells[(1 - dy) * 4 + dx].className = 'on';
   $('who').textContent = nextP.row.t.n + ' ' + fmtP(nextP.row.price);
 }
 function spawn() {
-  if (!nextP) makeNext();
+  if (!nextP || nextP.row.gone || nextP.row.cleared || deficit(nextP.row) <= 0 || pieces.some(q => q.row === nextP.row)) makeNext();
   if (!nextP) return;
   const { row, key } = nextP;
-  if (row.cleared || row.blocks.length + 4 > CAP || pieces.some(q => q.row === row)) { makeNext(); return; }
-  const cells = SHAPES[key].map(c => c.slice());
+  const cells = SHAPES[key].slice(0, Math.max(1, deficit(row))).map(c => c.slice());
   const q = { row, cells, gy: 16, stepT: 0, blocks: [] };
   for (const [dx, dy] of cells) { const b = newBlock(row.t.col); b.state = 'piece'; b.x = row.blocks.length + dx + 0.5; b.y = q.gy * RS + dy + 4; b.z = 1.35; b.s = 0.9; q.blocks.push(b); }
-  pieces.push(q); makeNext();
+  pieces.push(q); nextP = null; makeNext();
 }
 function rotate(q) {
-  let c = q.cells.map(([x, y]) => [y, -x]); const mx = Math.min(...c.map(v => v[0])), my = Math.min(...c.map(v => v[1]));
+  const c = q.cells.map(([x, y]) => [y, -x]); const mx = Math.min(...c.map(v => v[0])), my = Math.min(...c.map(v => v[1]));
   q.cells = c.map(([x, y]) => [x - mx, y - my]);
 }
 function lock(q) {
   const r = q.row;
-  if (r.cleared || r.blocks.length + 4 > CAP) {
+  if (r.gone || r.cleared || r.blocks.length + q.blocks.length > CAP) {
     for (const b of q.blocks) { launch(b, rnd(-4, 4), rnd(2, 7), rnd(3, 8), 1.2); b.flash = 1; }
     return;
   }
   const ord = q.blocks.map((b, i) => [b, q.cells[i]]).sort((a, b) => a[1][1] - b[1][1] || a[1][0] - b[1][0]);
   for (const [b] of ord) { b.state = 'merge'; b.t = 0; b.sx = b.x; b.sy = b.y; b.sz = b.z; b.row = r; r.blocks.push(b); }
-  const ex = r.blocks.length - 2;
-  emit(ex, r.y, 0.6, r.t.col, 26, 4.5, { sx: 1.5 });
-  flashRow(r.y, r.t.col); shake = Math.max(shake, 0.07); orders++;
-  floatText(ex + 0.5, r.y + 1, '+' + valStr(r, r.val / r.base * 4), r.t.c);
+  emit(r.blocks.length - 2, r.yd, 0.6, r.t.col, 22, 4.5, { sx: 1.5 });
+  flashRow(r.yd, r.t.col); shake = Math.max(shake, 0.06);
 }
 
 function clearRow(r) {
   if (r.cleared) return;
-  const v = curVal(r);
   r.cleared = true; r.clearedAt = T;
   const dir = r.t.up ? 1 : -1;
-  const bl = r.blocks.splice(0);
-  bl.forEach((b, k) => { b.row = null; b.state = 'pop'; b.t = 0.07 + k * 0.018; b.flash = 1.6; b.dir = dir; });
-  flashRow(r.y, r.t.col);
-  for (let x = 0; x < 11; x += 1.2) emit(x, r.y, 0.4, r.t.col, 10, 7, { vz: 3, life: 1.1 });
-  if (r.gate) for (let x = 0; x < 10; x += 0.5) emit(x, r.y, 0.3, r.t.col, 8, 9, { vy: dir * 3, vz: 2, life: 1.4 });
+  r.blocks.splice(0).forEach((b, k) => { b.row = null; b.state = 'pop'; b.t = 0.07 + k * 0.018; b.flash = 1.6; b.dir = dir; });
+  flashRow(r.yd, r.t.col);
+  for (let x = 0; x < 11; x += 1.2) emit(x, r.yd, 0.4, r.t.col, 10, 7, { vz: 3, life: 1.1 });
+  if (r.gate) for (let x = 0; x < 10; x += 0.5) emit(x, r.yd, 0.3, r.t.col, 8, 9, { vy: dir * 3, vz: 2, life: 1.4 });
   shake = Math.max(shake, r.gate ? 0.55 : 0.28);
-  nCleared++; if (r.t.u === 'usd') eaten += v;
-  if (r.t.u === 'score') boost += dir * (15 + 40 * Math.min(100, v) / 100);
-  if (r.type === 'sliq' || r.type === 'lliq') boost += dir * 45;
-  boost = Math.max(-260, Math.min(260, boost));
-  pending.push({ r, v }); pendingT = 0.45;
+  nCleared++; if (r.t.u === 'usd') eaten += r.val;
+  if (mode === 'demo') {
+    if (r.t.u === 'score') boost += dir * (15 + 40 * Math.min(100, r.val) / 100);
+    if (r.type.endsWith('liq')) boost += dir * 45;
+    boost = Math.max(-260, Math.min(260, boost));
+  }
+  pending.push(r); pendingT = 0.45;
   if (r.t.u !== 'usd' || r.type.endsWith('liq')) {
-    const what = r.gate ? `<b>${r.t.n} geraakt</b> op ${fmtP(r.price)}` : r.t.u === 'score' ? `<b>${r.t.n} ${fmtP(r.price)}</b> geraakt · trekt de prijs verder ${r.t.up ? 'omhoog' : 'omlaag'}`
-      : `<b>${r.type === 'sliq' ? 'Short squeeze' : 'Long-flush'}</b> ${fmtP(r.price)} · ${fmtUsd(v)} gelikwideerd`;
+    const what = r.gate ? `<b>${r.t.n} geraakt</b> op ${fmtP(r.price)}` : r.t.u === 'score' ? `<b>${r.t.n} ${fmtP(r.price)}</b> geraakt`
+      : `<b>${r.type === 'sliq' ? 'Short squeeze' : 'Long-flush'}</b> ${fmtP(r.price)} · ${fmtUsd(r.val)} geschat`;
     feed(what, r.t.c);
   }
 }
-function rebuild(r) {
-  r.cleared = false;
-  if (r.base) fillRow(r, r.base, 0);
-  else for (let x = 0; x < 10; x += 0.7) emit(x, r.y + 2, 0.3, r.t.col, 4, 2, { vy: -3 });
-}
-
 function flushPending() {
   const n = pending.length; if (!n) return;
   combo = T - lastClearT < 4.5 ? combo + 1 : 1; lastClearT = T;
-  const gate = pending.find(x => x.r.gate);
-  const big = gate ? gate.r.t.n.toUpperCase() + ' GERAAKT' : n >= 4 ? 'TETRIS!' : ['', 'SINGLE', 'DOUBLE', 'TRIPLE'][n];
-  const first = (gate || pending[0]).r;
-  const sub = pending.slice(0, 2).map(x => x.r.gate ? `${x.r.t.n} ${fmtP(x.r.price)}` : `${x.r.t.n} ${fmtP(x.r.price)} · ${valStr(x.r, x.v)}`).join('  ·  ') + (n > 2 ? `  ·  +${n - 2} meer` : '');
+  const gate = pending.find(r => r.gate);
+  const big = gate ? gate.t.n.toUpperCase() + ' GERAAKT' : n >= 4 ? 'TETRIS!' : ['', 'SINGLE', 'DOUBLE', 'TRIPLE'][n];
+  const first = gate || pending[0];
+  const sub = pending.slice(0, 2).map(r => r.gate ? `${r.t.n} ${fmtP(r.price)}` : `${r.t.n} ${fmtP(r.price)} · ${valStr(r)}`).join('  ·  ') + (n > 2 ? `  ·  +${n - 2} meer` : '');
   banner(big, sub, combo > 1 ? 'COMBO ×' + combo : '', first.t.c, n === 1 && !gate);
   pending = [];
 }
@@ -475,6 +715,100 @@ function feed(html, col) {
   setTimeout(() => li.remove(), 6200);
 }
 
+/* ---------- live source: the levels every 15 s, the price and every trade from OKX's stream ---------- */
+const tick = (() => {
+  let ws = null, px = null, at = 0, ping = 0, poll = 0, retry = 0, retryT = 0, on = false;
+  function apply(v) { if (v > 0) { px = v; at = Date.now(); } }
+  const seenT = new Set(); let primed = false;
+  async function pollOnce() {
+    try { apply(+(await getJSON(`https://www.okx.com/api/v5/market/ticker?instId=${A.okx}`)).data[0].last); } catch (e) {}
+    try {   // the stream is down: the latest trades, each one once
+      const d = (await getJSON(`https://www.okx.com/api/v5/market/trades?instId=${A.okx}&limit=100`)).data.reverse();
+      for (const x of d) { if (seenT.has(x.tradeId)) continue; seenT.add(x.tradeId);
+        if (primed && mode === 'live') trades.push({ usd: +x.sz * A.okxCt * +x.px, buy: x.side === 'buy', px: +x.px }); }
+      primed = true; if (seenT.size > 600) [...seenT].slice(0, 300).forEach(k => seenT.delete(k));
+    } catch (e) {}
+  }
+  function open() {
+    if (!on || ws) return;
+    let me; try { me = ws = new WebSocket('wss://ws.okx.com:8443/ws/v5/public'); } catch (e) { ws = null; return; }
+    me.onopen = () => { retry = 0; clearInterval(poll); poll = 0;
+      me.send(JSON.stringify({ op: 'subscribe', args: [{ channel: 'tickers', instId: A.okx }, { channel: 'trades', instId: A.okx }] }));
+      ping = setInterval(() => me.readyState === 1 && me.send('ping'), 25e3); };
+    me.onmessage = e => { if (e.data === 'pong') return;
+      try { const m = JSON.parse(e.data); if (!m.data || m.arg?.instId !== A.okx) return;
+        if (m.arg.channel === 'tickers') apply(+m.data[0].last);
+        else if (m.arg.channel === 'trades') for (const x of m.data) { apply(+x.px); if (mode === 'live') trades.push({ usd: +x.sz * A.okxCt * +x.px, buy: x.side === 'buy', px: +x.px }); }
+      } catch (er) {} };
+    me.onclose = () => { clearInterval(ping); if (ws !== me) return; ws = null; if (!on) return;
+      if (!poll) poll = setInterval(pollOnce, 3000);
+      retryT = setTimeout(open, Math.min(30e3, 1000 * 2 ** retry++)); };
+    me.onerror = () => me.close();
+  }
+  function stop() { on = false; clearTimeout(retryT); clearInterval(poll); poll = 0; clearInterval(ping); const w = ws; ws = null; if (w) { w.onclose = null; try { w.close(); } catch (e) {} } }
+  function start() { stop(); on = true; pollOnce(); open(); }
+  return { start, stop, fresh: () => px && Date.now() - at < 10e3 ? px : null };
+})();
+let site = null, series = null, seriesAt = 0, market = null, liveTimer = 0, liveGen = 0;
+async function loadSite() {
+  if (!/^https?:$/.test(location.protocol)) return null;
+  try { const r = await fetch(A.file, { cache: 'no-store' }); return r.ok ? await r.json() : null; } catch (e) { return null; }
+}
+async function loadLive() {
+  const g = liveGen;
+  try {
+    if (!series || Date.now() - seriesAt > 5 * 60e3) {
+      const [se, mk] = await Promise.all([fetchSeries(), fetchMarket()]); if (g !== liveGen) return false;
+      series = se; seriesAt = Date.now(); market = { ...(site?.market || {}), ...mk };
+    }
+    const books = await fetchBooks(); if (g !== liveGen) return false;
+    if (!Object.keys(books).length) throw new Error('no books');
+    const raw = { ts: Date.now(), price: tick.fresh() || series.candles[series.candles.length - 1][4], books, ...series, market };
+    const L = levelsOf(raw); applyLevels(L); armed = true;
+    status('live', `live · ${L.nBooks} boeken · ${hhmmss(L.ts)}`, `Muren: ${L.nBooks} orderboeken · stops en liquidaties geschat`);
+    return true;
+  } catch (e) { return false; }
+}
+async function startLive() {
+  const g = ++liveGen; mode = 'live'; armed = false; setButtons();
+  tick.start();
+  status('', 'laden…', 'orderboeken ophalen…');
+  site = await loadSite(); if (g !== liveGen) return;
+  if (site) { applyLevels(levelsOf(site)); status('site', `uurdata · ${hhmmss(site.ts)}`, 'Data van het laatste uur · live data laden…'); }
+  if (await loadLive()) { if (g === liveGen) liveTimer = setInterval(loadLive, 15e3); return; }
+  if (g !== liveGen) return;
+  if (site) { liveTimer = setInterval(loadLive, 15e3); return; }
+  feed('<b>Geen live data</b> bereikbaar · demo gestart', TY.sliq.c);
+  startDemo();
+}
+function status(cls, txt, note) { $('st').className = 'st ' + cls; $('st-t').textContent = txt; $('note').textContent = note; }
+
+/* ---------- demo source: the table of 13:21, values that drift, a simulated price ---------- */
+const SNAP = [
+  [81325, 'sliq', 20.3e6], [81175, 'sliq', 32.4e6], [81075, 'bstop', 26], [81075, 'sliq', 27.7e6], [81025, 'sliq', 36.0e6],
+  [80975, 'bstop', 19], [80950, 'tup', 0.52], [80925, 'bstop', 100], [80525, 'ask', 37.4e6], [80425, 'bstop', 10],
+  [80175, 'ask', 37.0e6], [80125, 'ask', 77.9e6], [80075, 'ask', 73.7e6],
+  [80025, 'bid', 57.5e6], [79975, 'bid', 67.9e6], [79925, 'bid', 52.8e6], [79575, 'bid', 43.8e6], [79325, 'sstop', 27],
+  [79225, 'sstop', 48], [79075, 'sstop', 86], [79075, 'lliq', 80.9e6], [79050, 'tdn', 0.48], [79025, 'lliq', 54.6e6],
+  [78975, 'sstop', 7], [78975, 'lliq', 107.8e6], [78825, 'lliq', 173.6e6],
+].map(([price, type, val]) => ({ price, type, val, drift: 1 }));
+const DMAX = { usd: { ask: 80e6, bid: 80e6, sliq: 175e6, lliq: 175e6 }, score: 100 };
+function demoLevels() {
+  const rowsD = SNAP.map(s => {
+    if (TY[s.type].u !== 'pct') s.drift = Math.max(0.35, Math.min(1.6, s.drift * Math.exp(gauss() * 0.16) * (1 + (1 - s.drift) * 0.15)));
+    const val = TY[s.type].u === 'pct' ? s.val : s.val * s.drift;
+    const m = TY[s.type].u === 'usd' ? DMAX.usd[s.type] : 100;
+    return { type: s.type, price: s.price, val: TY[s.type].u === 'score' ? Math.min(100, Math.round(val)) : val, rel: TY[s.type].u === 'pct' ? 1 : Math.min(1, val / m), first: s.type === 'tup' };
+  });
+  return { P: P0, ts: Date.now(), rows: rowsD, B: 50, ref24: 0 };
+}
+function startDemo() {
+  liveGen++; clearInterval(liveTimer); tick.stop(); mode = 'demo'; setButtons();
+  for (const r of liveRows()) removeRow(r, true);
+  firstApply = true; armed = true; p = P0; pv = 0; boost = 0; anchorOff = 0; tm.demo = 4; ref24 = 0;
+  applyLevels(demoLevels());
+  status('demo', 'demo', 'Demo: de tabel van 13:21, beweging gesimuleerd');
+}
 function spike(dir, size) {
   if (size === 'small') { anchorOff = dir * rnd(45, 135); spikeUntil = T + rnd(1.3, 2.2); return; }
   const mega = size === 'mega';
@@ -483,10 +817,10 @@ function spike(dir, size) {
   feed(dir > 0 ? `<b>${mega ? 'Kooplawine' : 'Grote kooporder'}</b> veegt het boek omhoog ▲` : `<b>${mega ? 'Verkooplawine' : 'Grote verkooporder'}</b> drukt het boek omlaag ▼`, dir > 0 ? TY.bid.c : TY.ask.c);
 }
 
-// ---------- interaction ----------
+/* ---------- interaction ---------- */
 let dragYaw = 0, dragPitch = 0, down = null, selRow = null;
 const tip = $('tip'), ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
-stage.addEventListener('pointerdown', e => { if (e.target.closest('.tip')) return; down = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, id: e.pointerId }; stage.setPointerCapture(e.pointerId); });
+stage.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, id: e.pointerId }; stage.setPointerCapture(e.pointerId); });
 stage.addEventListener('pointermove', e => {
   if (!down || e.pointerId !== down.id) return;
   dragYaw -= (e.clientX - down.x) * 0.005; dragPitch += (e.clientY - down.y) * 0.003;
@@ -500,15 +834,14 @@ stage.addEventListener('pointerup', e => {
   const rc = stage.getBoundingClientRect();
   ndc.set((e.clientX - rc.left) / rc.width * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
   ray.setFromCamera(ndc, cam);
-  const hit = ray.intersectObjects(hitPlanes)[0];
+  const hit = ray.intersectObjects(liveRows().map(r => r.hit))[0];
   if (!hit || hit.object.userData.row === selRow) { selRow = null; tip.hidden = true; return; }
   selRow = hit.object.userData.row; showTip(selRow, e.clientX - rc.left, e.clientY - rc.top);
 });
 stage.addEventListener('pointercancel', () => { down = null; });
 function showTip(r, x, y) {
-  const rows_ = [['Prijs', fmtP(r.price)], ['Afstand', fmtPct((r.price / p - 1) * 100)],
-    ['Grootte', r.t.u === 'pct' ? (r.type === 'tup' ? 'eerst · ' : '') + r.val + '%' : r.cleared ? 'geveegd' : valStr(r, curVal(r))],
-    ['Blokken', r.base ? r.blocks.length + ' / basis ' + r.base : '—']];
+  const rows_ = [['Prijs', fmtP(r.price)], ['Afstand', fmtPct((r.price / p - 1) * 100)], ['Grootte', r.cleared && r.t.u !== 'pct' ? 'geveegd' : valStr(r)],
+    ['Blokken', r.base ? r.blocks.length + ' / ' + r.base : '—']];
   tip.style.setProperty('--tc', r.t.c);
   tip.innerHTML = `<h4></h4>` + rows_.map(() => `<div class="r"><span></span><b></b></div>`).join('');
   tip.querySelector('h4').textContent = r.t.n;
@@ -518,12 +851,18 @@ function showTip(r, x, y) {
   tip.style.left = Math.max(8, Math.min(w - tw - 8, x - tw / 2)) + 'px';
   tip.style.top = (y - th - 14 > 8 ? y - th - 14 : Math.min(h - th - 8, y + 18)) + 'px';
 }
+function setButtons() { $('b-mode').textContent = mode === 'live' ? 'Demo' : 'Live'; $('b-up').hidden = $('b-dn').hidden = mode !== 'demo'; }
+$('b-mode').onclick = () => { if (mode === 'live') startDemo(); else { for (const r of liveRows()) removeRow(r, true); firstApply = true; startLive(); } };
 $('b-up').onclick = () => spike(1, Math.random() < 0.4 ? 'mega' : 'big');
 $('b-dn').onclick = () => spike(-1, Math.random() < 0.4 ? 'mega' : 'big');
-$('b-turbo').onclick = e => { speed = speed === 1 ? 1.9 : 1; e.currentTarget.setAttribute('aria-pressed', speed > 1); };
 $('b-pause').onclick = e => { paused = !paused; e.currentTarget.setAttribute('aria-pressed', paused); e.currentTarget.textContent = paused ? 'Verder' : 'Pauze'; };
+document.addEventListener('visibilitychange', () => {
+  if (mode !== 'live') return;
+  if (document.visibilityState === 'hidden') { tick.stop(); clearInterval(liveTimer); liveTimer = 0; }
+  else { tick.start(); loadLive(); clearInterval(liveTimer); liveTimer = setInterval(loadLive, 15e3); }
+});
 
-// ---------- camera fit ----------
+/* ---------- camera fit ---------- */
 let dist = 60;
 const camT = new THREE.Vector3(3.4, 0, 0);
 function fit() {
@@ -536,77 +875,89 @@ function fit() {
 }
 new ResizeObserver(fit).observe(stage); fit();
 
-// ---------- loop ----------
+/* ---------- loop ---------- */
 const dummy = new THREE.Object3D(), tmpC = new THREE.Color();
 let last = performance.now(), clock = 0;
 function frame(now) {
   requestAnimationFrame(frame);
   const rdt = Math.min(0.05, (now - last) / 1000); last = now; clock += rdt;
-  const dt = paused ? 0 : rdt * speed;
+  const dt = paused ? 0 : rdt;
   if (!paused) update(dt);
-  render(rdt, dt);
+  render(rdt);
 }
 function update(dt) {
   T += dt;
-  // price: a noisy spring around the anchor; spikes and stop/liquidation boosts move the anchor
-  if (T > spikeUntil) anchorOff = 0;
-  boost *= Math.exp(-0.5 * dt);
-  const anchor = P0 + anchorOff + boost;
-  pv += ((anchor - p) * 3.2 - pv * 2.6) * dt + gauss() * 95 * Math.sqrt(dt);
-  p += pv * dt;
+  // price
+  if (mode === 'demo') {
+    if (T > spikeUntil) anchorOff = 0;
+    boost *= Math.exp(-0.5 * dt);
+    pv += ((P0 + anchorOff + boost - p) * 3.2 - pv * 2.6) * dt + gauss() * 95 * Math.sqrt(dt);
+    p += pv * dt;
+    if ((tm.small -= dt) <= 0) { tm.small = rnd(3.5, 7); if (T > spikeUntil) spike(Math.random() < 0.5 ? 1 : -1, 'small'); }
+    if ((tm.big -= dt) <= 0) { tm.big = rnd(26, 42); spike(Math.random() < 0.5 ? 1 : -1, Math.random() < 0.3 ? 'mega' : 'big'); }
+    if ((tm.demo -= dt) <= 0) { tm.demo = 4; applyLevels(demoLevels()); }
+    // simulated trades, leaning with the price's direction
+    let n = Math.random() < dt * 9 ? 1 + (Math.random() < 0.3) : 0;
+    while (n--) trades.push({ usd: Math.exp(Math.log(25e3) + gauss() * 1.4), buy: Math.random() < 0.5 + Math.max(-0.35, Math.min(0.35, pv / 300)), px: p });
+  } else {
+    const f = tick.fresh(); if (f) p += (f - p) * (1 - Math.exp(-dt * 10));
+  }
 
-  // timers
-  if ((tm.piece -= dt) <= 0) { tm.piece = rnd(0.55, 1.0); if (pieces.length < 3) spawn(); }
-  if ((tm.small -= dt) <= 0) { tm.small = rnd(3.5, 7); if (T > spikeUntil) spike(Math.random() < 0.5 ? 1 : -1, 'small'); }
-  if ((tm.big -= dt) <= 0) { tm.big = rnd(26, 42); spike(Math.random() < 0.5 ? 1 : -1, Math.random() < 0.3 ? 'mega' : 'big'); }
+  // pieces in, extra blocks out
+  if ((tm.piece -= dt) <= 0) { tm.piece = rnd(0.28, 0.6); if (pieces.length < 4) spawn(); }
   if ((tm.flare -= dt) <= 0) {
     tm.flare = rnd(3, 5.5);
-    const c = rows.filter(r => (r.t.u === 'score' || r.type.endsWith('liq')) && !r.cleared && !r.flare && r.blocks.length >= 2);
+    const c = liveRows().filter(r => (r.t.u === 'score' || r.type.endsWith('liq')) && !r.cleared && !r.flare && r.blocks.length >= 2);
     const r = c[Math.floor(Math.random() * c.length)]; if (r) r.flare = 1.4;
   }
-  if ((tm.eat -= dt) <= 0) {
-    tm.eat = rnd(0.5, 1.0);
-    const sy = yOf(p), c = rows.filter(r => (r.type === 'ask' || r.type === 'bid') && !r.cleared && r.blocks.length > 1 && Math.abs(r.y - sy) < 3.2);
-    const r = c[Math.floor(Math.random() * c.length)];
-    if (r) { const b = r.blocks.pop(); b.row = null; b.state = 'suck'; b.t = 0; b.sx = b.x; b.sy = b.y; b.flash = 0.8;
-      floatText(b.x + 0.3, r.y + 0.9, '−' + valStr(r, r.val / r.base), '#eef4f0'); }
-  }
   if (pendingT > 0 && (pendingT -= dt) <= 0) flushPending();
+  const sy = yOf(p);
 
-  // crossings
   for (const r of rows) {
-    if (!r.cleared && (r.t.up ? p >= r.price : p <= r.price)) clearRow(r);
-    else if (r.cleared && T - r.clearedAt > 1.6 && (r.t.up ? p < r.price - 12 : p > r.price + 12)) rebuild(r);
-    // slow decay back toward the base size, liquidation / stop flares
+    if (r.yd == null) r.yd = r.y;
+    r.yd += (r.y - r.yd) * Math.min(1, dt * 6);
+    if (r.gone) continue;
+    // the price runs through a level: line clear
+    if (armed && !r.cleared && T - r.born > 0.8 && (r.t.up ? p >= r.price : p <= r.price)) clearRow(r);
+    else if (mode === 'demo' && r.cleared && T - r.clearedAt > 1.6 && (r.t.up ? p < r.price - 12 : p > r.price + 12)) {
+      r.cleared = false; r.born = T; if (r.base) fillRow(r, r.base, 0); }
     if (!r.cleared && r.base && r.blocks.length > r.base && (r.decayT -= dt) <= 0) {
-      r.decayT = rnd(1.2, 2.4); const b = r.blocks.pop(); b.row = null; b.state = 'dying'; b.t = 0;
+      r.decayT = rnd(0.25, 0.6); const b = r.blocks.pop(); b.row = null; b.flash = 0.8;
+      if ((r.type === 'ask' || r.type === 'bid') && Math.abs(r.yd - sy) < 3.5 * RS) { b.state = 'suck'; b.t = 0; b.sx = b.x; b.sy = b.y; } else { b.state = 'dying'; b.t = 0; }
     }
     if (r.flare > 0) {
       r.flare -= dt;
       if (r.blocks.length && Math.random() < 0.6) { const b = r.blocks[Math.floor(Math.random() * r.blocks.length)]; emit(b.x, b.y, 0.5, r.t.col, 2, 2.5, { vz: 2, vy: 1 }); }
-      if (r.flare <= 0) {
-        r.flare = 0;
-        const k = Math.min(r.blocks.length - 1, 1 + (Math.random() < 0.45 ? 1 : 0));
-        for (let i = 0; i < k; i++) { const b = r.blocks.pop(); launch(b, rnd(1, 6), rnd(3, 8), rnd(5, 11), 1.5); b.flash = 1.2; emit(b.x, b.y, 0.5, r.t.col, 22, 6, { vz: 3 }); }
-        if (k > 0) {
-          shake = Math.max(shake, 0.14);
-          const v = r.val / r.base * k;
-          floatText(r.blocks.length + 1, r.y + 1, '−' + valStr(r, v), r.t.c);
-          feed(r.t.u === 'score' ? `<b>${r.t.n} ${fmtP(r.price)}</b> · ${k * 10} punten afgevuurd` : `<b>${r.t.n} ${fmtP(r.price)}</b> · ${fmtUsd(v)} gelikwideerd`, r.t.c);
-        }
-      }
+      if (r.flare < 0) r.flare = 0;
+    }
+  }
+  for (let i = rows.length - 1; i >= 0; i--) { const r = rows[i]; if (r.gone && (r.goneT -= dt) <= 0) { disposeRow(r); rows.splice(i, 1); } }
+
+  // trades: a spray from the price for each one, a block shot into the nearest wall for a big one
+  let budget = 40;
+  for (const tr of trades.splice(0)) {
+    nTrades++;
+    const col = tr.buy ? BUYC : SELLC, n = Math.min(6, Math.max(1, Math.ceil(Math.log10(tr.usd / 2e3))));
+    if (budget > 0) { emit(rnd(-6, 13), sy, 0.8, col, n, 1.5, { vy: tr.buy ? 5 : -5, life: 0.7, sx: 0.4 }); budget -= n; }
+    if (tr.usd >= 250e3) {
+      const side = liveRows().filter(r => (tr.buy ? r.type === 'ask' : r.type === 'bid') && !r.cleared && r.blocks.length);
+      const tgt = side.sort((a, b) => Math.abs(a.yd - sy) - Math.abs(b.yd - sy))[0];
+      const b = newBlock(col); b.state = 'shot'; b.t = 0; b.s = 0.55; b.sx = rnd(1, 8); b.sy = sy; b.tgt = tgt || null; b.dirY = tr.buy ? 1 : -1;
+      if (tr.usd >= 1e6) floatText(b.sx, sy + (tr.buy ? 1 : -1), (tr.buy ? 'koop ' : 'verkoop ') + fmtUsd(tr.usd), tr.buy ? '#35ffb0' : '#ff4d6a');
+      if (tr.usd >= 3e6) feed(`<b>${tr.buy ? 'Grote koop' : 'Grote verkoop'}</b> ${fmtUsd(tr.usd)} op ${fmtP(tr.px)}`, tr.buy ? TY.bid.c : TY.ask.c);
+      slabEdge.material.color.set(tr.buy ? 0x35ffb0 : 0xff4d6a);
     }
   }
 
   // pieces: grid steps down the front of the well, then slot into the bar end
-  const STEP = 0.055;
+  const STEP = 0.05;
   for (let i = pieces.length - 1; i >= 0; i--) {
-    const q = pieces[i];
+    const q = pieces[i], r = q.row, ri = Math.round(r.yd / RS);
     q.stepT += dt;
-    while (q.stepT > STEP && q.gy > q.row.ri) { q.stepT -= STEP; q.gy -= 1; if (Math.random() < 0.1) rotate(q); }
-    const k = 1 - Math.exp(-32 * dt), gx = q.row.blocks.length;
-    q.blocks.forEach((b, j) => { b.x += (gx + q.cells[j][0] + 0.5 - b.x) * k; b.y += (q.gy * RS + q.cells[j][1] - b.y) * k; });
-    if (q.gy <= q.row.ri && Math.abs(q.blocks[0].y - (q.gy * RS + q.cells[0][1])) < 0.12) { lock(q); pieces.splice(i, 1); }
+    while (q.stepT > STEP && q.gy > ri) { q.stepT -= STEP; q.gy -= 1; if (Math.random() < 0.1) rotate(q); }
+    const k = 1 - Math.exp(-32 * dt), gx = r.blocks.length, fy = q.gy > ri ? q.gy * RS : r.yd;
+    q.blocks.forEach((b, j) => { b.x += (gx + q.cells[j][0] + 0.5 - b.x) * k; b.y += (fy + q.cells[j][1] - b.y) * k; });
+    if (r.gone || r.cleared || (q.gy <= ri && Math.abs(q.blocks[0].y - (fy + q.cells[0][1])) < 0.12)) { lock(q); pieces.splice(i, 1); }
   }
 
   // blocks
@@ -616,21 +967,22 @@ function update(dt) {
     switch (b.state) {
       case 'drop':
         if (b.delay > 0) { b.delay -= dt; b.s = 0.0001; break; }
+        if (!b.row) { b.dead = true; break; }
         b.s = 0.9; b.vy -= 70 * dt; b.y += b.vy * dt;
-        if (b.y <= b.row.y) {
-          b.y = b.row.y;
+        if (b.y <= b.row.yd) {
+          b.y = b.row.yd;
           if (b.vy < -4) { if (!b.landed) { b.landed = true; b.flash = 1; emit(b.x, b.y - 0.4, 0.3, b.col, 3, 2.5); } b.vy = -b.vy * 0.22; }
           else { b.vy = 0; b.state = 'idle'; }
         }
         break;
       case 'idle': case 'merge': {
-        const r = b.row; if (!r) { b.state = 'fly'; break; }
-        const slot = r.blocks.indexOf(b), tx = slot + 0.5;
+        const r = b.row; if (!r) { b.state = 'dying'; b.t = 0; break; }
+        const tx = r.blocks.indexOf(b) + 0.5;
         if (b.state === 'merge') {
           b.t += dt / 0.16; const e = Math.min(1, b.t), ee = 1 - (1 - e) * (1 - e);
-          b.x = b.sx + (tx - b.sx) * ee; b.y = b.sy + (r.y - b.sy) * ee; b.z = b.sz * (1 - ee);
+          b.x = b.sx + (tx - b.sx) * ee; b.y = b.sy + (r.yd - b.sy) * ee; b.z = b.sz * (1 - ee);
           if (e >= 1) { b.state = 'idle'; b.flash = 1; }
-        } else { b.x += (tx - b.x) * Math.min(1, dt * 14); b.y = r.y; b.z = 0; }
+        } else { b.x += (tx - b.x) * Math.min(1, dt * 14); b.y = r.yd; b.z = 0; }
         b.s = 0.9; break;
       }
       case 'pop':
@@ -644,15 +996,24 @@ function update(dt) {
         if (Math.random() < 0.25) emit(b.x, b.y, b.z, b.col, 1, 0.8, { life: 0.5 });
         if (b.life <= 0) b.dead = true;
         break;
+      case 'shot': {
+        b.t += dt / 0.4; const e = Math.min(1, b.t), r = b.tgt && !b.tgt.gone ? b.tgt : null;
+        const tx = r ? r.blocks.length : b.sx, ty = r ? r.yd : b.sy + b.dirY * 4;
+        b.x = b.sx + (tx - b.sx) * e; b.y = b.sy + (ty - b.sy) * e; b.z = 1.2 * (1 - e) + 0.3; b.rz += dt * 12; b.ry += dt * 9;
+        if (Math.random() < 0.7) emit(b.x, b.y, b.z, b.col, 1, 0.6, { life: 0.35 });
+        if (e >= 1) { b.dead = true; emit(b.x, b.y, 0.4, b.col, 14, 4); if (r) { r.hl = Math.max(r.hl, 0.7); r.blocks.forEach(x => x.flash = Math.max(x.flash, 0.35)); } }
+        break;
+      }
       case 'suck': {
-        b.t += dt / 0.5; const e = Math.min(1, b.t), sy = yOf(p);
+        b.t += dt / 0.5; const e = Math.min(1, b.t);
         b.x = b.sx + (3.5 - b.sx) * e * 0.4; b.y = b.sy + (sy - b.sy) * e * e; b.z = e * 0.8; b.s = 0.9 * (1 - e); b.rz = e * 3;
         if (Math.random() < 0.6) emit(b.x, b.y, b.z, b.col, 1, 1, { life: 0.4 });
         if (e >= 1) { b.dead = true; emit(b.x, sy, 0.8, b.col, 10, 3); }
         break;
       }
       case 'dying':
-        b.t += dt / 0.6; b.s = 0.9 * (1 - b.t); b.y += dt * 1.5; b.ry += dt * 6;
+        b.t += dt / 0.6; if (b.t < 0) break;
+        b.s = 0.9 * (1 - b.t); b.y += dt * 1.5; b.ry += dt * 6;
         if (Math.random() < 0.5) emit(b.x, b.y, 0.3, b.col, 1, 1.2, { vy: 1, life: 0.6 });
         if (b.t >= 1) b.dead = true;
         break;
@@ -660,7 +1021,7 @@ function update(dt) {
   }
   blocks = blocks.filter(b => !b.dead);
 
-  // particles
+  // particles, dust
   const drag = Math.exp(-1.6 * dt);
   for (let i = 0; i < PN; i++) {
     if (pLife[i] <= 0) { if (pCol[i * 3] || pCol[i * 3 + 1] || pCol[i * 3 + 2]) pCol[i * 3] = pCol[i * 3 + 1] = pCol[i * 3 + 2] = 0; continue; }
@@ -675,43 +1036,45 @@ function update(dt) {
   sGeo.attributes.position.needsUpdate = true;
 
   // HUD
-  if (Math.round(p) !== lastPx) {
-    const el = $('px'); el.textContent = fmtP(p); el.className = p > lastPx ? 'u' : 'd'; lastPx = Math.round(p);
-    $('chg').textContent = fmtPct((p / P0 - 1) * 100) + ' t.o.v. 13:21';
-  }
-  $('s-clr').textContent = nCleared; $('s-eat').textContent = eaten ? fmtUsd(eaten).replace(' mln', 'M').replace(' mrd', 'B') : '$0';
-  $('s-ord').textContent = orders; $('s-cmb').textContent = '×' + (T - lastClearT < 4.5 ? combo : 0);
-  if ((tm.dist -= dt) <= 0) { tm.dist = 1; for (const r of rows) drawLabel(r, p); if (selRow && !tip.hidden) { /* keep tip values current */ } }
-  drawSlab(p);
+  if (Math.round(p) !== lastPx) { const el = $('px'); el.textContent = fmtP(p); el.className = p > lastPx ? 'u' : 'd'; lastPx = Math.round(p); }
+  const chg = ref24 ? fmtPct((p / ref24 - 1) * 100) + ' 24u' : mode === 'demo' ? fmtPct((p / P0 - 1) * 100) + ' t.o.v. 13:21' : '';
+  if ($('chg').textContent !== chg) $('chg').textContent = chg;
+  $('s-clr').textContent = nCleared; $('s-eat').textContent = eaten ? fmtUsd(eaten).replace(' mln', 'M').replace(' mld', 'B') : '$0';
+  $('s-trd').textContent = nTrades.toLocaleString('nl-NL'); $('s-cmb').textContent = '×' + (T - lastClearT < 4.5 ? combo : 0);
+  if ((tm.dist -= dt) <= 0) { tm.dist = 1; for (const r of liveRows()) drawLabel(r); }
+  drawSlab();
 }
 
-function render(rdt, dt) {
-  const t = clock;
-  const sy = yOf(p);
+function render(rdt) {
+  const t = clock, sy = yOf(p);
   slab.position.y += (sy - slab.position.y) * Math.min(1, rdt * 18);
   sweep.position.x = -7 + ((t * 9) % 22);
   slabEdge.material.opacity = 0.7 + 0.3 * Math.sin(t * 6);
+  slabEdge.material.color.lerp(tmpC.set(0x7ff0d0), Math.min(1, rdt * 3));
   const scanY = 15 * RS - ((t * 5 * RS) % (34 * RS));
   beam.position.y = scanY;
 
   // rows: halos, labels, size tags, gates
   for (const r of rows) {
-    const n = r.blocks.length;
+    const y = r.yd ?? r.y, n = r.blocks.length;
     if (r.base) r.endX += (n - r.endX) * Math.min(1, rdt * 10);
-    r.sz.m.position.x = r.endX + 0.25 + 1.8;
-    drawSize(r);
-    const near = Math.max(0, 1 - Math.abs(r.y - sy) / 3);
-    r.hl += ((r === selRow ? 1 : 0) - r.hl) * Math.min(1, rdt * 8);
+    const fade = r.gone ? Math.max(0, r.goneT / 0.9) : 1;
+    r.lbl.m.position.set(-3.6, y, 0.05); r.sz.m.position.set(r.endX + 0.25 + 1.8, y, 0.1); r.hit.position.set(3.4, y, 0.5);
+    if (!r.gone) drawSize(r);
+    const near = Math.max(0, 1 - Math.abs(y - sy) / (3 * RS));
+    r.hl += ((r === selRow ? 1 : 0) - r.hl) * Math.min(1, rdt * 4);
     r.halo.scale.set(Math.max(1.5, r.endX + 1.6), 1.7 + near * 0.6, 1);
-    r.halo.position.x = r.endX / 2;
-    r.halo.material.opacity = r.cleared ? 0.03 : 0.16 + 0.07 * Math.sin(t * 2.2 + r.y * 0.7) + near * 0.22 + r.hl * 0.45 + (r.flare > 0 ? 0.35 * Math.abs(Math.sin(t * 22)) : 0);
-    r.lbl.m.material.opacity += ((r.cleared ? 0.3 : 1) - r.lbl.m.material.opacity) * Math.min(1, rdt * 6);
+    r.halo.position.set(r.endX / 2, y, -0.6);
+    r.halo.material.opacity = fade * (r.cleared ? 0.03 : 0.16 + 0.07 * Math.sin(t * 2.2 + y * 0.7) + near * 0.22 + r.hl * 0.45 + (r.flare > 0 ? 0.35 * Math.abs(Math.sin(t * 22)) : 0));
+    const lo = (r.cleared ? 0.3 : 1) * fade;
+    r.lbl.m.material.opacity += (lo - r.lbl.m.material.opacity) * Math.min(1, rdt * 6);
     r.sz.m.material.opacity = r.lbl.m.material.opacity;
     if (r.gate) {
+      r.gate.m.position.y = r.gate.e.position.y = y;
       r.gate.tex.offset.y += rdt * (r.type === 'tup' ? -1.2 : 1.2);
       const pulse = 0.5 + 0.5 * Math.sin(t * 4);
-      r.gate.m.material.opacity = r.cleared ? 0.06 : 0.45 + 0.35 * pulse + near * 0.3;
-      r.gate.e.material.opacity = r.cleared ? 0.15 : 0.6 + 0.4 * pulse;
+      r.gate.m.material.opacity = fade * (r.cleared ? 0.06 : 0.45 + 0.35 * pulse + near * 0.3);
+      r.gate.e.material.opacity = fade * (r.cleared ? 0.15 : 0.6 + 0.4 * pulse);
       r.gate.m.scale.y = r.gate.m.scale.z = 1 + 0.12 * pulse;
     }
   }
@@ -732,7 +1095,7 @@ function render(rdt, dt) {
     let jx = 0, jz = 0, br = 1 + 0.13 * Math.sin(t * 3 - b.x * 0.55 + b.y * 0.35) + 0.9 * Math.exp(-((b.y - scanY) ** 2) * 1.4);
     if (r && r.flare > 0) { jx = rnd(-0.05, 0.05); jz = rnd(-0.08, 0.08); br += 0.7 * Math.abs(Math.sin(t * 26)); }
     if (r && r.hl > 0.01) br += 0.35 * r.hl;
-    if (r && Math.abs(r.y - sy) < 1.2) br += 0.25;
+    if (r && Math.abs(r.yd - sy) < 1.2 * RS) br += 0.25;
     dummy.position.set(b.x + jx, b.y, b.z + jz); dummy.rotation.set(b.rx, b.ry, b.rz); dummy.scale.setScalar(b.s); dummy.updateMatrix();
     bMesh.setMatrixAt(n, dummy.matrix);
     tmpC.copy(b.col).lerp(WHITE, Math.min(1, b.flash)).multiplyScalar(br); bMesh.setColorAt(n, tmpC); n++;
@@ -740,8 +1103,8 @@ function render(rdt, dt) {
   bMesh.count = n; bMesh.instanceMatrix.needsUpdate = true; bMesh.instanceColor.needsUpdate = true;
   // ghosts: where the falling piece will land
   let gn = 0;
-  for (const q of pieces) for (let j = 0; j < 4; j++) {
-    dummy.position.set(q.row.blocks.length + j + 0.5, q.row.y, 0); dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(0.9); dummy.updateMatrix();
+  for (const q of pieces) for (let j = 0; j < q.cells.length && gn < 64; j++) {
+    dummy.position.set(q.row.blocks.length + j + 0.5, q.row.yd, 0); dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(0.9); dummy.updateMatrix();
     gMesh.setMatrixAt(gn, dummy.matrix); tmpC.copy(q.row.t.col).multiplyScalar(0.55 + 0.3 * Math.sin(t * 10)); gMesh.setColorAt(gn, tmpC); gn++;
   }
   gMesh.count = gn; gMesh.instanceMatrix.needsUpdate = true; gMesh.instanceColor.needsUpdate = true;
@@ -758,8 +1121,8 @@ function render(rdt, dt) {
   cam.lookAt(camT.x, camT.y, 0);
   renderer.render(scene, cam);
 }
-makeNext();
 requestAnimationFrame(frame);
+if (/^https?:$/.test(location.protocol)) startLive(); else startDemo();
 })();
 </script>
 </body>

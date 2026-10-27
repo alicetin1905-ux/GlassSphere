@@ -30,6 +30,8 @@
 html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow:hidden}
 #river{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;outline:none}
 #river.grab{cursor:grabbing}
+#vig{position:fixed;inset:0;pointer-events:none;z-index:1;
+  background:radial-gradient(ellipse 75% 70% at 50% 50%,rgba(0,0,0,0) 45%,rgba(0,0,0,.55)),linear-gradient(rgba(5,9,11,0) calc(100% - 110px),rgba(5,9,11,.9))}
 #top{position:fixed;top:0;left:0;right:0;z-index:5;padding:calc(env(safe-area-inset-top,0px) + 10px) 16px 10px;
   background:linear-gradient(#05090b 78%,#05090b00);display:flex;flex-direction:column;align-items:center;pointer-events:none}
 #top .in{width:100%;max-width:820px;display:flex;align-items:center;gap:10px}
@@ -74,6 +76,7 @@ html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--sa
 </head>
 <body>
 <canvas id="river" tabindex="0" aria-label="De prijsladder van BTC als rivier: muren zijn dijken, stops zijn sluizen, liquidatieclusters zijn watermassa's; de live prijs is de waterlijn. Slepen schuift, knijpen of scrollen zoomt, tikken op een dijk geeft details."></canvas>
+<div id="vig"></div>
 <header id="top">
   <div class="in">
     <div class="coin">₿</div>
@@ -426,8 +429,8 @@ function resize() {
 addEventListener('resize', resize);
 
 // the view: a fisheye around the centre price, so the levels close to the price get the most room
-const V = { c: null, r: null, follow: true, userR: false };
-const sOf = () => V.r * .12;
+const V = { c: null, r: null, s: null, follow: true, userR: false };
+const sOf = () => V.s || V.r * .12;
 const Y = p => { const s = sOf(); return MID - HH * Math.asinh((p - V.c) / s) / Math.asinh(V.r / s); };
 const PY = y => { const s = sOf(); return V.c + s * Math.sinh((MID - y) / HH * Math.asinh(V.r / s)); };
 const dPdY = () => sOf() * Math.asinh(V.r / sOf()) / HH;       // price per pixel at the centre
@@ -475,25 +478,20 @@ function pool(dt) {
   CMP.bot = CMP.bot == null ? tb : lerp(CMP.bot, tb, tb < CMP.bot ? k : 1);
 }
 
-/* ---- the current: streaks in the water, fast in the live pool, nearly still outside it ------------------------------ */
-let FLOW = 0;
-const STRK = Array.from({ length: 150 }, (_, i) => ({ p: 0, xf: R(), a: .4 + R() * .6, inside: i < 100, fresh: true }));
-function respawn(s) {
-  if (s.inside) s.p = lerp(CMP.bot, CMP.top, R()); else s.p = PY(lerp(TOP - 20, BOT + 20, R()));
-  s.xf = R(); s.fresh = false;
-}
-function stepStreaks(dt) {
+/* ---- the current: the water pattern scrolls with it, fast in the live pool, a slow drift outside it ------------------ */
+let FLOW = 0, OFF_IN = 0, OFF_OUT = 0;
+const FLECK = Array.from({ length: 44 }, () => ({ p: null, xf: R(), a: .3 + R() * .7 }));
+function stepFlow(dt) {
   const tk = TAKER.now(), push = tk.seen ? (tk.buy - .5) * 2 : 0;
   const target = push * V.r * .32 + clamp(VEL, -V.r, V.r) * .7;
   FLOW = lerp(FLOW, target, 1 - Math.exp(-dt * 2));
-  const idle = Math.abs(FLOW) < V.r * .03 ? Math.sin(T * .7) * V.r * .03 : 0;
-  for (const s of STRK) {
-    if (s.fresh) respawn(s);
-    if (s.inside) { s.p += (FLOW + idle) * dt * (.7 + s.a * .6); if (s.p > CMP.top || s.p < CMP.bot) { s.p = FLOW + idle > 0 ? CMP.bot + (CMP.top - CMP.bot) * R() * .15 : CMP.top - (CMP.top - CMP.bot) * R() * .15; s.xf = R(); } }
-    else { s.p += Math.sin(T * .3 + s.xf * 9) * V.r * .01 * dt; const y = Y(s.p); if (y < TOP - 30 || y > BOT + 30 || (s.p < CMP.top && s.p > CMP.bot)) respawn(s); }
+  const fpx = FLOW / dPdY(), idle = Math.abs(fpx) < 8 ? 10 * Math.sin(T * .35) : 0;      // px/s, upstream positive
+  OFF_IN += (fpx * .5 + idle) * dt; OFF_OUT += 3 * dt;
+  for (const f of FLECK) {
+    if (f.p == null || f.p > CMP.top || f.p < CMP.bot) { f.p = lerp(CMP.bot, CMP.top, R()); f.xf = R(); }
+    f.p += (fpx * (.5 + f.a * .7) + idle) * dPdY() * dt;
   }
 }
-
 /* ---- waves: a real liquidation, a released water mass, or the surge through a broken dike --------------------------- */
 const WAVES = [], PARTS = [];
 function wave(p0, up, amp, col, label) {
@@ -518,7 +516,7 @@ function crash(w, y) {
   if (reduced || document.hidden) return;
   const l = bankL(y), r = bankR(y), n = 14 + Math.round(w.amp * 40);
   for (let i = 0; i < n; i++) PARTS.push({ t: 'dot', x: l + (r - l) * R(), y, vx: (R() - .5) * 140, vy: (w.up ? 1 : -1) * (40 + R() * 160 * (.4 + w.amp)), r: 1 + R() * 2.2 * (.5 + w.amp), age: 0, life: .5 + R() * .7, col: R() < .7 ? RGB.foam : w.col });
-  PARTS.push({ t: 'ring', x: (l + r) / 2, y, r1: (r - l) * (.6 + w.amp * .5), age: 0, life: .7, w: 2 + w.amp * 2, col: RGB.foam });
+  PARTS.push({ t: 'ring', x: (l + r) / 2, y, r1: (r - l) * (.38 + w.amp * .14), age: 0, life: .7, w: 1.5 + w.amp * 1.5, col: RGB.foam, flat: 1 });
 }
 
 /* ---- the price ---------------------------------------------------------------------------------------------------- */
@@ -572,210 +570,313 @@ function showRealLiq(long, p, usd, ex) {
 }
 
 /* ---- drawing -------------------------------------------------------------------------------------------------------- */
-const barT = it => (phone ? .8 : 1) * (it.k === 'stop' ? 3 + 7 * it.rel : 5 + 13 * it.rel);
+const barT = it => (phone ? .9 : 1) * (it.k === 'stop' ? 4 + 6 * it.rel : 6 + 12 * it.rel);
 const prox = it => Math.pow(clamp(1 - Math.abs(it.p - PX) / (PX * .007), 0, 1), 1.6);
+const hash = n => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 let riverPath = null;
 function drawBanks() {
-  const gr = g.createLinearGradient(0, 0, W, 0);
-  gr.addColorStop(0, '#070b0a'); gr.addColorStop(.5, '#0b1110'); gr.addColorStop(1, '#070b0a');
-  g.fillStyle = gr; g.fillRect(0, 0, W, H);
-  // strata on the banks, every round price, so they travel with the river
-  const step = nice(V.r / 5), lo = PY(BOT + 40), hi = PY(TOP - 40);
-  g.lineWidth = 1; g.font = `500 ${phone ? 9 : 10}px ${FM}`; g.textAlign = 'left';
-  for (let p = Math.ceil(lo / step) * step; p <= hi; p += step) {
-    const y = Y(p); g.strokeStyle = 'rgba(120,150,140,.06)';
-    g.beginPath(); g.moveTo(X0, y); g.lineTo(bankL(y) - 2, y); g.moveTo(bankR(y) + 2, y); g.lineTo(X0 + CW, y); g.stroke();
+  g.fillStyle = '#070b0b'; g.fillRect(0, 0, W, H);
+  // the land falls away from the river: a little light along the banks, contour lines that follow them
+  for (const [side, sgn] of [[bankL, -1], [bankR, 1]]) {
+    const lg = g.createLinearGradient(sgn < 0 ? RL : RR, 0, sgn < 0 ? RL - 120 : RR + 120, 0);
+    lg.addColorStop(0, 'rgba(70,95,88,.10)'); lg.addColorStop(1, 'rgba(70,95,88,0)');
+    g.fillStyle = lg; g.fillRect(sgn < 0 ? RL - 120 : RR, 0, 120, H);
+    g.lineWidth = 1;
+    [9, 20, 34, 52, 75, 104, 140].forEach((k, n) => {
+      g.strokeStyle = `rgba(150,185,172,${.085 - n * .009})`; g.beginPath();
+      for (let y = TOP - 40; y <= BOT + 40; y += 7) {
+        const x = side(y) + sgn * (k + Math.sin(PY(y) / (60 + k * 2) + k) * k * .14);
+        y === TOP - 40 ? g.moveTo(x, y) : g.lineTo(x, y);
+      }
+      g.stroke();
+    });
   }
-  // the river bed
   riverPath = new Path2D(); const y0 = TOP - 60, y1 = BOT + 60;
-  riverPath.moveTo(bankL(y0), y0); for (let y = y0; y <= y1; y += 6) riverPath.lineTo(bankL(y), y);
-  for (let y = y1; y >= y0; y -= 6) riverPath.lineTo(bankR(y), y); riverPath.closePath();
-  const wg = g.createLinearGradient(RL, 0, RR, 0);
-  wg.addColorStop(0, '#04161c'); wg.addColorStop(.5, '#062029'); wg.addColorStop(1, '#04161c');
-  g.fillStyle = wg; g.fill(riverPath);
-  g.strokeStyle = 'rgba(95,212,240,.16)'; g.lineWidth = 1.5; g.stroke(riverPath);
+  riverPath.moveTo(bankL(y0), y0); for (let y = y0; y <= y1; y += 5) riverPath.lineTo(bankL(y), y);
+  for (let y = y1; y >= y0; y -= 5) riverPath.lineTo(bankR(y), y); riverPath.closePath();
+  g.fillStyle = '#031319'; g.fill(riverPath);
+}
+
+// the water, per pixel at a low resolution: caustics (light refracted by the ripples), deep and dark outside the live
+// pool, lit inside it, shallow along the banks, purple where a liquidation mass waits, white behind a running wave
+const WC = document.createElement('canvas'), wg = WC.getContext('2d'); let WIMG = null, WEMA = 0, WODD = false, WGEO = null;
+const TAU = PI * 2, SN = new Float32Array(4096), SK = 4096 / TAU, QP = 1024;
+for (let i = 0; i < 4096; i++) SN[i] = Math.sin(i / SK);
+const sn = x => SN[(x * SK) & 4095], cs = x => SN[((x * SK) + QP) & 4095];      // table sine and cosine, plenty for water
+function caust(u, v, t) {
+  const px = (u - Math.floor(u)) * TAU - 250, py = (v - Math.floor(v)) * TAU - 250;
+  let ix = px, iy = py, c = 1;
+  for (let n = 0; n < 3; n++) {
+    const tt = t * (1 - 3.5 / (n + 1));
+    const nx = px + cs(tt - ix) + sn(tt + iy), ny = py + sn(tt - iy) + cs(tt + ix); ix = nx; iy = ny;
+    const a = px / sn(ix + tt), b = py / cs(iy + tt);
+    c += 200 / Math.sqrt(a * a + b * b);
+  }
+  c = Math.abs(1.17 - Math.pow(c / 3, 1.4));
+  const c2 = c * c, c4 = c2 * c2; return Math.min(1, c4 * c4);
+}
+function massGeo(it) {
+  const y = Y(it.p), l = bankL(y), r = bankR(y), s = st(it);
+  const fl = clamp(1 - (T - s.flare) / 1.6, 0, 1), pr = prox(it), sw = 1 + .08 * Math.sin(T * 1.3 + it.p * .01) + pr * .22 + fl * .3;
+  return { it, y, cx: (l + r) / 2, hw: (r - l) * (.2 + .3 * Math.sqrt(it.rel)) * sw, hh: ((phone ? 7 : 9) + 18 * Math.sqrt(it.rel)) * sw, k: broken(it) ? 0 : .55 + pr * .3 + fl * .3, pr, fl, br: broken(it) };
+}
+function shadeWater() {
+  const x0 = Math.floor(RL - 14), x1 = Math.ceil(RR + 14), y0 = TOP - 24, y1 = BOT + 24;
+  const S = Math.max(2.5, Math.sqrt((x1 - x0) * (y1 - y0) / 10000)), cw = Math.ceil((x1 - x0) / S), ch = Math.ceil((y1 - y0) / S);
+  WGEO = { x0, y0, w: cw * S, h: ch * S };
+  // on a slow device the water is drawn every other frame
+  if (WEMA > 9 && (WODD = !WODD)) return;
+  const t0 = performance.now();
+  if (!WIMG || WIMG.width !== cw || WIMG.height !== ch) { WC.width = cw; WC.height = ch; WIMG = wg.createImageData(cw, ch); }
+  const d = WIMG.data, yt = Y(CMP.top), yb = Y(CMP.bot), SC = 230;
+  const masses = ITEMS.filter(it => it.k === 'liq').map(massGeo).filter(m => m.k > 0 && m.y + m.hh > y0 && m.y - m.hh < y1);
+  const waves = WAVES.filter(w => w.y != null);
+  for (let j = 0; j < ch; j++) {
+    const y = y0 + (j + .5) * S, l = bankL(y), r = bankR(y), half = (r - l) / 2, inP = y > yt && y < yb;
+    const v = (y + (inP ? OFF_IN : OFF_OUT)) / SC, tm = T * (inP ? .5 : .22);
+    let wv = 0; const wcol = [0, 0, 0];
+    for (const w of waves) {
+      const dd = (y - w.y) * (w.up ? 1 : -1), body = 22 + w.amp * 90;
+      if (dd < -4 || dd > body) continue;
+      const k = (dd < 0 ? 1 + dd / 4 : Math.pow(1 - dd / body, 1.6)) * (.45 + w.amp * .55) * clamp(1 - w.d / 520, 0, 1) * clamp(w.age / .15, 0, 1);
+      const c = w.col.split(',').map(Number); wv += k; wcol[0] += c[0] * k; wcol[1] += c[1] * k; wcol[2] += c[2] * k;
+    }
+    const rowM = masses.filter(m => Math.abs(y - m.y) < m.hh);
+    for (let i = 0; i < cw; i++) {
+      const x = x0 + (i + .5) * S, o = (j * cw + i) * 4;
+      if (x < l - 4 || x > r + 4) { d[o + 3] = 0; continue; }
+      const c = caust(x / SC, v, tm), e = clamp(Math.min(x - l, r - x) / half, 0, 1);
+      let cr, cg, cb;
+      if (inP) { cr = 5 + c * 150; cg = 40 + c * 205; cb = 56 + c * 210; }
+      else { cr = 3 + c * 30; cg = 17 + c * 62; cb = 24 + c * 74; }
+      const shal = Math.pow(1 - e, 4) * (inP ? .9 : .5);                     // shallows: lighter along the banks
+      cr += 30 * shal; cg += 62 * shal; cb += 58 * shal;
+      const sh = .45 + .55 * clamp((x - l) / 14, 0, 1);                      // the left bank throws a shadow
+      cr *= sh; cg *= sh; cb *= sh;
+      for (const m of rowM) {
+        const dx = (x - m.cx) / m.hw, dy = (y - m.y) / m.hh, q = 1 - dx * dx - dy * dy;
+        if (q > 0) { const k = Math.min(1, q * 1.8) * m.k; cr = lerp(cr, 70 + c * 170, k); cg = lerp(cg, 38 + c * 130, k); cb = lerp(cb, 130 + c * 125, k); }
+      }
+      if (wv) { const k = Math.min(1, wv); cr = lerp(cr, wcol[0] / wv * .55 + 110 + c * 80, k * .75); cg = lerp(cg, wcol[1] / wv * .55 + 110 + c * 80, k * .75); cb = lerp(cb, wcol[2] / wv * .55 + 115 + c * 80, k * .75); }
+      d[o] = cr; d[o + 1] = cg; d[o + 2] = cb; d[o + 3] = 255;
+    }
+  }
+  wg.putImageData(WIMG, 0, 0);
+  WEMA = lerp(WEMA, performance.now() - t0, .1);
 }
 function drawWater() {
+  shadeWater();
   g.save(); g.clip(riverPath);
-  // the live pool
-  const yt = Y(CMP.top), yb = Y(CMP.bot), up = FLOW >= 0;
-  const pg = g.createLinearGradient(0, yt, 0, yb);
-  const hot = `rgba(${RGB.water},.34)`, cool = `rgba(${RGB.water},.16)`;
-  pg.addColorStop(0, up ? hot : cool); pg.addColorStop(.5, `rgba(${RGB.water},.2)`); pg.addColorStop(1, up ? cool : hot);
-  g.fillStyle = pg; g.fillRect(RL - 20, yt, RR - RL + 40, yb - yt);
-  // shimmer: slow bright bands
-  for (let i = 0; i < 5; i++) {
-    const y = yt + (yb - yt) * ((i / 5 + T * .03 * Math.sign(FLOW || 1) + 10) % 1);
-    g.fillStyle = `rgba(${RGB.foam},.035)`; g.fillRect(RL - 20, y, RR - RL + 40, 10 + (i % 2) * 8);
+  g.imageSmoothingEnabled = true;
+  if (WIMG) g.drawImage(WC, WGEO.x0, WGEO.y0, WGEO.w, WGEO.h);
+  // foam flecks drifting with the current in the live pool
+  for (const f of FLECK) {
+    const y = Y(f.p), l = bankL(y), r = bankR(y);
+    g.fillStyle = `rgba(${RGB.foam},${.12 + f.a * .22})`; g.beginPath(); g.arc(l + (r - l) * (.06 + .88 * f.xf), y, .7 + f.a * .7, 0, PI * 2); g.fill();
   }
-  // the current
-  const pxs = Math.abs(FLOW) / dPdY();
-  g.lineCap = 'round';
-  for (const s of STRK) {
-    const y = Y(s.p); if (y < TOP - 30 || y > BOT + 30) continue;
-    const l = bankL(y), r = bankR(y), x = l + (r - l) * (.06 + .88 * s.xf);
-    const len = s.inside ? clamp(pxs * .1, 3, 24) * s.a : 3, dir = FLOW >= 0 ? 1 : -1;
-    g.strokeStyle = `rgba(${RGB.foam},${s.inside ? .14 + .3 * s.a : .07})`; g.lineWidth = s.inside ? 1.4 : 1;
-    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.sin(s.p / 40) * 1.5, y + dir * len); g.stroke();
+  // the flood front, while the pool still runs on to the next dike after a breach
+  for (const [cur, it, up] of [[CMP.top, CMP.topIt, true], [CMP.bot, CMP.botIt, false]]) {
+    const tgt = it ? it.p : null; if (tgt == null) continue;
+    const gapPx = Math.abs(Y(cur) - Y(tgt)); if (gapPx < 4) continue;
+    foamLine(Y(cur), up, clamp(gapPx / 60, .3, 1));
   }
-  // the water masses: estimated liquidation clusters, swelling as the price comes close
-  for (const it of ITEMS) if (it.k === 'liq') drawMass(it);
-  // waves
-  for (const w of WAVES) drawWave(w);
+  for (const it of ITEMS) if (it.k === 'liq') drawMassTop(massGeo(it));
+  for (const w of WAVES) if (w.y != null) foamLine(w.y, w.up, .5 + w.amp * .5, w);
   g.restore();
 }
-function drawMass(it) {
-  const y = Y(it.p); if (y < TOP - 40 || y > BOT + 40) return;
-  const s = st(it), l = bankL(y), r = bankR(y), cx = (l + r) / 2, br = broken(it);
-  const fl = clamp(1 - (T - s.flare) / 1.6, 0, 1), pr = prox(it), sw = 1 + .1 * Math.sin(T * 1.4 + it.p * .01) + pr * .25 + fl * .3;
-  const hw = (r - l) * (.16 + .32 * Math.sqrt(it.rel)) * sw, hh = (phone ? 4 : 5) + 16 * Math.sqrt(it.rel) * sw;
-  if (br) { g.setLineDash([3, 4]); g.strokeStyle = `rgba(${RGB.liq},.3)`; g.lineWidth = 1; g.beginPath(); g.ellipse(cx, y, hw, hh * .6, 0, 0, PI * 2); g.stroke(); g.setLineDash([]); return; }
-  const rg = g.createRadialGradient(cx, y, 0, cx, y, hw);
-  rg.addColorStop(0, `rgba(${RGB.liq},${.55 + fl * .35})`); rg.addColorStop(.7, `rgba(${RGB.liq},${.28 + pr * .2})`); rg.addColorStop(1, `rgba(${RGB.liq},0)`);
-  g.fillStyle = rg; g.beginPath(); g.ellipse(cx, y, hw, hh, 0, 0, PI * 2); g.fill();
-  // the crest leans towards the price: that is where it will run
-  const toward = it.p > PX ? 1 : -1;
-  g.strokeStyle = `rgba(${RGB.foam},${.25 + pr * .45 + fl * .3})`; g.lineWidth = 1.2 + pr * 1.5;
+function foamLine(y, up, k, w) {
+  const l = bankL(y) - 4, r = bankR(y) + 4, dir = up ? 1 : -1, a = w ? clamp(1 - w.d / 520, 0, 1) * clamp(w.age / .15, 0, 1) : 1;
+  g.strokeStyle = `rgba(${RGB.foam},${.85 * a * k})`; g.lineWidth = 1.2 + k * 2.4; g.shadowColor = `rgba(${RGB.foam},.7)`; g.shadowBlur = 8 * k;
   g.beginPath();
-  for (let i = 0; i <= 20; i++) { const u = i / 20, x = cx - hw * .8 + hw * 1.6 * u, yy = y + toward * hh * .55 * Math.sin(u * PI) + Math.sin(T * 3 + u * 9) * 1.2; i ? g.lineTo(x, yy) : g.moveTo(x, yy); }
+  for (let i = 0; i <= 28; i++) { const u = i / 28, x = l + (r - l) * u, yy = y - dir * Math.sin(u * PI) * (2 + k * 6) + Math.sin(u * 25 + T * 9) * (.6 + k * 1.4); i ? g.lineTo(x, yy) : g.moveTo(x, yy); }
+  g.stroke(); g.shadowBlur = 0;
+  g.strokeStyle = `rgba(${RGB.foam},${.3 * a * k})`; g.lineWidth = 1; g.beginPath();
+  for (let i = 0; i <= 28; i++) { const u = i / 28, x = l + (r - l) * u, yy = y + dir * (5 + k * 5) - dir * Math.sin(u * PI) * (1 + k * 4) + Math.sin(u * 19 - T * 7) * 1.2; i ? g.lineTo(x, yy) : g.moveTo(x, yy); }
   g.stroke();
-}
-function drawWave(w) {
-  const y = w.y; if (y == null) return;
-  const l = bankL(y) - 4, r = bankR(y) + 4, a = clamp(1 - w.d / 520, 0, 1) * clamp(w.age / .15, 0, 1), dir = w.up ? 1 : -1;
-  const body = 18 + w.amp * 80, gr = g.createLinearGradient(0, y, 0, y + dir * body);
-  gr.addColorStop(0, `rgba(${w.col},${.55 * a})`); gr.addColorStop(1, `rgba(${w.col},0)`);
-  g.fillStyle = gr; g.fillRect(l, Math.min(y, y + dir * body), r - l, body);
-  g.strokeStyle = `rgba(${RGB.foam},${.85 * a})`; g.lineWidth = 1.5 + w.amp * 3.5;
-  g.beginPath();
-  for (let i = 0; i <= 24; i++) { const u = i / 24, x = l + (r - l) * u, yy = y - dir * Math.sin(u * PI) * (3 + w.amp * 8) + Math.sin(u * 23 + T * 9) * (1 + w.amp * 2); i ? g.lineTo(x, yy) : g.moveTo(x, yy); }
-  g.stroke();
-  if (w.label && w.age < 2.4) {
-    g.font = `800 ${11 + w.amp * 5}px ${FM}`; g.textAlign = 'center'; g.fillStyle = `rgba(${w.col},${Math.min(1, (2.4 - w.age) * 1.2)})`;
-    g.shadowColor = `rgba(${w.col},.9)`; g.shadowBlur = 10; g.fillText(w.label, (l + r) / 2, y + dir * (body * .5 + 8)); g.shadowBlur = 0;
+  if (w?.label && w.age < 2.6) {
+    g.font = `700 ${11 + w.amp * 4}px ${FM}`; g.textAlign = 'center'; g.fillStyle = `rgba(${w.col},${Math.min(1, (2.6 - w.age) * 1.2)})`;
+    g.shadowColor = 'rgba(0,0,0,.8)'; g.shadowBlur = 6; g.fillText(w.label, (l + r) / 2, y + dir * (26 + w.amp * 20)); g.shadowBlur = 0;
   }
 }
+function drawMassTop(m) {
+  if (m.y < TOP - 60 || m.y > BOT + 60) return;
+  if (m.br) { g.setLineDash([3, 4]); g.strokeStyle = `rgba(${RGB.liq},.28)`; g.lineWidth = 1; g.beginPath(); g.ellipse(m.cx, m.y, m.hw * .8, m.hh * .6, 0, 0, PI * 2); g.stroke(); g.setLineDash([]); return; }
+  g.strokeStyle = `rgba(215,198,255,${.18 + m.pr * .35 + m.fl * .4})`; g.lineWidth = 1;
+  g.beginPath(); g.ellipse(m.cx, m.y, m.hw * .9, m.hh * .9, 0, 0, PI * 2); g.stroke();
+  // rings that keep rising out of it, faster as the price comes close
+  for (let k = 0; k < 2; k++) {
+    const u = (T * (.25 + m.pr * .5) + k * .5 + hash(m.it.p)) % 1;
+    g.strokeStyle = `rgba(215,198,255,${(1 - u) * (.16 + m.pr * .3)})`; g.beginPath(); g.ellipse(m.cx, m.y, m.hw * (.35 + u * .6), m.hh * (.35 + u * .6), 0, 0, PI * 2); g.stroke();
+  }
+}
+function rrect(x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
 function drawBars() {
+  g.save(); g.lineCap = 'butt';
   for (const it of ITEMS) {
     const y = Y(it.p); if (y < TOP - 30 || y > BOT + 30) continue;
     if (it.k === 'tgt') { drawTarget(it, y); continue; }
     if (!isBar(it)) continue;
-    const s = st(it), br = broken(it), t = barT(it), pr = br ? 0 : prox(it);
+    const s = st(it), br = broken(it), pr = br ? 0 : prox(it), sel = SEL?.key === it.key;
     const sh = clamp(1 - (T - s.shake) / .6, 0, 1), dx = sh ? Math.sin(T * 70) * 3 * sh * (s.hit || .5) : 0;
-    const l = bankL(y) - 5 + dx, r = bankR(y) + 5 + dx, w = r - l, sel = SEL?.key === it.key;
-    if (it.k !== 'stop') {
-      if (!br) {
-        g.shadowColor = `rgba(${it.col},${.25 + pr * .7})`; g.shadowBlur = 6 + pr * 22 + (sel ? 14 : 0);
-        const sg = g.createLinearGradient(0, y - t / 2, 0, y + t / 2); sg.addColorStop(0, '#4a545a'); sg.addColorStop(1, '#1d2428');
-        g.fillStyle = sg; rrect(l, y - t / 2, w, t, Math.min(3, t / 2)); g.fill(); g.shadowBlur = 0;
-        g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 1;
-        g.beginPath(); for (let x = l + 9; x < r - 4; x += 13) { g.moveTo(x, y - t / 2 + 1); g.lineTo(x, y + t / 2 - 1); } g.stroke();
-        g.strokeStyle = `rgba(${it.col},${.5 + pr * .5})`; g.lineWidth = 1.5; rrect(l, y - t / 2, w, t, Math.min(3, t / 2)); g.stroke();
-      } else {
-        // what is left of a dike: two stubs on the banks
-        g.fillStyle = '#262d31'; g.strokeStyle = `rgba(${it.col},.3)`; g.lineWidth = 1;
-        for (const [x0, x1] of [[l, l + w * .2], [r, r - w * .2]]) {
-          g.beginPath(); g.moveTo(x0, y - t / 2); g.lineTo(x1, y - t / 2); g.lineTo(x1 - (x1 - x0) * .25, y); g.lineTo(x1 + (x0 - x1) * .1, y + t / 2); g.lineTo(x0, y + t / 2); g.closePath(); g.fill(); g.stroke();
-        }
-      }
-    } else {
-      // a sluice: two wooden gates between posts; open (swung against the banks) once the stops are hit
-      const pt = Math.max(5, t + 3);
-      g.fillStyle = '#4c3c22'; g.fillRect(l - 1, y - pt / 2, 5, pt); g.fillRect(r - 4, y - pt / 2, 5, pt);
-      if (!br) {
-        g.shadowColor = `rgba(${it.col},${.25 + pr * .7})`; g.shadowBlur = 5 + pr * 18 + (sel ? 14 : 0);
-        g.fillStyle = '#7a5a26'; g.fillRect(l + 4, y - t / 2, w / 2 - 5, t); g.fillRect(l + w / 2 + 1, y - t / 2, w / 2 - 5, t); g.shadowBlur = 0;
-        g.strokeStyle = 'rgba(30,20,8,.6)'; g.lineWidth = 1; g.beginPath();
-        for (let x = l + 12; x < r - 6; x += 8) { g.moveTo(x, y - t / 2); g.lineTo(x, y + t / 2); } g.stroke();
-        g.strokeStyle = `rgba(${it.col},${.55 + pr * .45})`; g.lineWidth = 1.2; g.strokeRect(l + 4, y - t / 2, w / 2 - 5, t); g.strokeRect(l + w / 2 + 1, y - t / 2, w / 2 - 5, t);
-      } else {
-        const dir = it.above ? -1 : 1, len = w * .3;
-        g.strokeStyle = `rgba(${it.col},.45)`; g.lineWidth = Math.max(2, t * .6); g.lineCap = 'round';
-        g.beginPath(); g.moveTo(l + 4, y); g.lineTo(l + 8, y + dir * len); g.moveTo(r - 4, y); g.lineTo(r - 8, y + dir * len); g.stroke();
-      }
-    }
+    if (it.k === 'stop') drawSluice(it, y, dx, br, pr, sel); else drawDike(it, y, dx, br, pr, sel);
   }
+  g.restore();
+}
+// a dike: a concrete dam seen from above, the light from the top left: lit crest, dark face, a shadow on the water;
+// a light strip and beacons in the colour of the wall, brighter as the price comes close
+function drawDike(it, y, dx, br, pr, sel) {
+  const t = barT(it), l = bankL(y) - 3 + dx, r = bankR(y) + 3 + dx, w = r - l;
+  g.fillStyle = '#1b2125';
+  rrect(l - 12, y - t / 2 - 4, 15, t + 8, 3); g.fill(); rrect(r - 3, y - t / 2 - 4, 15, t + 8, 3); g.fill();
+  g.fillStyle = '#2a3236'; g.fillRect(l - 12, y - t / 2 - 4, 15, 2); g.fillRect(r - 3, y - t / 2 - 4, 15, 2);
+  if (br) {
+    // what is left: the abutments, stubs and rubble the water runs over
+    g.fillStyle = '#2b3236';
+    for (const [x0, ww] of [[l, w * .12], [r - w * .12, w * .12]]) { rrect(x0, y - t / 2, ww, t, 2); g.fill(); }
+    for (let k = 0; k < 9; k++) {
+      const hx = hash(it.p + k * 13.1), hy = hash(it.p + k * 7.7), sz = 2 + hash(it.p + k) * 4;
+      g.save(); g.translate(l + w * (.12 + .76 * hx), y + (hy - .5) * t * 2.4); g.rotate(hx * 6);
+      g.fillStyle = '#323b40'; g.fillRect(-sz, -sz * .6, sz * 2, sz * 1.2); g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(-sz, sz * .2, sz * 2, sz * .4); g.restore();
+    }
+    g.strokeStyle = `rgba(${it.col},.35)`; g.lineWidth = 1; g.beginPath(); g.moveTo(l + 3, y - t * .2); g.lineTo(l + w * .1, y - t * .2); g.moveTo(r - 3, y - t * .2); g.lineTo(r - w * .1, y - t * .2); g.stroke();
+    return;
+  }
+  const sg = g.createLinearGradient(0, y + t / 2, 0, y + t / 2 + 10);
+  sg.addColorStop(0, 'rgba(0,0,0,.5)'); sg.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = sg; g.fillRect(l + 4, y + t / 2, w - 2, 10);
+  const fg = g.createLinearGradient(0, y - t / 2, 0, y + t / 2);
+  fg.addColorStop(0, '#7a858b'); fg.addColorStop(.12, '#58636a'); fg.addColorStop(.62, '#414b51'); fg.addColorStop(.64, '#262e32'); fg.addColorStop(1, '#171c1f');
+  if (sel) { g.shadowColor = `rgba(${it.col},.9)`; g.shadowBlur = 16; }
+  g.fillStyle = fg; rrect(l, y - t / 2, w, t, 2.5); g.fill(); g.shadowBlur = 0;
+  g.strokeStyle = 'rgba(0,0,0,.3)'; g.lineWidth = 1; g.beginPath();
+  for (let x = l + 17; x < r - 8; x += 19) { g.moveTo(x, y - t / 2 + 1); g.lineTo(x, y + t * .12); } g.stroke();
+  const ys = y - t * .18;
+  g.shadowColor = `rgba(${it.col},${.6 + pr * .4})`; g.shadowBlur = 3 + pr * 14;
+  g.strokeStyle = `rgba(${it.col},${.55 + pr * .45})`; g.lineWidth = 1.2 + pr * .6;
+  g.beginPath(); g.moveTo(l + 5, ys); g.lineTo(r - 5, ys); g.stroke();
+  const n = Math.max(2, Math.round(w / 40));
+  for (let k = 0; k < n; k++) {
+    const b = .5 + .5 * Math.sin(T * (2 + pr * 4) + k * 1.3 + it.p * .01);
+    g.fillStyle = `rgba(${it.col},${.35 + b * (.3 + pr * .35)})`; g.beginPath(); g.arc(l + w * (k + .5) / n, ys, 1.4 + pr, 0, PI * 2); g.fill();
+  }
+  g.shadowBlur = 0;
+}
+// a sluice: two steel gates between three piers, an amber strip; open, the gates swing with the water
+function drawSluice(it, y, dx, br, pr, sel) {
+  const t = barT(it), l = bankL(y) - 2 + dx, r = bankR(y) + 2 + dx, w = r - l, mid = (l + r) / 2, ph = t + 7;
+  const pier = x => { g.fillStyle = '#1d2327'; rrect(x - 4, y - ph / 2, 8, ph, 2); g.fill(); g.fillStyle = '#323b40'; g.fillRect(x - 4, y - ph / 2, 8, 2); };
+  if (br) {
+    const dir = it.above ? -1 : 1, len = w / 2 - 8, a = 1.15;
+    g.strokeStyle = '#3a4248'; g.lineWidth = Math.max(2.5, t * .8);
+    g.beginPath(); g.moveTo(l + 4, y); g.lineTo(l + 4 + Math.cos(a) * len, y + dir * Math.sin(a) * len); g.moveTo(r - 4, y); g.lineTo(r - 4 - Math.cos(a) * len, y + dir * Math.sin(a) * len); g.stroke();
+    g.strokeStyle = `rgba(${it.col},.35)`; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(l + 4, y); g.lineTo(l + 4 + Math.cos(a) * len, y + dir * Math.sin(a) * len); g.moveTo(r - 4, y); g.lineTo(r - 4 - Math.cos(a) * len, y + dir * Math.sin(a) * len); g.stroke();
+    pier(l); pier(r); pier(mid); return;
+  }
+  const sg = g.createLinearGradient(0, y + t / 2, 0, y + t / 2 + 7);
+  sg.addColorStop(0, 'rgba(0,0,0,.45)'); sg.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = sg; g.fillRect(l + 4, y + t / 2, w - 4, 7);
+  const fg = g.createLinearGradient(0, y - t / 2, 0, y + t / 2);
+  fg.addColorStop(0, '#5a646a'); fg.addColorStop(.5, '#353e43'); fg.addColorStop(1, '#1e2428');
+  if (sel) { g.shadowColor = `rgba(${it.col},.9)`; g.shadowBlur = 16; }
+  g.fillStyle = fg; g.fillRect(l + 4, y - t / 2, mid - l - 8, t); g.fillRect(mid + 4, y - t / 2, r - mid - 8, t); g.shadowBlur = 0;
+  g.fillStyle = 'rgba(0,0,0,.35)';
+  for (let x = l + 12; x < r - 8; x += 11) if (Math.abs(x - mid) > 6) g.fillRect(x, y - t / 2 + 1, 1, t - 2);
+  g.shadowColor = `rgba(${it.col},${.6 + pr * .4})`; g.shadowBlur = 3 + pr * 12;
+  g.strokeStyle = `rgba(${it.col},${.6 + pr * .4})`; g.lineWidth = 1.2;
+  g.beginPath(); g.moveTo(l + 6, y); g.lineTo(mid - 6, y); g.moveTo(mid + 6, y); g.lineTo(r - 6, y); g.stroke(); g.shadowBlur = 0;
+  pier(l); pier(r); pier(mid);
 }
 function drawTarget(it, y) {
   const l = bankL(y), r = bankR(y), br = broken(it);
-  g.setLineDash([5, 5]); g.strokeStyle = `rgba(${it.col},${br ? .2 : .5})`; g.lineWidth = 1.2;
+  g.setLineDash([2, 6]); g.strokeStyle = `rgba(${it.col},${br ? .2 : .55})`; g.lineWidth = 1.2;
   g.beginPath(); g.moveTo(l, y); g.lineTo(r, y); g.stroke(); g.setLineDash([]);
-  // a flag on the right bank
-  g.strokeStyle = 'rgba(220,230,226,.6)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(r + 6, y); g.lineTo(r + 6, y - 16); g.stroke();
-  g.fillStyle = `rgba(${it.col},${br ? .35 : .9})`; g.beginPath(); g.moveTo(r + 7, y - 16); g.lineTo(r + 18 + Math.sin(T * 4) * 1.5, y - 12.5); g.lineTo(r + 7, y - 9); g.closePath(); g.fill();
+  // a buoy at each bank
+  for (const x of [l + 7, r - 7]) {
+    const b = .5 + .5 * Math.sin(T * 2.4 + x);
+    g.fillStyle = `rgba(${it.col},${br ? .3 : .25 + b * .25})`; g.beginPath(); g.arc(x, y, 6, 0, PI * 2); g.fill();
+    g.fillStyle = br ? '#55605f' : `rgb(${it.col})`; g.beginPath(); g.arc(x, y, 3, 0, PI * 2); g.fill();
+  }
 }
-function rrect(x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
 function drawFoam() {
-  // the water presses against the dike it is pushed into: the closer and the harder the push, the more foam
+  // the water presses against the dike it is pushed into: the closer and the harder the push, the whiter the edge
   const tk = TAKER.now(), push = tk.seen ? (tk.buy - .5) * 2 : 0;
   for (const [it, up] of [[CMP.topIt, true], [CMP.botIt, false]]) {
-    if (!it) continue;
+    if (!it || Math.abs(Y(up ? CMP.top : CMP.bot) - Y(it.p)) > 4) continue;
     const y0 = Y(it.p) + (up ? 1 : -1) * barT(it) / 2; if (y0 < TOP - 20 || y0 > BOT + 20) continue;
-    const near = clamp(1 - Math.abs(it.p - PX) / (V.r * .3), 0, 1), pr = clamp(near * .7 + Math.max(0, up ? push : -push) * .8 + Math.max(0, (up ? 1 : -1) * FLOW / V.r) * .6, 0, 1);
-    const l = bankL(y0), r = bankR(y0), n = 10 + Math.round(pr * 30), dir = up ? 1 : -1;
+    const near = clamp(1 - Math.abs(it.p - PX) / (V.r * .3), 0, 1);
+    const pr = clamp(near * .6 + Math.max(0, up ? push : -push) * .7 + Math.max(0, (up ? 1 : -1) * FLOW / V.r) * .6, .08, 1);
+    const l = bankL(y0), r = bankR(y0), dir = up ? 1 : -1, hgt = 3 + pr * 12;
+    g.save(); g.clip(riverPath);
+    const fg = g.createLinearGradient(0, y0, 0, y0 + dir * hgt);
+    fg.addColorStop(0, `rgba(${RGB.foam},${.25 + pr * .5})`); fg.addColorStop(1, `rgba(${RGB.foam},0)`);
+    g.fillStyle = fg; g.fillRect(l, Math.min(y0, y0 + dir * hgt), r - l, hgt);
+    const n = 6 + Math.round(pr * 16);
     for (let i = 0; i < n; i++) {
-      const x = l + 3 + (r - l - 6) * ((i + .5) / n) + Math.sin(T * 3 + i * 2.1) * 2, d = Math.abs(Math.sin(T * 2.2 + i * 1.7)) * (2 + pr * 9);
-      g.fillStyle = `rgba(${RGB.foam},${(.18 + pr * .55) * (1 - d / (3 + pr * 10))})`;
-      g.beginPath(); g.arc(x, y0 + dir * (1 + d), .8 + pr * 1.8 * Math.abs(Math.sin(T * 4 + i)), 0, PI * 2); g.fill();
+      const x = l + 3 + (r - l - 6) * hash(i + it.p) + Math.sin(T * 2 + i) * 3, d = Math.abs(Math.sin(T * 1.7 + i * 1.9)) * hgt * 1.3;
+      g.fillStyle = `rgba(${RGB.foam},${(.2 + pr * .5) * (1 - d / (hgt * 1.4))})`; g.beginPath(); g.arc(x, y0 + dir * d, .7 + pr * 1.2, 0, PI * 2); g.fill();
     }
+    g.restore();
   }
 }
 function drawWaterline() {
   const y = Y(SP), l = bankL(y), r = bankR(y);
   g.save(); g.clip(riverPath);
-  const gl = g.createLinearGradient(0, y - 14, 0, y + 14);
-  gl.addColorStop(0, 'rgba(238,244,240,0)'); gl.addColorStop(.5, 'rgba(238,244,240,.16)'); gl.addColorStop(1, 'rgba(238,244,240,0)');
-  g.fillStyle = gl; g.fillRect(l - 10, y - 14, r - l + 20, 28); g.restore();
-  g.strokeStyle = 'rgba(245,250,248,.95)'; g.lineWidth = 2; g.shadowColor = 'rgba(238,244,240,.9)'; g.shadowBlur = 12;
-  g.beginPath(); for (let i = 0; i <= 30; i++) { const u = i / 30, x = l + (r - l) * u, yy = y + Math.sin(u * 14 + T * 3) * 1.6; i ? g.lineTo(x, yy) : g.moveTo(x, yy); } g.stroke(); g.shadowBlur = 0;
-  // the price tag on the left bank, and the live mark on the right
-  const tw = Math.min(RL - X0 - 12, phone ? 84 : 112), tx = RL - 8 - tw, th = phone ? 26 : 30;
-  g.fillStyle = 'rgba(20,29,33,.95)'; rrect(tx, y - th / 2, tw, th, 7); g.fill();
-  g.strokeStyle = 'rgba(238,244,240,.45)'; g.lineWidth = 1; g.stroke();
+  const gl = g.createLinearGradient(0, y - 16, 0, y + 16);
+  gl.addColorStop(0, 'rgba(238,244,240,0)'); gl.addColorStop(.5, 'rgba(238,244,240,.13)'); gl.addColorStop(1, 'rgba(238,244,240,0)');
+  g.fillStyle = gl; g.fillRect(l - 10, y - 16, r - l + 20, 32); g.restore();
+  g.strokeStyle = 'rgba(248,252,250,.95)'; g.lineWidth = 1.6; g.shadowColor = 'rgba(238,244,240,.9)'; g.shadowBlur = 10;
+  g.beginPath(); for (let i = 0; i <= 32; i++) { const u = i / 32, x = l + (r - l) * u, yy = y + Math.sin(u * 13 + T * 2.6) * 1.3; i ? g.lineTo(x, yy) : g.moveTo(x, yy); } g.stroke(); g.shadowBlur = 0;
+  // the price tag on the left bank, pointing into the river
+  const tw = Math.min(RL - X0 - 18, phone ? 82 : 108), th = phone ? 26 : 30, tx = l - 12 - tw;
+  g.fillStyle = 'rgba(14,21,24,.96)'; rrect(tx, y - th / 2, tw, th, 6); g.fill();
+  g.beginPath(); g.moveTo(tx + tw, y - 5); g.lineTo(tx + tw + 6, y); g.lineTo(tx + tw, y + 5); g.closePath(); g.fill();
+  g.strokeStyle = 'rgba(238,244,240,.4)'; g.lineWidth = 1; rrect(tx, y - th / 2, tw, th, 6); g.stroke();
   g.fillStyle = '#fff'; g.font = `700 ${phone ? 14 : 17}px ${FM}`; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillText(fmtP(PX), tx + tw / 2, y + 1);
-  const rx = bankR(y) + 12;
-  g.fillStyle = `rgba(${RGB.up},${.55 + .45 * Math.abs(Math.sin(T * 2))})`; g.beginPath(); g.arc(rx + 3, y, 3.5, 0, PI * 2); g.fill();
-  g.font = `700 ${phone ? 10 : 11}px ${FD}`; g.textAlign = 'left'; g.fillStyle = '#eef4f0'; g.fillText('WATERLIJN', rx + 12, y - (phone ? 5 : 6));
+  const rx = r + 12;
+  g.fillStyle = `rgba(${RGB.up},${.55 + .45 * Math.abs(Math.sin(T * 2))})`; g.beginPath(); g.arc(rx + 3, y - (phone ? 5 : 6), 3, 0, PI * 2); g.fill();
+  g.font = `700 ${phone ? 9.5 : 10.5}px ${FD}`; g.textAlign = 'left'; g.fillStyle = '#eef4f0'; g.fillText('HUIDIGE PRIJS', rx + 11, y - (phone ? 5 : 6));
   const old = HIST.find(h => Date.now() - h[0] <= 61e3);
-  if (old) { const d = PX - old[1]; g.font = `600 ${phone ? 9.5 : 10.5}px ${FM}`; g.fillStyle = d > 0 ? '#35ffb4' : d < 0 ? '#ff4f6d' : '#8aa0a6';
-    g.fillText(`${d >= 0 ? '+' : '−'}${fmtP(Math.abs(d))} in 1 min`, rx + 12, y + (phone ? 7 : 8)); }
+  if (old) { const dd = PX - old[1]; g.font = `600 ${phone ? 10 : 11}px ${FM}`; g.fillStyle = dd > 0 ? '#35ffb4' : dd < 0 ? '#ff4f6d' : '#8aa0a6';
+    g.fillText(`${dd >= 0 ? '+' : '−'}${fmtP(Math.abs(dd))} · 1 min`, rx + 11, y + (phone ? 8 : 9)); }
   g.textBaseline = 'alphabetic';
 }
 // labels on both banks, the most important first; one that would overlap another is left out (tap the river for it)
 function drawLabels() {
-  const yP = Y(SP), gap = phone ? 30 : 34, taken = [[yP - 24, yP + 24]];
+  const yP = Y(SP), gap = phone ? 31 : 35, taken = [[yP - 24, yP + 24]];
   const free = y => taken.every(([a, b]) => y + gap / 2 <= a || y - gap / 2 >= b);
   const list = ITEMS.map(it => ({ it, y: Y(it.p) })).filter(o => o.y > TOP + 10 && o.y < BOT - 10)
     .sort((a, b) => (b.it.k === 'tgt') - (a.it.k === 'tgt') || (b.it.rel + prox(b.it) * 2 + (SEL?.key === b.it.key) * 9) - (a.it.rel + prox(a.it) * 2 + (SEL?.key === a.it.key) * 9));
+  g.textBaseline = 'middle';
   for (const o of list) {
-    let y = null; for (const d of [0, -6, 6, -12, 12]) if (free(o.y + d)) { y = o.y + d; break; }
+    let y = null; for (const d of [0, -6, 6, -12, 12, -18, 18]) if (free(o.y + d)) { y = o.y + d; break; }
     if (y == null) continue;
     taken.push([y - gap / 2, y + gap / 2]);
-    const it = o.it, br = broken(it), a = br ? .45 : 1, l = bankL(o.y), r = bankR(o.y) + (it.k === 'tgt' ? 22 : 0);
-    g.strokeStyle = `rgba(${it.col},${.35 * a})`; g.lineWidth = 1;
-    g.beginPath(); g.moveTo(l - 6, o.y); g.lineTo(l - 12, y); g.moveTo(r + 6, o.y); g.lineTo(r + 12, y); g.stroke();
-    g.textAlign = 'right'; g.font = `500 ${phone ? 12 : 13.5}px ${FM}`; g.fillStyle = `rgba(223,232,228,${a})`; g.fillText(fmtP(it.p), l - 15, y + 1);
-    g.font = `500 ${phone ? 9.5 : 10.5}px ${FM}`; g.fillStyle = `rgba(138,160,166,${a})`; g.fillText(pct(it.p, PX), l - 15, y + (phone ? 12 : 14));
-    g.textAlign = 'left'; g.font = `700 ${phone ? 11.5 : 13}px ${FD}`; g.fillStyle = `rgba(${it.col},${a})`;
-    g.fillText(it.name + (br ? ' ✓' : ''), r + 15, y + 1);
-    g.font = `500 ${phone ? 10.5 : 12}px ${FM}`; g.fillStyle = `rgba(200,214,210,${a * .85})`; g.fillText(it.v, r + 15, y + (phone ? 12 : 14));
+    const it = o.it, br = broken(it), a = br ? .45 : 1, l = bankL(o.y) - (isBar(it) ? 14 : 4), r = bankR(o.y) + (isBar(it) ? 14 : 4);
+    g.strokeStyle = `rgba(${it.col},${.45 * a})`; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(l - 2, o.y); g.lineTo(l - 8, y); g.moveTo(r + 2, o.y); g.lineTo(r + 8, y); g.stroke();
+    g.textAlign = 'right'; g.font = `600 ${phone ? 12.5 : 14}px ${FM}`; g.fillStyle = `rgba(232,239,236,${a})`; g.fillText(fmtP(it.p), l - 11, y - 6);
+    g.font = `500 ${phone ? 9.5 : 10.5}px ${FM}`; g.fillStyle = `rgba(127,150,156,${a})`; g.fillText(pct(it.p, PX), l - 11, y + 8);
+    g.textAlign = 'left'; g.font = `700 ${phone ? 9.5 : 10.5}px ${FD}`; g.fillStyle = `rgba(${it.col},${a})`;
+    g.fillText(it.name.toUpperCase() + (br ? ' ✓' : ''), r + 11, y - 6);
+    g.font = `600 ${phone ? 12 : 13.5}px ${FM}`; g.fillStyle = `rgba(238,244,240,${a * .92})`; g.fillText(it.v, r + 11, y + 8);
   }
+  g.textBaseline = 'alphabetic';
 }
 function drawParts(dt) {
   for (let i = PARTS.length - 1; i >= 0; i--) {
     const q = PARTS[i]; q.age += dt; if (q.age >= q.life) { PARTS.splice(i, 1); continue; }
     const u = q.age / q.life, a = 1 - u;
-    if (q.t === 'ring') { const rr = q.r1 * ease(u); g.strokeStyle = `rgba(${q.col},${a * .7})`; g.lineWidth = q.w * a + .4;
+    if (q.t === 'ring') { const rr = q.r1 * ease(u); g.strokeStyle = `rgba(${q.col},${a * .6})`; g.lineWidth = q.w * a + .4;
       g.beginPath(); g.ellipse(q.x, q.y, rr, rr * (q.flat ? .18 : .35), 0, 0, PI * 2); g.stroke(); continue; }
     q.vx *= Math.exp(-dt * 2); q.vy *= Math.exp(-dt * 2); q.x += q.vx * dt; q.y += q.vy * dt;
     if (q.t === 'chunk') { q.rot += q.vr * dt * a; g.save(); g.translate(q.x, q.y); g.rotate(q.rot);
-      g.fillStyle = `rgba(${q.col},${a})`; g.fillRect(-q.w / 2, -q.h / 2, q.w, q.h); g.strokeStyle = `rgba(${q.rim},${a * .6})`; g.lineWidth = 1; g.strokeRect(-q.w / 2, -q.h / 2, q.w, q.h); g.restore(); continue; }
-    g.fillStyle = `rgba(${q.col},${a})`; g.beginPath(); g.arc(q.x, q.y, q.r, 0, PI * 2); g.fill();
+      g.fillStyle = `rgba(${q.col},${a})`; g.fillRect(-q.w / 2, -q.h / 2, q.w, q.h); g.fillStyle = `rgba(0,0,0,${a * .35})`; g.fillRect(-q.w / 2, q.h * .1, q.w, q.h * .4); g.restore(); continue; }
+    g.fillStyle = `rgba(${q.col},${a * .9})`; g.beginPath(); g.arc(q.x, q.y, q.r * (.5 + a * .5), 0, PI * 2); g.fill();
   }
   if (PARTS.length > 600) PARTS.splice(0, PARTS.length - 600);
 }
-
 /* ---- header, toasts, the card, help --------------------------------------------------------------------------------- */
 function paintHead() {
   if (PX && C24) { const v = PX / C24 - 1; $('tc').innerHTML = `BTC · 24u <span style="color:${v >= 0 ? 'var(--up)' : 'var(--dn)'}">${pct(PX, C24)}</span>`; }
@@ -854,7 +955,13 @@ function frame(now) {
     VEL = lerp(VEL, (SP - sp0) / Math.max(dt, 1e-3), 1 - Math.exp(-dt * 1.5));
     if (!V.follow && !PTR.size && now - userAt > 10e3) { V.follow = true; $('follow').setAttribute('aria-pressed', 'true'); }
     if (V.follow) { V.c = lerp(V.c, SP, 1 - Math.exp(-dt * 1.6)); if (!V.userR) V.r = lerp(V.r, fitR(), 1 - Math.exp(-dt * 1.2)); }
-    pool(dt); if (!reduced) stepStreaks(dt); stepWaves(dt);
+    // the fisheye: strong enough that the nearest levels stand at least ~40 px from the water line
+    let near = Infinity; for (const it of ITEMS) if (it.k !== 'tgt') near = Math.min(near, Math.abs(it.p - SP));
+    let sT = V.r * .12;
+    if (near < V.r) { let lo = V.r * .015, hi = V.r * .12; const off = s => HH * Math.asinh(near / s) / Math.asinh(V.r / s);
+      if (off(hi) < 40) { for (let k = 0; k < 14; k++) { const m = (lo + hi) / 2; if (off(m) < 40) hi = m; else lo = m; } sT = hi; } }
+    V.s = V.s ? lerp(V.s, sT, 1 - Math.exp(-dt * 2.5)) : sT;
+    pool(dt); stepFlow(dt); stepWaves(dt);
     drawBanks(); drawWater(); drawBars(); drawFoam(); drawWaterline(); drawLabels(); drawParts(dt);
   } else { g.fillStyle = '#05090b'; g.fillRect(0, 0, W, H); }
   requestAnimationFrame(frame);
@@ -871,7 +978,7 @@ function frame(now) {
   let seen = false; try { seen = localStorage.getItem('rivier-seen') === '1'; localStorage.setItem('rivier-seen', '1'); } catch (e) {}
   if (!seen && D) setHelp(true);
 })();
-window.RIVIER = { get D() { return D; }, get ITEMS() { return ITEMS; }, get TG() { return TG; }, V, CMP, WAVES, PARTS, onPrice, realLiq, showRealLiq, live, TAKER, cross, wave };
+window.RIVIER = { get wms() { return WEMA; }, get D() { return D; }, get ITEMS() { return ITEMS; }, get TG() { return TG; }, V, CMP, WAVES, PARTS, onPrice, realLiq, showRealLiq, live, TAKER, cross, wave };
 })();
 </script>
 </body>

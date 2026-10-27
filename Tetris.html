@@ -401,7 +401,16 @@ const thOf = u => u > 0 ? 0.12 + 0.78 * Math.min(1, u / MAXB) : 0;   // units ->
 const baseOf = (type, rel) => TY[type].u === 'pct' ? 0 : Math.max(1, Math.min(MAXB, Math.round(rel * MAXB)));
 
 // row spacing: a tall phone screen spreads the rows out so the well fills the height (cubes stay cubes)
-const WFIT = 24.8;   // width in view: labels, bars, size tags and the exchange tiles
+// the width: on a phone the bars are 10 long and the tiles stand in one column; on a wide screen the bars run longer and
+// the tiles stand in two bigger columns, so the well fills the width
+const LAY = (() => {
+  const w = stage.clientWidth || 400, h = stage.clientHeight || 700, asp = w / h;
+  if (!(asp > 1.15 && w >= 700)) return { BW: 10, TC: 1, TSC: 1.1, W: 24.8 };
+  const TC = 2, TSC = 1.6, BW = Math.max(10, Math.min(28, (27 + 2.4) * asp / 1.03 * 0.95 - 6.9 - 4.3 - TC * 3.3 * TSC - 0.8));
+  return { BW, TC, TSC, W: 6.9 + BW + 4.3 + TC * 3.3 * TSC + 0.8 };
+})();
+const BW = LAY.BW, TL = BW + 4.25, WFIT = LAY.W;   // bar length, left edge of the tiles, width in view
+const CX = -6.9 + WFIT / 2, RW = 6.9 + BW + 4.3, RX = (BW - 2.6) / 2;   // view centre, row width and its centre
 const COMPACT = (stage.clientWidth || 400) < 560;   // phone: bigger labels without the distance column
 const RS = (() => { const w = stage.clientWidth || 400, h = stage.clientHeight || 700, tanH = Math.tan(17.5 * Math.PI / 180);
   const visH = WFIT / (w / h) * 1.03 + 2.4 * tanH; return Math.max(1, Math.min(1.7, (visH * 0.94 - 2.4) / 27)); })();
@@ -436,7 +445,7 @@ const glowTex = canvasTex(128, 128, g => { const r = g.createRadialGradient(64, 
 const chevTex = up => { const t = canvasTex(64, 64, g => {
   g.strokeStyle = '#fff'; g.lineWidth = 7; g.lineCap = 'round'; g.lineJoin = 'round'; g.shadowColor = '#fff'; g.shadowBlur = 8;
   g.beginPath(); if (up) { g.moveTo(14, 42); g.lineTo(32, 22); g.lineTo(50, 42); } else { g.moveTo(14, 22); g.lineTo(32, 42); g.lineTo(50, 22); } g.stroke(); });
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(10, 1); return t; };
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(Math.round(BW), 1); return t; };
 
 // block geometry: per-face shade so the cubes read as 3D under an unlit neon material
 const bGeo = new THREE.BoxGeometry(0.9, 0.9, 0.9);
@@ -461,17 +470,17 @@ const trPts = new THREE.Points(trGeo, new THREE.PointsMaterial({ size: 0.26, map
 trPts.frustumCulled = false; scene.add(trPts);
 
 // backdrop: table row lines, the well wall, drifting dust
-const floor = new THREE.Mesh(new THREE.BoxGeometry(20.6, 0.1, 1.2), new THREE.MeshBasicMaterial({ color: 0x2f6b58, transparent: true, opacity: 0.6, blending: ADD }));
+const floor = new THREE.Mesh(new THREE.BoxGeometry(TL + 7.2, 0.1, 1.2), new THREE.MeshBasicMaterial({ color: 0x2f6b58, transparent: true, opacity: 0.6, blending: ADD }));
 let ctrY = -13.5 * RS - 1.1;   // the floor follows the lowest level
 {
   const pos = [];
-  for (let y = -13; y <= 14; y++) pos.push(-6.9, (y - 0.5) * RS, -0.7, 13.7, (y - 0.5) * RS, -0.7);
-  for (let x = 0; x <= 13; x++) pos.push(x - 0.05, -13.5 * RS, -0.7, x - 0.05, 13.5 * RS, -0.7);
+  for (let y = -13; y <= 14; y++) pos.push(-6.9, (y - 0.5) * RS, -0.7, TL - 0.5, (y - 0.5) * RS, -0.7);
+  for (let x = 0; x <= Math.round(BW + 3); x++) pos.push(x - 0.05, -13.5 * RS, -0.7, x - 0.05, 13.5 * RS, -0.7);
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   scene.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x1a2622, transparent: true, opacity: 0.8 })));
   const wall = new THREE.Mesh(new THREE.BoxGeometry(0.1, 27.2 * RS, 0.1), new THREE.MeshBasicMaterial({ color: 0x2f6b58, transparent: true, opacity: 0.9, blending: ADD }));
   wall.position.set(-0.22, 0, 0); scene.add(wall);
-  floor.position.set(3.4, -13 * RS - 0.62, 0); scene.add(floor);
+  floor.position.set((TL - 6.9) / 2, -13 * RS - 0.62, 0); scene.add(floor);
 }
 const SN = 320, sPos = new Float32Array(SN * 3), sSpd = new Float32Array(SN);
 for (let i = 0; i < SN; i++) { sPos[i * 3] = rnd(-30, 38); sPos[i * 3 + 1] = rnd(-30, 30); sPos[i * 3 + 2] = rnd(-30, -4); sSpd[i] = rnd(0.2, 1.4); }
@@ -538,10 +547,10 @@ function drawSize(r) {
 // the current price: a laser line across the bars in the colour of the last tick (green up, red down) with a spark
 // running along it, and a price tag over the label column with the change and how far the nearest walls are
 const slab = new THREE.Group(); scene.add(slab);
-const slabEdge = new THREE.Mesh(new THREE.PlaneGeometry(14.3, 0.07), new THREE.MeshBasicMaterial({ color: 0x7ff0d0, transparent: true, opacity: 1, blending: ADD, depthWrite: false }));
-slabEdge.position.set(6.95, 0, 0.75); slab.add(slabEdge);
-const laserGlow = new THREE.Mesh(new THREE.PlaneGeometry(14.6, 1.0), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.3, blending: ADD, depthWrite: false }));
-laserGlow.position.set(6.95, 0, 0.7); slab.add(laserGlow);
+const slabEdge = new THREE.Mesh(new THREE.PlaneGeometry(TL + 0.2, 0.07), new THREE.MeshBasicMaterial({ color: 0x7ff0d0, transparent: true, opacity: 1, blending: ADD, depthWrite: false }));
+slabEdge.position.set((TL - 0.2) / 2, 0, 0.75); slab.add(slabEdge);
+const laserGlow = new THREE.Mesh(new THREE.PlaneGeometry(TL + 0.5, 1.0), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.3, blending: ADD, depthWrite: false }));
+laserGlow.position.set((TL - 0.2) / 2, 0, 0.7); slab.add(laserGlow);
 const sweep = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.9), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.9, blending: ADD, depthWrite: false }));
 sweep.position.z = 0.8; slab.add(sweep);
 const TAGH = Math.min(1.45, RS * 1.12), slabL = textPlane(1536, 180, TAGH * 8.53, TAGH); slabL.m.material.opacity = 1; slabL.m.position.set(-6.9 + TAGH * 4.27, 0, 0.9); slab.add(slabL.m);
@@ -570,11 +579,11 @@ function drawSlab() {
 }
 
 // scan beam + row flashes + floating texts
-const beam = new THREE.Mesh(new THREE.PlaneGeometry(22, 0.7), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.22, blending: ADD, depthWrite: false }));
-beam.position.set(3.4, 0, 0.6); scene.add(beam);
+const beam = new THREE.Mesh(new THREE.PlaneGeometry(RW + 1.4, 0.7), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.22, blending: ADD, depthWrite: false }));
+beam.position.set(RX, 0, 0.6); scene.add(beam);
 const flashes = [...Array(8)].map(() => { const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: ADD, depthWrite: false })); m.position.z = 0.7; m.visible = false; m.userData.t = 0; scene.add(m); return m; });
 let flHead = 0;
-function flashRow(y, col) { const m = flashes[flHead = (flHead + 1) % flashes.length]; m.position.set(3.4, y, 0.7); m.material.color.copy(col).lerp(new THREE.Color(1, 1, 1), 0.6); m.userData.t = 0.45; m.visible = true; }
+function flashRow(y, col) { const m = flashes[flHead = (flHead + 1) % flashes.length]; m.position.set(RX, y, 0.7); m.material.color.copy(col).lerp(new THREE.Color(1, 1, 1), 0.6); m.userData.t = 0.45; m.visible = true; }
 const floats = [...Array(12)].map(() => { const c = document.createElement('canvas'); c.width = 320; c.height = 72; const t = new THREE.CanvasTexture(c);
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, depthTest: false })); s.scale.set(3.2, 0.72, 1); s.visible = false; s.userData = { c, t, life: 0 }; scene.add(s); return s; });
 let ftHead = 0;
@@ -594,8 +603,8 @@ const SHORT = { hyperliquid: 'Hyper', cryptocom: 'Crypto', model: 'Schat.' };
 const REGS = {};
 // a column of tiles to the right of the bars, top to bottom along the well; the drawer opens towards the bars
 const regBodyGeo = new THREE.BoxGeometry(3, 1.7, 0.6), regDrawGeo = new THREE.BoxGeometry(0.28, 1.2, 0.45), regEdgeGeo = new THREE.EdgesGeometry(regBodyGeo);
-let tileTop = 13.5 * RS - 0.9, tileStep = 27 * RS / 11, tileSc = 1;
-const tileX = () => 14.25 + 1.5 * tileSc;
+let tileTop = 13.5 * RS - 0.9, tileStep = 27 * RS / (12 / LAY.TC - 1), tileSc = 1;
+const tileX = col => TL + 1.5 * tileSc + col * 3.3 * tileSc;
 function drawReg(R) {
   const fl = R.flash > 0 ? R.fTxt : '', st = R.on + '|' + R.tot + '|' + fl;
   if (st === R.str) return; R.str = st;
@@ -614,7 +623,7 @@ function drawReg(R) {
 }
 Object.keys(EXN).forEach((k, i) => {
   const [name, css] = EXN[k], col = new THREE.Color(css);
-  const g = new THREE.Group(); g.position.set(tileX(), tileTop - i * tileStep, 0.3); g.userData.i = i; scene.add(g);
+  const tc = i % LAY.TC, row = Math.floor(i / LAY.TC), g = new THREE.Group(); g.position.set(tileX(tc), tileTop - row * tileStep, 0.3); g.userData = { i, col: tc, row }; scene.add(g);
   g.add(new THREE.Mesh(regBodyGeo, new THREE.MeshBasicMaterial({ color: 0x0a0812 })));
   const edge = new THREE.LineSegments(regEdgeGeo, new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.4, blending: ADD })); g.add(edge);
   const scr = textPlane(512, 274, 2.8, 1.5); scr.m.material.opacity = 1; scr.m.position.set(0.08, 0, 0.31); g.add(scr.m);
@@ -644,8 +653,8 @@ const netCol = (u, out) => { const k = Math.max(0, Math.min(1, u)) * 2, i = Math
 // a point on a band: u along it (0 top .. 1 bottom), v across it, w in depth; band 0 runs from the top left to the bottom
 // right, band 1 (mirrored) from the top right to the bottom left, so together they fill the screen
 function bandAt(u, v, w, t, out, b = 0) {
-  const x = -24 + 54 * u + v * 7, y = 27 - 56 * u + 7 * Math.sin(u * 4.2 + 0.6 + b * 2) + 1.6 * Math.sin(t * 0.35 + u * 7 + b) + v * 7;
-  out.set(b ? 10.9 - x : x, y + 1.2 * Math.sin(t * 0.5 + v * 3 + u * 5), w + 2.2 * Math.sin(t * 0.3 + u * 6 + v * 2));
+  const x = CX + (-26.45 + 54 * u + v * 7) * Math.max(1, WFIT / 24.8), y = 27 - 56 * u + 7 * Math.sin(u * 4.2 + 0.6 + b * 2) + 1.6 * Math.sin(t * 0.35 + u * 7 + b) + v * 7;
+  out.set(b ? 2 * CX - x : x, y + 1.2 * Math.sin(t * 0.5 + v * 3 + u * 5), w + 2.2 * Math.sin(t * 0.3 + u * 6 + v * 2));
   return out;
 }
 const nodes = [...Array(NET.n + NET.far)].map((_, i) => { const far = i >= NET.n;
@@ -793,10 +802,10 @@ function absorbAt(r, x) {
 const barPt = (r, x) => { const v = new THREE.Vector3(); return () => v.set(x, r.yd, 0.35); };
 function zap(src, r, n, delay = 0) {   // n units of orders from a register to a bar
   r.inbound += n;
-  for (let k = 0; k < n; k++) { const x = rnd(0.5, 9.5); bolt(regPos(src), barPt(r, x), (REGS[src] || REGS.model).col, delay + k * 0.07, rnd(0.28, 0.42), () => absorbAt(r, x)); }
+  for (let k = 0; k < n; k++) { const x = rnd(0.5, BW - 0.5); bolt(regPos(src), barPt(r, x), (REGS[src] || REGS.model).col, delay + k * 0.07, rnd(0.28, 0.42), () => absorbAt(r, x)); }
 }
 function zapBack(r, dst, n, delay = 0) {   // n units pulled back from a bar into a register
-  for (let k = 0; k < n; k++) { const x = rnd(0.5, 9.5);
+  for (let k = 0; k < n; k++) { const x = rnd(0.5, BW - 0.5);
     emit(x, r.yd, 0.4, r.t.col, 4, 2);
     bolt(new THREE.Vector3(x, r.yd, 0.35), regPos(dst), (REGS[dst] || REGS.model).col, delay + k * 0.07, rnd(0.3, 0.45), () => { const R = REGS[dst]; if (R) R.open = 1; snd('back'); }); }
 }
@@ -815,7 +824,7 @@ function absorb(r, b) {
 function debris(r, n, state) {
   const th = Math.max(0.3, r.thS), out = [];
   for (let k = 0; k < n; k++) {
-    const b = newBlock(r.t.col); b.x = rnd(0.4, 9.6); b.y = r.yd + rnd(-0.4, 0.4) * th; b.z = rnd(-0.4, 0.4) * th;
+    const b = newBlock(r.t.col); b.x = rnd(0.4, BW - 0.4); b.y = r.yd + rnd(-0.4, 0.4) * th; b.z = rnd(-0.4, 0.4) * th;
     b.s = b.s0 = Math.max(0.35, Math.min(0.9, th * 0.9)); b.state = state; b.t = state === 'dying' ? -k * 0.03 : 0; b.sx = b.x; b.sy = b.y; out.push(b);
   }
   return out;
@@ -828,26 +837,26 @@ const keyOf = lv => lv.type + '|' + lv.price;
 function makeRow(lv) {
   const t = TY[lv.type];
   const r = { key: keyOf(lv), type: lv.type, t, price: lv.price, val: lv.val, rel: lv.rel, first: !!lv.first, base: baseOf(lv.type, lv.rel), ps: lv.ps || null, glass: !!(lv.ps && lv.ps[0] <= 1), per: lv.per || null, srcW: lv.per || null, dstW: null,
-    y: 0, yd: null, units: 0, inbound: 0, thS: 0, pulse: 0, cleared: false, clearedAt: -9, gone: false, goneT: 0, born: T, flare: 0, decayT: 0, hl: 0, endX: 10, lblStr: '', sizeStr: '' };
+    y: 0, yd: null, units: 0, inbound: 0, thS: 0, pulse: 0, cleared: false, clearedAt: -9, gone: false, goneT: 0, born: T, flare: 0, decayT: 0, hl: 0, endX: BW, lblStr: '', sizeStr: '' };
   const lh = COMPACT ? Math.min(1.05, 0.86 * RS) : 0.8;   // label height: as tall as the row allows on a phone
   r.lbl = textPlane(640, Math.round(lh * 100), 6.4, lh); scene.add(r.lbl.m);
   r.sz = textPlane(360, Math.round(lh * 100), 3.6, lh); scene.add(r.sz.m);
   r.halo = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: glowTex, color: t.col, transparent: true, opacity: 0, blending: ADD, depthWrite: false }));
   r.halo.position.z = -0.6; scene.add(r.halo);
-  r.hit = new THREE.Mesh(new THREE.PlaneGeometry(20.6, 0.98 * RS), new THREE.MeshBasicMaterial()); r.hit.visible = false; r.hit.userData.row = r; scene.add(r.hit);
+  r.hit = new THREE.Mesh(new THREE.PlaneGeometry(RW, 0.98 * RS), new THREE.MeshBasicMaterial()); r.hit.visible = false; r.hit.userData.row = r; scene.add(r.hit);
   if (t.u !== 'pct') {
     r.bar = new THREE.Mesh(barGeo, new THREE.MeshBasicMaterial({ map: barTex, vertexColors: true, color: t.col.clone(), transparent: true }));
-    r.bar.position.x = 5; r.bar.scale.set(10, 0.001, 0.001); scene.add(r.bar);
+    r.bar.position.x = BW / 2; r.bar.scale.set(BW, 0.001, 0.001); scene.add(r.bar);
     r.edge = new THREE.LineSegments(barEdgeGeo, new THREE.LineBasicMaterial({ color: t.col, transparent: true, opacity: 0, blending: ADD }));
-    r.edge.position.x = 5; r.edge.scale.copy(r.bar.scale); scene.add(r.edge);
+    r.edge.position.x = BW / 2; r.edge.scale.copy(r.bar.scale); scene.add(r.edge);
   }
   if (t.u === 'pct') {
     const tex = chevTex(lv.type === 'tup');
-    const gm = new THREE.Mesh(new THREE.BoxGeometry(10, 0.56, 0.56), new THREE.MeshBasicMaterial({ map: tex, color: t.col, transparent: true, opacity: 0, blending: ADD, depthWrite: false }));
-    gm.position.x = 5; scene.add(gm);
-    const ge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(10, 0.8, 0.8)), new THREE.LineBasicMaterial({ color: t.col, transparent: true, opacity: 0, blending: ADD }));
-    ge.position.x = 5; scene.add(ge);
-    r.gate = { m: gm, e: ge, tex }; r.endX = 10;
+    const gm = new THREE.Mesh(new THREE.BoxGeometry(BW, 0.56, 0.56), new THREE.MeshBasicMaterial({ map: tex, color: t.col, transparent: true, opacity: 0, blending: ADD, depthWrite: false }));
+    gm.position.x = BW / 2; scene.add(gm);
+    const ge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(BW, 0.8, 0.8)), new THREE.LineBasicMaterial({ color: t.col, transparent: true, opacity: 0, blending: ADD }));
+    ge.position.x = BW / 2; scene.add(ge);
+    r.gate = { m: gm, e: ge, tex }; r.endX = BW;
   }
   rows.push(r); drawLabel(r);
   return r;
@@ -937,7 +946,7 @@ function applyLevels(L) {
   for (const r of liveRows()) {
     if (r.isNew) { r.isNew = false; r.born = T;
       if (r.base) fillRow(r, r.base, firstApply ? 0.25 + (r.y / RS + 13) * 0.07 : rnd(0, 0.4));
-      else for (let x = 0; x < 10; x += 0.7) emit(x, r.y + 2, 0.3, r.t.col, 4, 2, { vy: -3 }); }
+      else for (let x = 0; x < BW; x += 0.7) emit(x, r.y + 2, 0.3, r.t.col, 4, 2, { vy: -3 }); }
     if (r.delta && !quiet) { floatText(r.endX + 2, r.y + 0.9, (r.delta > 0 ? '+' : '−') + fmtUsd(Math.abs(r.delta)), r.delta > 0 ? '#eef4f0' : '#8fa39a'); r.delta = 0; }
   }
   firstApply = false; fit();
@@ -1013,8 +1022,8 @@ function clearRow(r) {
   if (r.units) debris(r, Math.min(28, 6 + r.units * 2), 'pop').forEach((b, k) => { b.t = 0.05 + k * 0.012; b.flash = 1.6; b.dir = dir; });
   r.units = 0;
   flashRow(r.yd, r.t.col);
-  for (let x = 0; x < 11; x += 1.2) emit(x, r.yd, 0.4, r.t.col, 10, 7, { vz: 3, life: 1.1 });
-  if (r.gate) for (let x = 0; x < 10; x += 0.5) emit(x, r.yd, 0.3, r.t.col, 8, 9, { vy: dir * 3, vz: 2, life: 1.4 });
+  for (let x = 0; x < BW + 1; x += 1.2) emit(x, r.yd, 0.4, r.t.col, 10, 7, { vz: 3, life: 1.1 });
+  if (r.gate) for (let x = 0; x < BW; x += 0.5) emit(x, r.yd, 0.3, r.t.col, 8, 9, { vy: dir * 3, vz: 2, life: 1.4 });
   shake = Math.max(shake, r.gate ? 0.55 : 0.28);
   nCleared++; if (r.t.u === 'usd') eaten += r.val;
   if (mode === 'demo') {
@@ -1174,7 +1183,7 @@ function showLiq(long, q, usd, ex) {
   netGlow = Math.min(1.5, netGlow + 0.4 + Math.min(1, usd / 1e6)); netPulse(TY.sliq.col, 6); snd('liq');
   for (const e of ex) { const k = EXKEY[e], R = REGS[k]; if (!R) continue;
     R.open = 1; R.flash = 1.6; R.fTxt = 'LIQ ' + fmtUsd(usd); R.fCss = TY.sliq.c;
-    for (let n = 0; n < 3; n++) bolt(regPos(k), new THREE.Vector3(rnd(-5, 12), slab.position.y, 0.8), TY.sliq.col, n * 0.08, 0.35, null); }
+    for (let n = 0; n < 3; n++) bolt(regPos(k), new THREE.Vector3(rnd(-5, BW + 2), slab.position.y, 0.8), TY.sliq.col, n * 0.08, 0.35, null); }
   const big = Math.max(0, Math.min(1, Math.log10(Math.max(1, usd / 1e4)) / 2.5)), sy = slab.position.y, col = TY.sliq.col;
   for (let x = -6; x < 13.5; x += 1.4) emit(x, sy, 0.8, col, Math.round(3 + big * 10), 3 + big * 7, { vy: long ? -4 : 4, vz: 2, life: 1.2 });
   shake = Math.max(shake, 0.08 + big * 0.5); liqFlash = Math.max(liqFlash, 0.25 + big * 0.75);
@@ -1396,7 +1405,7 @@ document.addEventListener('visibilitychange', () => {
 
 /* ---------- camera fit ---------- */
 let dist = 60, midY = 0;
-const camT = new THREE.Vector3(5.45, 0, 0);
+const camT = new THREE.Vector3(CX, 0, 0);
 function fit() {
   const w = stage.clientWidth, h = stage.clientHeight; if (!w || !h) return;
   renderer.setSize(w, h, false); cam.aspect = w / h;
@@ -1406,7 +1415,7 @@ function fit() {
   ctrY = -(nD + 0.5) * RS - 1.1;
   midY = ((nU - nD) * RS) / 2;
   const top = (nU + 0.5) * RS, bot = -(nD + 0.5) * RS;
-  tileStep = (top - bot - 1.8) / 11; tileSc = Math.max(0.6, Math.min(1.1, tileStep * 0.88 / 1.7)); tileTop = top - 0.9 * tileSc;
+  tileStep = (top - bot - 1.8) / (12 / LAY.TC - 1); tileSc = Math.max(0.6, Math.min(LAY.TSC, tileStep * 0.88 / 1.7)); tileTop = top - 0.9 * tileSc;
   scene.fog.near = dist + 4; scene.fog.far = dist + 70;
   cam.updateProjectionMatrix();
 }
@@ -1466,7 +1475,7 @@ function update(dt) {
     }
     if (r.flare > 0) {
       r.flare -= dt;
-      if (r.units && Math.random() < 0.6) emit(rnd(0.3, 9.7), r.yd, 0.5, r.t.col, 2, 2.5, { vz: 2, vy: 1 });
+      if (r.units && Math.random() < 0.6) emit(rnd(0.3, BW - 0.3), r.yd, 0.5, r.t.col, 2, 2.5, { vz: 2, vy: 1 });
       if (r.flare < 0) r.flare = 0;
     }
   }
@@ -1482,7 +1491,7 @@ function update(dt) {
     if (tr.usd >= 250e3) {
       const side = liveRows().filter(r => (tr.buy ? r.type === 'ask' : r.type === 'bid') && !r.cleared && r.units);
       const tgt = side.sort((a, b) => Math.abs(a.yd - sy) - Math.abs(b.yd - sy))[0];
-      const x = rnd(0.5, 9.5), dir = tr.buy ? 1 : -1, end = tgt ? barPt(tgt, x) : new THREE.Vector3(x, sy + dir * 4, 0.35);
+      const x = rnd(0.5, BW - 0.5), dir = tr.buy ? 1 : -1, end = tgt ? barPt(tgt, x) : new THREE.Vector3(x, sy + dir * 4, 0.35);
       bolt(regPos('okx'), end, col, 0, 0.32, () => { if (tgt && !tgt.gone) { tgt.hl = Math.max(tgt.hl, 0.7); tgt.pulse = Math.min(1.5, tgt.pulse + 0.35); } });
       REGS.okx.open = Math.max(REGS.okx.open, 0.6);
       if (tr.usd >= 1e6) floatText(b.sx, sy + (tr.buy ? 1 : -1), (tr.buy ? 'koop ' : 'verkoop ') + fmtUsd(tr.usd), tr.buy ? '#35ffb0' : '#ff4d6a');
@@ -1610,7 +1619,7 @@ function update(dt) {
 function render(rdt) {
   const t = clock, sy = yOf(pS);
   slab.position.y += (sy - slab.position.y) * Math.min(1, rdt * 6);
-  sweep.position.x = -0.2 + ((t * 9) % 14.4);
+  sweep.position.x = -0.2 + ((t * 9) % (TL + 0.2));
   slabEdge.material.color.lerp(tmpC.set(tagDir > 0 ? UPC : tagDir < 0 ? DNC : NTC), Math.min(1, rdt * 4));
   slabEdge.material.opacity = 0.8 + 0.2 * Math.sin(t * 6);
   laserGlow.material.color.copy(slabEdge.material.color); sweep.material.color.copy(slabEdge.material.color).lerp(WHITE, 0.3);
@@ -1622,7 +1631,7 @@ function render(rdt) {
       const e = trail[i], j = i * 3;
       if (!e) { trCol[j] = trCol[j + 1] = trCol[j + 2] = 0; continue; }
       const age = (now - e.t) / 900e3, f = 0.3 + 0.9 * (1 - age) ** 2;
-      trPos[j] = 13.4 - age * 13.4; trPos[j + 1] = Math.max(-lim, Math.min(lim, yOf(e.p))); trPos[j + 2] = -0.5;
+      trPos[j] = (BW + 3.4) * (1 - age); trPos[j + 1] = Math.max(-lim, Math.min(lim, yOf(e.p))); trPos[j + 2] = -0.5;
       trCol[j] = tc.r * f; trCol[j + 1] = tc.g * f; trCol[j + 2] = tc.b * f;
     }
     trGeo.attributes.position.needsUpdate = true; trGeo.attributes.color.needsUpdate = true; }
@@ -1630,7 +1639,7 @@ function render(rdt) {
   for (const k in REGS) { const R = REGS[k];
     R.open = Math.max(0, R.open - rdt * 1.4); R.flash = Math.max(0, R.flash - rdt);
     R.drawer.position.x = -1.38 - R.open * 0.55; R.glow.material.opacity = R.open * 0.9;
-    const ky = Math.min(1, rdt * 4); R.g.position.y += (tileTop - R.g.userData.i * tileStep - R.g.position.y) * ky; R.g.position.x += (tileX() - R.g.position.x) * ky;
+    const ky = Math.min(1, rdt * 4); R.g.position.y += (tileTop - R.g.userData.row * tileStep - R.g.position.y) * ky; R.g.position.x += (tileX(R.g.userData.col) - R.g.position.x) * ky;
     R.g.scale.setScalar(R.g.scale.x + (tileSc - R.g.scale.x) * ky);
     R.edge.material.opacity = selEx === k ? 0.8 + 0.2 * Math.sin(t * 6) : (R.on ? 0.3 : 0.12) + 0.6 * R.open + 0.06 * Math.sin(t * 2 + R.seed);
     if (selEx === k) R.glow.material.opacity = Math.max(R.glow.material.opacity, 0.5);
@@ -1651,7 +1660,7 @@ function render(rdt) {
       r.thS += (thOf(r.units) - r.thS) * Math.min(1, rdt * 8);
       r.pulse = Math.max(0, r.pulse - rdt * 2.5);
       const th = Math.max(0.001, r.thS * (1 + 0.12 * r.pulse)), fl = r.flare > 0;
-      r.bar.position.set(5 + (fl ? rnd(-0.04, 0.04) : 0), y, fl ? rnd(-0.06, 0.06) : 0); r.bar.scale.set(10, th, th);
+      r.bar.position.set(BW / 2 + (fl ? rnd(-0.04, 0.04) : 0), y, fl ? rnd(-0.06, 0.06) : 0); r.bar.scale.set(BW, th, th);
       r.edge.position.copy(r.bar.position); r.edge.scale.copy(r.bar.scale);
       let br = 1 + 0.6 * Math.exp(-((y - scanY) ** 2) * 1.4) + 0.5 * r.pulse + 0.35 * r.hl + (exS > 0 ? 0.3 + exS : 0) + 0.9 * wb + (Math.abs(y - sy) < 1.2 * RS ? 0.2 : 0) + (fl ? 0.6 * Math.abs(Math.sin(t * 26)) : 0);
       if (r.glass) br *= 0.75 + 0.35 * Math.abs(Math.sin(t * 7 + y));
@@ -1662,7 +1671,7 @@ function render(rdt) {
       r.edge.material.opacity = fade * Math.min(1, 0.45 + 0.4 * r.pulse + (add ? 0.35 : 0));
       r.bar.visible = r.edge.visible = r.thS > 0.01;
     }
-    r.lbl.m.position.set(-3.6 - (1 - fadeL) * 1.4, y, r.gone ? -0.1 : 0.05); r.sz.m.position.set(r.endX + 0.25 + 1.8, y, 0.1); r.hit.position.set(3.4, y, 0.5);
+    r.lbl.m.position.set(-3.6 - (1 - fadeL) * 1.4, y, r.gone ? -0.1 : 0.05); r.sz.m.position.set(r.endX + 0.25 + 1.8, y, 0.1); r.hit.position.set(RX, y, 0.5);
     if (!r.gone) drawSize(r);
     const near = Math.max(0, 1 - Math.abs(y - sy) / (3 * RS));
     r.hl += ((r === selRow ? 1 : 0) - r.hl) * Math.min(1, rdt * 4);
@@ -1683,7 +1692,7 @@ function render(rdt) {
   }
   for (const m of flashes) if (m.visible) {
     m.userData.t -= rdt; const f = Math.max(0, m.userData.t / 0.45);
-    m.scale.set(21.5, 0.9 + (1 - f) * 1.6, 1); m.material.opacity = f * f * 0.9; if (f <= 0) m.visible = false;
+    m.scale.set(RW + 0.9, 0.9 + (1 - f) * 1.6, 1); m.material.opacity = f * f * 0.9; if (f <= 0) m.visible = false;
   }
   for (const s of floats) if (s.visible) {
     s.userData.life -= rdt; const f = s.userData.life / 1.3;

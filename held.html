@@ -390,11 +390,14 @@ const addBlend = { transparent: true, blending: THREE.AdditiveBlending, depthWri
 
 // the sky: dark above, a horizon that glows with the market's mood
 const skyMat = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false,
-  uniforms: { uMood: { value: new THREE.Color(0x35ffb4) }, uK: { value: .3 } },
+  uniforms: { uMood: { value: new THREE.Color(0x35ffb4) }, uK: { value: .3 }, uGold: { value: 0 }, uStorm: { value: 0 }, uFlash: { value: 0 } },
   vertexShader: `varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }`,
-  fragmentShader: `uniform vec3 uMood; uniform float uK; varying vec3 vD;
+  fragmentShader: `uniform vec3 uMood; uniform float uK, uGold, uStorm, uFlash; varying vec3 vD;
     void main(){ float h = vD.y; vec3 top = vec3(.012, .02, .026), hor = vec3(.03, .05, .055) + uMood * .09 * uK;
-      vec3 c = mix(hor, top, smoothstep(-.05, .45, h)) + uMood * exp(-abs(h + .02) * 18.) * .12 * uK;
+      hor = mix(hor, vec3(.32, .16, .05), uGold * .8); top = mix(top, vec3(.05, .03, .04), uGold * .7);              // a calm market: a gold evening
+      hor = mix(hor, vec3(.16, .1, .055), uStorm * .85); top = mix(top, vec3(.04, .03, .025), uStorm * .6);           // a wild one: a dust storm
+      vec3 c = mix(hor, top, smoothstep(-.05, .45, h)) + uMood * exp(-abs(h + .02) * 18.) * .12 * uK + vec3(1., .75, .4) * exp(-abs(h - .02) * 10.) * uGold * .25;
+      c += vec3(.75, .8, 1.) * uFlash * (exp(-abs(h - .08) * 6.) * .9 + .1);
       gl_FragColor = vec4(c, 1.);
       #include <tonemapping_fragment>
       #include <encodings_fragment>
@@ -431,11 +434,11 @@ function placeTowers(x0) {                     // tiles of 7 units, the same tow
 const ND = 420, dustPos = new Float32Array(ND * 3), dustSeed = new Float32Array(ND);
 for (let i = 0; i < ND; i++) { dustPos[i * 3] = (Math.random() - .5) * 30; dustPos[i * 3 + 1] = (Math.random() - .5) * 16; dustPos[i * 3 + 2] = (Math.random() - .5) * 14; dustSeed[i] = Math.random(); }
 const dustGeo = new THREE.BufferGeometry(); dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3)); dustGeo.setAttribute('seed', new THREE.BufferAttribute(dustSeed, 1));
-const dustMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { uT: { value: 0 }, uC: { value: new THREE.Vector3() }, uPx: { value: 500 } },
-  vertexShader: `attribute float seed; uniform float uT, uPx; uniform vec3 uC; varying float vA;
-    void main(){ vec3 p = position + vec3(sin(uT * .1 + seed * 30.) * 1.5, uT * (.05 + seed * .08), cos(uT * .08 + seed * 20.)); p = mod(p + 15. - uC * vec3(1., 1., 0.), vec3(30., 16., 14.)) - vec3(15., 8., 7.) + uC * vec3(1., 1., 0.);
-      vec4 mv = modelViewMatrix * vec4(p, 1.); vA = (.25 + .75 * seed) * (.6 + .4 * sin(uT * (1. + seed * 2.) + seed * 40.)); gl_PointSize = (.02 + seed * .03) * uPx / -mv.z; gl_Position = projectionMatrix * mv; }`,
-  fragmentShader: `varying float vA; void main(){ float r = length(gl_PointCoord - .5); gl_FragColor = vec4(vec3(.6, .85, 1.) * smoothstep(.5, 0., r) * vA * .35, 1.); }` });
+const dustMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { uT: { value: 0 }, uC: { value: new THREE.Vector3() }, uPx: { value: 500 }, uWind: { value: 0 }, uStorm: { value: 0 } },
+  vertexShader: `attribute float seed; uniform float uT, uPx, uWind, uStorm; uniform vec3 uC; varying float vA;
+    void main(){ vec3 p = position + vec3(sin(uT * .1 + seed * 30.) * 1.5 + uWind * (.6 + seed * .8), uT * (.05 + seed * .08) + sin(uWind * .3 + seed * 9.) * uStorm, cos(uT * .08 + seed * 20.)); p = mod(p + 15. - uC * vec3(1., 1., 0.), vec3(30., 16., 14.)) - vec3(15., 8., 7.) + uC * vec3(1., 1., 0.);
+      vec4 mv = modelViewMatrix * vec4(p, 1.); vA = (.25 + .75 * seed) * (.6 + .4 * sin(uT * (1. + seed * 2.) + seed * 40.)); gl_PointSize = (.02 + seed * .03) * (1. + uStorm * 3.) * uPx / -mv.z; gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: `uniform float uStorm; varying float vA; void main(){ float r = length(gl_PointCoord - .5); gl_FragColor = vec4(mix(vec3(.6, .85, 1.), vec3(1., .7, .42), uStorm) * smoothstep(.5, 0., r) * vA * (.35 + uStorm * .6), 1.); }` });
 const dust = new THREE.Points(dustGeo, dustMat); dust.frustumCulled = false; scene.add(dust);
 // the battlefield: a long slope of trampled mud that climbs with the price, the track where the fight happens across
 // it, the field beside it torn by craters. It follows the camera in 4-unit jumps; its relief comes from the world
@@ -487,13 +490,14 @@ const propMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: .5,
 function merged(parts) {                       // boxes and cylinders, each with its own shade, as one geometry
   const geos = parts.map(([g, c, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0]) => { g = g.index ? g.toNonIndexed() : g; g.deleteAttribute('uv');
     g.rotateX(rx); g.rotateY(ry); g.rotateZ(rz); g.translate(x, y, z); const n = g.attributes.position.count, col = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) col.set(c, i * 3); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); return g; });
-  const out = new THREE.BufferGeometry(); for (const k of ['position', 'normal', 'color']) {
+    for (let i = 0; i < n; i++) col.set(c, i * 3); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setAttribute('aTeam', new THREE.BufferAttribute(new Float32Array(n).fill(c === TEAMP ? 1 : 0), 1)); return g; });      // aTeam: this part takes the side's colour
+  const out = new THREE.BufferGeometry(); for (const [k, w] of [['position', 3], ['normal', 3], ['color', 3], ['aTeam', 1]]) {
     const arr = new Float32Array(geos.reduce((a, g) => a + g.attributes[k].array.length, 0)); let o = 0; for (const g of geos) { arr.set(g.attributes[k].array, o); o += g.attributes[k].array.length; }
-    out.setAttribute(k, new THREE.BufferAttribute(arr, 3)); }
+    out.setAttribute(k, new THREE.BufferAttribute(arr, w)); }
   geos.forEach(g => g.dispose()); return out;
 }
-const PAINT = [1, 1, 1], DARK = [.13, .13, .14], MID = [.42, .43, .45], LAMP = [2.4, 2.2, 1.6], RUST = [.1, .055, .03];
+const PAINT = [1, 1, 1], TEAMP = [1, 1, 1], DARK = [.13, .13, .14], MID = [.42, .43, .45], LAMP = [2.4, 2.2, 1.6], RUST = [.1, .055, .03];
 const BX = (w, h, d) => new THREE.BoxGeometry(w, h, d), CYL = (r1, r2, h, s = 14) => new THREE.CylinderGeometry(r1, r2, h, s);
 const PROPS = {
   hog: merged([[BX(.6, .05, .05), RUST, 0, .2, 0, 0, 0, .8], [BX(.6, .05, .05), RUST, 0, .2, 0, 0, 0, -.8], [BX(.05, .05, .6), RUST, 0, .2, 0, .8, 0, 0]]),
@@ -603,6 +607,7 @@ function buildLevel(L) {
 // the vehicles, in the spirit of an old real-time strategy game: every one is two instanced meshes (hull and turret)
 // built from merged boxes and cylinders; white parts take the team colour, the rest stays dark metal
 const PI2 = Math.PI / 2, TIP = [1.8, .35, .2];
+const OLIVE = [.13, .16, .07], OLIVE2 = [.07, .085, .04], SAND = [.5, .4, .25], BLUE = [.04, .11, .42], BLACK = [.045, .045, .05], RED2 = [.22, .02, .02];      // their own colours
 const tubes = (x, y, z, up, n, r, l, gy, gz) => { const out = [];       // a pack of launch tubes, n x n, pointing forward and up
   for (let a = 0; a < n; a++) for (let b = 0; b < n; b++) { const dy = (a - (n - 1) / 2) * gy, dz = (b - (n - 1) / 2) * gz;
     out.push([CYL(r, r, l, 10), DARK, x, y + dy, z + dz, 0, 0, -PI2 + up], [CYL(r * .7, r * .7, .006, 8), TIP, x + Math.cos(up) * l / 2, y + dy + Math.sin(up) * l / 2, z + dz, 0, 0, -PI2 + up]); }
@@ -610,41 +615,46 @@ const tubes = (x, y, z, up, n, r, l, gy, gz) => { const out = [];       // a pac
 const UT = {
   // an infantry fighting vehicle: six big wheels, a sloped hull, a turret with two packs of four launch tubes
   ifv: { cap: 150, gap: .48, rank: .78, files: 5, ty: .265, flag: [-.2, .46, .12], fire: 3.9, size: .32,
-    hull: merged([[BX(.5, .1, .3), PAINT, 0, .16, 0], [BX(.2, .08, .3), PAINT, .28, .15, 0, 0, 0, -.6], [BX(.4, .06, .25), PAINT, -.03, .235, 0], [BX(.12, .05, .22), PAINT, .2, .225, 0, 0, 0, -.3],
-      [BX(.46, .06, .012), MID, 0, .15, .156], [BX(.46, .06, .012), MID, 0, .15, -.156], [BX(.08, .04, .06), MID, -.15, .27, .06], [BX(.06, .03, .1), DARK, -.24, .2, 0],
+    hull: merged([[BX(.5, .1, .3), OLIVE, 0, .16, 0], [BX(.2, .08, .3), OLIVE, .28, .15, 0, 0, 0, -.6], [BX(.4, .06, .25), OLIVE, -.03, .235, 0], [BX(.12, .05, .22), OLIVE, .2, .225, 0, 0, 0, -.3],
+      [BX(.46, .06, .012), MID, 0, .15, .156], [BX(.46, .06, .012), MID, 0, .15, -.156], [BX(.4, .022, .012), TEAMP, -.02, .2, .157], [BX(.4, .022, .012), TEAMP, -.02, .2, -.157], [BX(.12, .1, .01), OLIVE2, -.1, .16, .158], [BX(.1, .07, .01), OLIVE2, .12, .13, -.158], [BX(.08, .04, .06), MID, -.15, .27, .06], [BX(.06, .03, .1), DARK, -.24, .2, 0],
       ...[-.19, -.02, .15].flatMap(x => [-.17, .17].flatMap(z => [[CYL(.077, .077, .065, 18), DARK, x, .077, z, PI2, 0, 0], [CYL(.036, .036, .07, 10), MID, x, .077, z, PI2, 0, 0]])),
       [BX(.01, .022, .05), LAMP, .37, .17, .1], [BX(.01, .022, .05), LAMP, .37, .17, -.1], [CYL(.004, .004, .26, 4), DARK, -.2, .36, .12]]),
-    tur: merged([[BX(.16, .06, .16), PAINT, -.01, .03, 0], [BX(.06, .08, .07), MID, 0, .09, 0], [BX(.05, .05, .3), MID, 0, .13, 0],
-      [BX(.17, .1, .09), PAINT, .03, .14, .12, 0, 0, .3], [BX(.17, .1, .09), PAINT, .03, .14, -.12, 0, 0, .3],
+    tur: merged([[BX(.16, .06, .16), OLIVE, -.01, .03, 0], [BX(.06, .08, .07), MID, 0, .09, 0], [BX(.05, .05, .3), MID, 0, .13, 0],
+      [BX(.17, .1, .09), TEAMP, .03, .14, .12, 0, 0, .3], [BX(.17, .1, .09), TEAMP, .03, .14, -.12, 0, 0, .3],
       ...tubes(.06, .145, .12, .3, 2, .021, .2, .045, .042), ...tubes(.06, .145, -.12, .3, 2, .021, .2, .045, .042)]),
     muzzle: [[.16, .175, .12], [.16, .175, -.12]] },
   // a medium tank: an angular hull with lamp bars on the fenders, a low eight-sided turret, a long gun, a launcher at the back
   griz: { cap: 60, gap: .64, rank: 1, files: 4, ty: .26, flag: [-.3, .52, .16], fire: 4.6, size: .45,
-    hull: merged([[BX(.66, .12, .42), PAINT, 0, .17, 0], [BX(.24, .06, .42), PAINT, .37, .2, 0, 0, 0, -.35], [BX(.13, .1, .42), PAINT, .37, .12, 0, 0, 0, .5],
-      [BX(.22, .045, .11), MID, .3, .25, .2], [BX(.22, .045, .11), MID, .3, .25, -.2], [BX(.012, .025, .08), LAMP, .415, .262, .2], [BX(.012, .025, .08), LAMP, .415, .262, -.2],
+    hull: merged([[BX(.66, .12, .42), SAND, 0, .17, 0], [BX(.24, .06, .42), SAND, .37, .2, 0, 0, 0, -.35], [BX(.13, .1, .42), SAND, .37, .12, 0, 0, 0, .5],
+      [BX(.22, .045, .11), BLUE, .3, .25, .2], [BX(.22, .045, .11), BLUE, .3, .25, -.2], [BX(.012, .025, .08), LAMP, .415, .262, .2], [BX(.012, .025, .08), LAMP, .415, .262, -.2],
       [BX(.84, .12, .1), DARK, 0, .07, .235], [BX(.84, .12, .1), DARK, 0, .07, -.235],
       ...[-.27, -.13, .01, .15].flatMap(x => [.287, -.287].map(z => [BX(.1, .07, .012), MID, x, .14, z])),
-      [BX(.4, .03, .3), MID, -.08, .245, 0], [BX(.16, .08, .15), DARK, -.27, .29, 0], [CYL(.032, .032, .1, 10), MID, -.2, .29, .04, 0, 0, PI2], [CYL(.032, .032, .1, 10), MID, -.2, .29, -.04, 0, 0, PI2],
+      [BX(.4, .03, .3), MID, -.08, .245, 0], [BX(.6, .03, .012), TEAMP, 0, .215, .212], [BX(.6, .03, .012), TEAMP, 0, .215, -.212], [BX(.16, .08, .15), DARK, -.27, .29, 0], [CYL(.032, .032, .1, 10), MID, -.2, .29, .04, 0, 0, PI2], [CYL(.032, .032, .1, 10), MID, -.2, .29, -.04, 0, 0, PI2],
       [CYL(.004, .004, .32, 4), DARK, -.3, .42, .16], [CYL(.004, .004, .22, 4), DARK, -.33, .37, .1]]),
-    tur: merged([[CYL(.16, .18, .09, 8), PAINT, 0, .045, 0], [CYL(.12, .15, .03, 8), MID, 0, .105, 0], [BX(.09, .07, .12), PAINT, .17, .05, 0], [CYL(.04, .04, .025, 10), MID, -.06, .13, .06],
+    tur: merged([[CYL(.16, .18, .09, 8), SAND, 0, .045, 0], [CYL(.12, .15, .03, 8), BLUE, 0, .105, 0], [CYL(.182, .192, .02, 8), TEAMP, 0, .06, 0], [BX(.09, .07, .12), SAND, .17, .05, 0], [CYL(.04, .04, .025, 10), MID, -.06, .13, .06],
       [CYL(.032, .032, .1, 12), MID, .26, .055, 0, 0, 0, -PI2], [CYL(.023, .023, .34, 12), MID, .42, .055, 0, 0, 0, -PI2], [CYL(.031, .031, .05, 12), MID, .5, .055, 0, 0, 0, -PI2],
       [CYL(.03, .036, .06, 12), DARK, .6, .055, 0, 0, 0, -PI2]]),
     muzzle: [[.63, .055, 0]] },
   // a heavy tank: a dozer blade at the front, two long guns, missile pods on the turret, fuel drums at the back
   apoc: { cap: 40, gap: .86, rank: 1.5, files: 3, ty: .39, flag: [-.42, .66, .2], fire: 5.4, size: .72,
-    hull: merged([[BX(1, .2, .58), PAINT, 0, .25, 0], [BX(.27, .14, .58), PAINT, .56, .25, 0, 0, 0, -.5], [BX(.06, .22, .76), MID, .76, .13, 0, 0, 0, .35],
+    hull: merged([[BX(1, .2, .58), BLACK, 0, .25, 0], [BX(.27, .14, .58), BLACK, .56, .25, 0, 0, 0, -.5], [BX(.06, .22, .76), MID, .76, .13, 0, 0, 0, .35],
       [BX(.22, .03, .03), DARK, .64, .18, .3], [BX(.22, .03, .03), DARK, .64, .18, -.3], [BX(1.12, .22, .17), DARK, 0, .12, .37], [BX(1.12, .22, .17), DARK, 0, .12, -.37],
       ...[-.42, -.21, 0, .21, .42].flatMap(x => [.37, -.37].map(z => [CYL(.08, .08, .175, 12), MID, x, .1, z, PI2, 0, 0])),
-      [BX(1.05, .07, .02), PAINT, 0, .2, .465], [BX(1.05, .07, .02), PAINT, 0, .2, -.465], [BX(.56, .04, .44), MID, -.12, .37, 0],
+      [BX(1.05, .07, .02), TEAMP, 0, .2, .465], [BX(1.05, .07, .02), TEAMP, 0, .2, -.465], [BX(.56, .04, .44), MID, -.12, .37, 0],
       [CYL(.055, .055, .42, 12), MID, -.53, .35, 0, PI2, 0, 0], [CYL(.055, .055, .42, 12), MID, -.53, .46, 0, PI2, 0, 0], [BX(.015, .04, .07), LAMP, .7, .3, .2], [BX(.015, .04, .07), LAMP, .7, .3, -.2],
       [CYL(.03, .03, .12), DARK, -.42, .43, .2], [CYL(.03, .03, .12), DARK, -.42, .43, -.2]]),
-    tur: merged([[BX(.48, .17, .42), PAINT, 0, .085, 0], [BX(.15, .13, .42), PAINT, .27, .08, 0, 0, 0, -.5], [CYL(.06, .07, .05, 10), MID, -.06, .19, .08],
+    tur: merged([[BX(.48, .17, .42), BLACK, 0, .085, 0], [BX(.485, .03, .425), TEAMP, 0, .14, 0], [BX(.06, .05, .43), RED2, -.18, .06, 0], [BX(.15, .13, .42), BLACK, .27, .08, 0, 0, 0, -.5], [CYL(.06, .07, .05, 10), MID, -.06, .19, .08],
       ...[.085, -.085].flatMap(z => [[CYL(.034, .04, .95, 12), MID, .72, .1, z, 0, 0, -PI2], [CYL(.05, .05, .1, 12), DARK, .55, .1, z, 0, 0, -PI2], [CYL(.046, .046, .07, 12), DARK, 1.18, .1, z, 0, 0, -PI2]]),
       [BX(.2, .13, .11), DARK, -.06, .13, .27], [BX(.2, .13, .11), DARK, -.06, .13, -.27], ...tubes(.03, .13, .27, 0, 2, .021, .02, .05, .046), ...tubes(.03, .13, -.27, 0, 2, .021, .02, .05, .046),
       [BX(.02, .12, .04), DARK, -.22, .2, .15, 0, 0, .5], [BX(.02, .12, .04), DARK, -.22, .2, -.15, 0, 0, .5]]),
     muzzle: [[1.22, .1, .085], [1.22, .1, -.085]] },
 };
 const vehMat = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: .5, roughness: .5, envMapIntensity: .45 });
+vehMat.onBeforeCompile = sh => { sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aTeam;').replace('#include <color_vertex>',
+  `vColor = vec3(1.); vColor *= color;
+  #ifdef USE_INSTANCING_COLOR
+    float lit = clamp((instanceColor.r + instanceColor.g + instanceColor.b) * 4., 0., 1.); vColor *= mix(vec3(lit), instanceColor.xyz * 1.6, aTeam);
+  #endif`); };
 const VM = {};
 for (const k in UT) for (const part of ['hull', 'tur']) { const m = new THREE.InstancedMesh(UT[k][part], vehMat, UT[k].cap); m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; m.count = 0;
   const c = new THREE.Color(); for (let i = 0; i < UT[k].cap; i++) m.setColorAt(i, c); scene.add(m); VM[k + part] = m; }
@@ -769,8 +779,22 @@ const glowMat = new THREE.MeshBasicMaterial({ color: 0xbfeaff, toneMapped: false
 const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
 const seamMat = new THREE.MeshBasicMaterial({ color: 0x8fd6ff, toneMapped: false });
 const dark = new THREE.MeshStandardMaterial({ color: 0x1a1f23, metalness: .85, roughness: .5, envMapIntensity: .6 });
-const bronze = new THREE.MeshPhysicalMaterial({ color: 0xd6a23e, metalness: 1, roughness: .3, clearcoat: .5, clearcoatRoughness: .25, envMapIntensity: .55 });      // gold
-const steel = new THREE.MeshPhysicalMaterial({ color: 0xc4c9cf, metalness: 1, roughness: .38, clearcoat: .3, clearcoatRoughness: .35, envMapIntensity: .5 });      // silver
+// the metal is cast, like the statues: the bear's fur in short wavy strokes, the bull's muscles in soft bulges and a fine
+// grain. One canvas gives both the relief (a bump map) and the patina (darker in the hollows)
+function castTex(fur) {
+  const c = document.createElement('canvas'); c.width = c.height = 512; const x = c.getContext('2d'), rnd = (a => () => (a = (a * 16807) % 2147483647) / 2147483647)(fur ? 7 : 11);
+  x.fillStyle = '#b4b4b4'; x.fillRect(0, 0, 512, 512);
+  if (fur) for (let i = 0; i < 5200; i++) { const px = rnd() * 512, py = rnd() * 512, a = Math.PI / 2 + Math.sin(px * .02 + py * .013) * .7 + (rnd() - .5) * .4, l = 8 + rnd() * 16, v = rnd();
+    x.strokeStyle = v < .55 ? `rgba(40,40,40,${.25 + rnd() * .3})` : `rgba(255,255,255,${.2 + rnd() * .3})`; x.lineWidth = 1 + rnd() * 1.6;
+    x.beginPath(); x.moveTo(px, py); x.quadraticCurveTo(px + Math.cos(a + .5) * l * .5, py + Math.sin(a + .5) * l * .5, px + Math.cos(a) * l, py + Math.sin(a) * l); x.stroke(); }
+  else { for (let i = 0; i < 70; i++) { const px = rnd() * 512, py = rnd() * 512, r = 30 + rnd() * 70, g = x.createRadialGradient(px, py, 0, px, py, r), w = rnd() < .5;
+      g.addColorStop(0, w ? 'rgba(255,255,255,.35)' : 'rgba(30,30,30,.3)'); g.addColorStop(1, 'rgba(128,128,128,0)'); x.fillStyle = g; x.fillRect(px - r, py - r, r * 2, r * 2); }
+    for (let i = 0; i < 9000; i++) { x.fillStyle = rnd() < .5 ? 'rgba(60,60,60,.25)' : 'rgba(240,240,240,.2)'; x.fillRect(rnd() * 512, rnd() * 512, 1.5, 1.5); } }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(fur ? 3 : 2, fur ? 3 : 2); t.anisotropy = 8; return t;
+}
+const furTex = castTex(true), muscleTex = castTex(false);
+const bronze = new THREE.MeshPhysicalMaterial({ map: muscleTex, bumpMap: muscleTex, bumpScale: .012, roughnessMap: muscleTex, color: 0xd6a23e, metalness: 1, roughness: .3, clearcoat: .5, clearcoatRoughness: .25, envMapIntensity: .55 });      // gold
+const steel = new THREE.MeshPhysicalMaterial({ map: furTex, bumpMap: furTex, bumpScale: .02, roughnessMap: furTex, color: 0xc4c9cf, metalness: 1, roughness: .38, clearcoat: .3, clearcoatRoughness: .35, envMapIntensity: .5 });      // silver
 const hoofMat = new THREE.MeshStandardMaterial({ color: 0x15120f, metalness: .6, roughness: .45 });
 const eyeMat = new THREE.MeshBasicMaterial({ color: 0x35ffb4, toneMapped: false });
 const sph = (r, m, sx = 1, sy = 1, sz = 1) => { const s = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), m); s.scale.set(sx, sy, sz); return s; };
@@ -978,6 +1002,7 @@ const SFX = {
   boom: (k = 1) => { tone(68, .5 * k + .15, 'sine', .45 * Math.min(1.4, k), 28); hiss(.35 * k + .1, .28 * Math.min(1.4, k), 'lowpass', 900, 120); },
   cannon: () => { tone(52, .6, 'sine', .55, 24); hiss(.32, .35, 'lowpass', 1300, 200); },
   morph: (up = 1) => { tone(up ? 180 : 320, .5, 'sawtooth', .05, up ? 420 : 110); tone(up ? 90 : 70, .6, 'sine', .3, up ? 140 : 40); hiss(.4, .15, 'bandpass', 1200, 300); },
+  thunder: () => { hiss(2.2, .35, 'lowpass', 260, 60); tone(42, 1.8, 'sine', .35, 28, .05); },
   far: () => { hiss(.07, .045, 'lowpass', 700); tone(80 + Math.random() * 40, .1, 'sine', .04, 45); },
   bugle: () => { [392, 523, 659, 784].forEach((f, i) => tone(f, i === 3 ? .55 : .14, 'triangle', .09, null, i * .13)); },
   scatter: () => { for (let i = 0; i < 6; i++) tone(500 + Math.random() * 700, .12, 'triangle', .04, 900 + Math.random() * 600, Math.random() * .35); },
@@ -1138,6 +1163,23 @@ function flags(t) {
     const pa = F.cloth.geometry.attributes.position, p0 = F.p0;      // it waves: a wave runs out along the cloth
     for (let k = 0; k < pa.count; k++) { const x = p0[k * 3]; pa.array[k * 3 + 2] = Math.sin(x * 12 - t * 7) * .04 * x / .52; }
     pa.needsUpdate = true; F.cloth.geometry.computeVertexNormals(); }
+}
+// the weather follows the market: the range of the last thirty seconds in cells. Quiet (under 3 cells, $75 for BTC): a gold
+// evening, warm light. Wild (over 5, full at 12): a dust storm, wind, a brown haze, lightning on the horizon, thunder
+const ATM = { gold: 0, storm: 0, flash: 0, wind: 0, hist: [], at: 0, force: null };
+const FOG0 = new THREE.Color(0x060a0c), FOGG = new THREE.Color(0x1d1209), FOGS = new THREE.Color(0x241709), KEYW = new THREE.Color(1, 1, 1), KEYG = new THREE.Color(1, .78, .55), KEYS = new THREE.Color(.95, .8, .65);
+function weather(dt, P) {
+  if (now - ATM.at > 1) { ATM.at = now; ATM.hist.push(P); if (ATM.hist.length > 30) ATM.hist.shift(); }
+  const range = ATM.hist.length > 4 ? (Math.max(...ATM.hist) - Math.min(...ATM.hist)) / STEP : 2, cl = v => Math.max(0, Math.min(1, v));
+  const want = ATM.force || { gold: cl((3 - range) / 2), storm: cl((range - 5) / 7) };
+  ATM.gold += (want.gold - ATM.gold) * Math.min(1, dt * .25); ATM.storm += (want.storm - ATM.storm) * Math.min(1, dt * .35); ATM.wind += dt * (.3 + ATM.storm * 6);
+  if (ATM.storm > .45 && R() < dt * ATM.storm * .35) { ATM.flash = 1; if (now - (ATM.thunder || 0) > 2) { ATM.thunder = now; setTimeout(() => sfx('thunder'), 300 + R() * 900); } }
+  ATM.flash = Math.max(0, ATM.flash - dt * (ATM.flash > .5 ? 9 : 3)); const fl = ATM.flash * (ATM.flash > .6 || R() < .5 ? 1 : .3);      // it flickers
+  const u = skyMat.uniforms; u.uGold.value = ATM.gold; u.uStorm.value = ATM.storm; u.uFlash.value = fl;
+  dustMat.uniforms.uWind.value = ATM.wind; dustMat.uniforms.uStorm.value = ATM.storm;
+  scene.fog.color.copy(FOG0).lerp(FOGG, ATM.gold * .8).lerp(FOGS, ATM.storm * .9);
+  key.color.copy(KEYW).lerp(KEYG, ATM.gold).lerp(KEYS, ATM.storm); key.intensity = 1.4 * (1 + ATM.gold * .15 - ATM.storm * .3) + fl * 1.5;
+  rim.color.setRGB(.44 + ATM.gold * .5, .72 - ATM.gold * .1, 1 - ATM.gold * .5);
 }
 // an explosion: a fireball of sparks, smoke, a ring on the step, a thump
 function boom(x, y, z, col, k = 1) {
@@ -1327,6 +1369,7 @@ function render3d(dt, dtReal = dt) {
   // the shadow box, the sky, the skyline and the dust follow
   key.target.position.set(WX(H.p), H.y, 0); key.position.copy(key.target.position).add(KEYOFF);
   sky.position.copy(camera.position); placeTowers(cx - 330);
+  weather(dt, P);
   const mood = lerpHex(CSS.dn, CSS.up, (H.mood + 1) / 2); skyMat.uniforms.uMood.value.set(mood); towers.material.uniforms.uMood.value.set(mood);
   towers.material.uniforms.uT.value = t; towers.material.uniforms.uCam.value.copy(camera.position);
   dustMat.uniforms.uT.value = t; dustMat.uniforms.uC.value.set(WX(H.p), H.y + 2, 0); dustMat.uniforms.uPx.value = PX;
@@ -1341,7 +1384,7 @@ function render3d(dt, dtReal = dt) {
       dummy.updateMatrix(); trailMesh.setMatrixAt(n, dummy.matrix); trailMesh.setColorAt(n, tc.setRGB(.97 * a, .55 * a, .12 * a)); n++; }
     trailMesh.count = n; trailMesh.instanceMatrix.needsUpdate = trailMesh.instanceColor.needsUpdate = true; }
   if (coinX != null) { const ci = Math.floor(coinX / TREAD + 1e-6); coinTread.position.set((ci + .5) * TREAD, SYx((ci + .5) * TREAD) + .016, 0); coinTread.material.opacity = .22 + .08 * Math.sin(t * 4); }
-  scene.fog.near = dist * .7; scene.fog.far = dist * 2.6;
+  scene.fog.near = dist * (.7 - ATM.storm * .35); scene.fog.far = dist * (2.6 - ATM.storm * 1.2);
   placeGround(cx); placeMarks(cx - span * 1.2 - 4);
   if (R() < dt * 2.5) { const s = smokers[Math.floor(R() * smokers.length)]; if (s && Math.abs(s[0] - cx) < span) puff(s[0], s[1], s[2], 1.2, 5); }      // the wrecks smoulder
   const zd = span / (2 * Math.tan(THREE.MathUtils.degToRad(17)) * 1.78);        // how far out, as on a 16:9 screen, so a tall phone counts as close
@@ -1370,7 +1413,7 @@ function render3d(dt, dtReal = dt) {
   // a big army close by: the battle grumbles in the distance
   if (SND.on && R() < dt * 1.4) { const nearBig = [...objs.values()].some(o => isWall(o.L) && o.L.state === 'live' && o.L.rel > .5 && Math.abs(WX(o.L.p) - WX(H.p)) < 4.4); if (nearBig) sfx('far'); }
   // the vehicles: driving, firing, waving a white flag, blown up, burning out; each one written into its instanced meshes
-  { const cnt = { ifv: 0, griz: 0, apoc: 0 }; let nf = 0; const c = tmpC, wreckC = new THREE.Color(.05, .045, .04);
+  { const cnt = { ifv: 0, griz: 0, apoc: 0 }; let nf = 0; const c = tmpC, wreckC = new THREE.Color(.012, .011, .01);
     for (const o of objs.values()) { const T = UT[o.type], f = EASE.out(o.fade), team = new THREE.Color(TEAM[isWall(o.L) ? o.L.k : o.L.k === 'stop' ? colOf(o.L) : 'liq']).convertSRGBToLinear();
       const shake = o.L.rip && t - o.L.rip.t0 < 1.4 ? (1 - (t - o.L.rip.t0) / 1.4) * .03 * (o.L.rip.a || 1) : 0;
       o.units = o.units.filter(u => {
@@ -1390,7 +1433,7 @@ function render3d(dt, dtReal = dt) {
         VR.position.set(u.x + Math.sin(t * 61 + u.seed * 9) * shake, u.y + Math.abs(Math.sin(t * 47 + u.seed * 5)) * shake, u.z); VR.rotation.set(u.rx || 0, u.yaw, (u.rz || 0) + pitch + jolt * .12 * Math.sin(t * 40)); VR.scale.setScalar(sc);
         u.rec = Math.max(0, u.rec - dt * 4); VT.position.set(-u.rec * .05, T.ty, 0); VT.rotation.set(0, u.tur, 0);
         VR.updateMatrixWorld(true); VM[k + 'hull'].setMatrixAt(cnt[k], VR.matrixWorld); VM[k + 'tur'].setMatrixAt(cnt[k], VT.matrixWorld);
-        const wk = u.st === 'wreck' || u.st === 'fly' ? Math.min(1, (t - u.t0) * 4 + .3) : 0; c.copy(team).multiplyScalar(.85 + u.seed * .3 * (o.L.ps && o.L.ps[0] >= o.L.ps[1] - 1 ? .5 : 1)).lerp(wreckC, wk);
+        const wk = u.st === 'wreck' || u.st === 'fly' ? Math.min(1, (t - u.t0) * 4 + .3) : 0; c.copy(team).multiplyScalar(.85 + u.seed * .3 * (o.L.ps && o.L.ps[0] >= o.L.ps[1] - 1 ? .5 : 1)).lerp(wreckC, wk);      // wreckC: near black, the whole vehicle burnt
         VM[k + 'hull'].setColorAt(cnt[k], c); VM[k + 'tur'].setColorAt(cnt[k], c); cnt[k]++;
         if ((u.st === 'flag' || t - (u.flagT ?? -9) < 2.5) && nf < 60) { VF.position.set(...T.flag); VF.rotation.set(0, Math.sin(t * 9 + u.seed * 7) * .5, 0); VR.updateMatrixWorld(true); flagMesh.setMatrixAt(nf++, VF.matrixWorld); }
         return true; });
@@ -1710,7 +1753,7 @@ function frame(ts) {
 })();
 // a hidden tab: the stream and the frames rest; back again, the hero catches up with the price
 document.addEventListener('visibilitychange', () => { last = 0; acc = 0; Q.n = Q.t = 0; Q.wait = 2; });
-window.HELD = { scene, UT, vehMat, WX, SYx, look(p, s) { FX.look = p == null ? null : [p, s]; }, overview() { overviewAt = now - .01; }, get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, H, queue, onPrice, live, realLiq, objs, onLevels, LOG, Q, FEEL, PH, MAG, labels, get now() { return now; } };
+window.HELD = { ATM, scene, UT, vehMat, WX, SYx, look(p, s) { FX.look = p == null ? null : [p, s]; }, overview() { overviewAt = now - .01; }, get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, H, queue, onPrice, live, realLiq, objs, onLevels, LOG, Q, FEEL, PH, MAG, labels, get now() { return now; } };
 })();
 </script>
 </body>

@@ -413,17 +413,18 @@ const baseOf = (type, rel) => TY[type].u === 'pct' ? 0 : Math.max(1, Math.min(MA
 
 // row spacing: a tall phone screen spreads the rows out so the well fills the height (cubes stay cubes)
 // the width: the tiles stand in two columns, half of the exchanges left of the prices and half right of the amounts;
-// on a phone the bars are 18.5 long, on a wide screen they run longer and the tiles are bigger, so the well fills the width
-// the price, what it is and the amount are written in the tube itself, so beside the tubes there is only a margin (LL, RR)
-const LL = 0.6, RR = 0.8;
+// on a phone the bars are 15.2 long, on a wide screen they run longer and the tiles are bigger, so the well fills the width
+// the price, what it is and the amount are written in the tube itself; beside the tubes an open gap (LL, RR) to the
+// tiles, so the pulses on the wires stay in view
 const LAY = (() => {
   const w = stage.clientWidth || 400, h = stage.clientHeight || 700, asp = w / h, wide = asp > 1.15 && w >= 700;
-  const TC = 2, TSC = wide ? 1.6 : 1.15, LW = 3.3 * TSC + 0.4, side = LW + LL + RR + 3.3 * TSC + 0.8;
-  const BW = wide ? Math.max(14, Math.min(36, (27 + 2.4) * asp / 1.03 * 0.95 - side)) : 18.5;
-  return { BW, TC, TSC, LW, W: side + BW };
+  const TC = 2, TSC = wide ? 1.6 : 1.15, LW = 3.3 * TSC + 0.4, LL = wide ? 3.4 : 2.4, RR = LL, side = LW + LL + RR + 3.3 * TSC + 0.8;
+  const BW = wide ? Math.max(14, Math.min(32, (27 + 2.4) * asp / 1.03 * 0.95 - side)) : 15.2;
+  return { BW, TC, TSC, LW, LL, RR, W: side + BW };
 })();
+const LL = LAY.LL, RR = LAY.RR;
 const BW = LAY.BW, TL = BW + RR - 0.05, WFIT = LAY.W;   // bar length, left edge of the tiles, width in view
-const CX = -LL - LAY.LW + WFIT / 2, RW = LL + BW + RR, RX = (BW + RR - LL) / 2;   // view centre, row width and its centre
+const CX = -LL - LAY.LW + WFIT / 2, RW = BW + 1.4, RX = BW / 2;   // view centre, row width and its centre
 const COMPACT = (stage.clientWidth || 400) < 560;   // phone: bigger labels without the distance column
 const RS = (() => { const w = stage.clientWidth || 400, h = stage.clientHeight || 700, tanH = Math.tan(17.5 * Math.PI / 180);
   const visH = WFIT / (w / h) * 1.03 + 2.4 * tanH; return Math.max(1, Math.min(1.85, (visH * 0.94 - 2.4) / 27)); })();
@@ -529,17 +530,17 @@ const trPts = new THREE.Points(trGeo, new THREE.PointsMaterial({ size: 0.26, map
 trPts.frustumCulled = false; scene.add(trPts);
 
 // backdrop: table row lines, the well wall, drifting dust
-const floor = new THREE.Mesh(new THREE.BoxGeometry(TL + LL + 0.3, 0.1, 1.2), new THREE.MeshBasicMaterial({ color: 0x2f6b58, transparent: true, opacity: 0.6, blending: ADD }));
+const floor = new THREE.Mesh(new THREE.BoxGeometry(BW + 1.4, 0.1, 1.2), new THREE.MeshBasicMaterial({ color: 0x2f6b58, transparent: true, opacity: 0.6, blending: ADD }));
 let ctrY = -13.5 * RS - 1.1;   // the floor follows the lowest level
 {
   const pos = [];
-  for (let y = -13; y <= 14; y++) pos.push(-LL, (y - 0.5) * RS, -0.7, TL - 0.2, (y - 0.5) * RS, -0.7);
+  for (let y = -13; y <= 14; y++) pos.push(-0.7, (y - 0.5) * RS, -0.7, BW + 0.7, (y - 0.5) * RS, -0.7);
   for (let x = 0; x <= Math.round(BW); x++) pos.push(x - 0.05, -13.5 * RS, -0.7, x - 0.05, 13.5 * RS, -0.7);
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   scene.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x1a2622, transparent: true, opacity: 0.8 })));
   const wall = new THREE.Mesh(new THREE.BoxGeometry(0.1, 27.2 * RS, 0.1), new THREE.MeshBasicMaterial({ color: 0x2f6b58, transparent: true, opacity: 0.9, blending: ADD }));
   wall.position.set(-0.22, 0, 0); scene.add(wall);
-  floor.position.set((TL - LL) / 2, -13 * RS - 0.62, 0); scene.add(floor);
+  floor.position.set(BW / 2, -13 * RS - 0.62, 0); scene.add(floor);
 }
 const SN = 320, sPos = new Float32Array(SN * 3), sSpd = new Float32Array(SN);
 for (let i = 0; i < SN; i++) { sPos[i * 3] = rnd(-30, 38); sPos[i * 3 + 1] = rnd(-30, 30); sPos[i * 3 + 2] = rnd(-30, -4); sSpd[i] = rnd(0.2, 1.4); }
@@ -609,10 +610,10 @@ function drawSize(r) {
 // the current price: a laser line across the bars in the colour of the last tick (green up, red down) with a spark
 // running along it, and a price tag in the middle with the change and how far the nearest walls are
 const slab = new THREE.Group(); scene.add(slab);
-const slabEdge = new THREE.Mesh(new THREE.PlaneGeometry(TL + 0.2, 0.07), new THREE.MeshBasicMaterial({ color: 0x7ff0d0, transparent: true, opacity: 1, blending: ADD, depthWrite: false }));
-slabEdge.position.set((TL - 0.2) / 2, 0, 0.75); slab.add(slabEdge);
-const laserGlow = new THREE.Mesh(new THREE.PlaneGeometry(TL + 0.5, 1.0), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.3, blending: ADD, depthWrite: false }));
-laserGlow.position.set((TL - 0.2) / 2, 0, 0.7); slab.add(laserGlow);
+const slabEdge = new THREE.Mesh(new THREE.PlaneGeometry(BW + 1.4, 0.07), new THREE.MeshBasicMaterial({ color: 0x7ff0d0, transparent: true, opacity: 1, blending: ADD, depthWrite: false }));
+slabEdge.position.set(BW / 2, 0, 0.75); slab.add(slabEdge);
+const laserGlow = new THREE.Mesh(new THREE.PlaneGeometry(BW + 1.8, 1.0), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.3, blending: ADD, depthWrite: false }));
+laserGlow.position.set(BW / 2, 0, 0.7); slab.add(laserGlow);
 const sweep = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.9), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.9, blending: ADD, depthWrite: false }));
 sweep.position.z = 0.8; slab.add(sweep);
 const TAGH = Math.min(1.45, RS * 1.12), slabL = textPlane(1536, 180, TAGH * 8.53, TAGH); slabL.m.material.opacity = 1; slabL.m.position.set(BW / 2, 0, 0.9); slabL.m.renderOrder = 4; slab.add(slabL.m);   // in the middle of the tubes, between the prices and the amounts
@@ -1711,7 +1712,7 @@ function update(dt) {
 function render(rdt) {
   const t = clock, sy = yOf(pS);
   slab.position.y += (sy - slab.position.y) * Math.min(1, rdt * 6);
-  sweep.position.x = -0.2 + ((t * 9) % (TL + 0.2));
+  sweep.position.x = -0.7 + ((t * 9) % (BW + 1.4));
   slabEdge.material.color.lerp(tmpC.set(tagDir > 0 ? UPC : tagDir < 0 ? DNC : NTC), Math.min(1, rdt * 4));
   slabEdge.material.opacity = 0.8 + 0.2 * Math.sin(t * 6);
   laserGlow.material.color.copy(slabEdge.material.color); sweep.material.color.copy(slabEdge.material.color).lerp(WHITE, 0.3);

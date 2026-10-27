@@ -1395,20 +1395,32 @@ function spike(dir, size) {
 
 /* ---------- interaction ---------- */
 let selEx = null;
-let dragYaw = 0, dragPitch = 0, down = null, selRow = null, zoom = 1, panY = 0, pinch0 = null, lastTap = 0;
+let dragYaw = 0, dragPitch = 0, down = null, selRow = null, zoom = 1, panX = 0, panY = 0, pinch0 = null, lastTap = 0;
+// zoom towards a point on screen (the mouse, or the middle between two fingers): that spot stays under the pointer
+const TANH = Math.tan(17.5 * Math.PI / 180), perPx = () => 2 * dist / zoom * TANH / (stage.clientHeight || 1);
+function zoomAt(z1, cx, cy) {
+  z1 = Math.max(1, Math.min(4, z1)); if (z1 === zoom) return;
+  const rc = stage.getBoundingClientRect(), k = perPx(), wx = (cx - rc.left - rc.width / 2) * k, wy = -(cy - rc.top - rc.height / 2) * k, f = 1 - zoom / z1;
+  if (zoom <= 1.05) { panX = camT.x - CX; panY = camT.y; }   // start from where the camera is now
+  panX += wx * f; panY += wy * f; camT.x += wx * f; camT.y += wy * f; zoom = z1;
+}
 const ptrs = new Map();
 const pinchD = () => { const [a, b] = [...ptrs.values()]; return Math.hypot(a.x - b.x, a.y - b.y) || 1; };
 const tip = $('tip'), ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
 stage.addEventListener('pointerdown', e => { if (e.target.closest('.log')) return; ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); stage.setPointerCapture(e.pointerId);
-  if (ptrs.size === 2) { pinch0 = { d: pinchD(), z: zoom }; down = null; return; }
+  if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch0 = { d: pinchD(), z: zoom, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }; down = null; return; }
   down = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, id: e.pointerId }; });
 stage.addEventListener('pointermove', e => {
   if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (pinch0 && ptrs.size === 2) { zoom = Math.max(1, Math.min(2.8, pinch0.z * pinchD() / pinch0.d)); return; }
+  if (pinch0 && ptrs.size === 2) {   // pinch: zoom around the fingers and follow them when they move together
+    const [a, b] = [...ptrs.values()], mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, k = perPx();
+    zoomAt(pinch0.z * pinchD() / pinch0.d, mx, my);
+    if (zoom > 1.05) { panX -= (mx - pinch0.mx) * k; panY += (my - pinch0.my) * k; }
+    pinch0.mx = mx; pinch0.my = my; return;
+  }
   if (!down || e.pointerId !== down.id) return;
-  dragYaw -= (e.clientX - down.x) * 0.005;
-  if (zoom > 1.05) panY += (e.clientY - down.y) * (2 * dist * Math.tan(17.5 * Math.PI / 180) / zoom) / stage.clientHeight;
-  else dragPitch += (e.clientY - down.y) * 0.003;
+  if (zoom > 1.05) { const k = perPx(); panX -= (e.clientX - down.x) * k; panY += (e.clientY - down.y) * k; }   // zoomed in: drag to move around
+  else { dragYaw -= (e.clientX - down.x) * 0.005; dragPitch += (e.clientY - down.y) * 0.003; }
   dragYaw = Math.max(-1.1, Math.min(1.1, dragYaw)); dragPitch = Math.max(-0.5, Math.min(0.6, dragPitch));
   down.x = e.clientX; down.y = e.clientY;
 });
@@ -1431,7 +1443,7 @@ stage.addEventListener('pointerup', e => {
   selEx = null; selRow = hit.object.userData.row; showTip(selRow, x, y);
 });
 stage.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); pinch0 = null; down = null; });
-stage.addEventListener('wheel', e => { e.preventDefault(); zoom = Math.max(1, Math.min(2.8, zoom * Math.exp(-e.deltaY * 0.0015))); }, { passive: false });
+stage.addEventListener('wheel', e => { e.preventDefault(); zoomAt(zoom * Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY); }, { passive: false });
 stage.addEventListener('dblclick', () => { zoom = 1; });
 const EXPL = {
   ask: 'Verkooporders in het orderboek van alle beurzen samen, gewogen naar volume. Een muur remt een stijging af; wordt hij opgegeten, dan kan de prijs doorschieten.',
@@ -1859,9 +1871,10 @@ function render(rdt) {
   const amp = RM ? 0.04 : 1;
   const yaw = (-0.03 + 0.02 * Math.sin(t * 0.13)) * amp + dragYaw;
   const pitch = 0.025 + 0.01 * amp * Math.sin(t * 0.11) + dragPitch;
-  if (zoom <= 1.05) panY *= Math.exp(-rdt * 3);
-  panY = Math.max(-13 * RS, Math.min(13 * RS, panY));
-  camT.y += (0.7 + midY + Math.max(-3, Math.min(3, (sy - midY) * 0.25)) * (zoom > 1.05 ? 0 : 1) + (zoom > 1.05 ? panY + sy * 0.0 : 0) - camT.y) * Math.min(1, rdt * 3);
+  const zm = zoom > 1.05;
+  panX = Math.max(-WFIT / 2, Math.min(WFIT / 2, panX)); panY = Math.max(-14 * RS, Math.min(14 * RS, panY));
+  camT.x += ((zm ? CX + panX : CX) - camT.x) * Math.min(1, rdt * (zm ? 10 : 3));
+  camT.y += ((zm ? panY : 0.7 + midY + Math.max(-3, Math.min(3, (sy - midY) * 0.25))) - camT.y) * Math.min(1, rdt * (zm ? 10 : 3));
   shake *= Math.exp(-rdt * 6);
   const sh = RM ? 0 : shake;
   const dz = dist / zoom;

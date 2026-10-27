@@ -34,10 +34,17 @@ html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--sa
 .hud{position:fixed;top:calc(env(safe-area-inset-top,0px) + 12px);left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));
   display:flex;justify-content:space-between;align-items:flex-start;gap:12px;pointer-events:none;text-shadow:0 1px 8px #05040d}
 .hud .k{font:600 10px var(--mono);letter-spacing:.2em;color:var(--dim);display:flex;align-items:center;gap:7px}
-.hud .k i{width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ffc56b,var(--btc) 60%,#9a5300);box-shadow:0 0 10px rgba(247,147,26,.6)}
+.hud .k i{width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#fff,var(--coin,var(--btc)) 55%,#111);box-shadow:0 0 10px var(--coin,var(--btc))}
 .hud .px{font:700 28px var(--mono);letter-spacing:-.02em;margin-top:2px;transition:color .4s}
 .hud .px.up{color:var(--up)} .hud .px.dn{color:var(--dn)}
 .hud .sub{font:500 11px var(--mono);color:var(--dim);margin-top:1px}
+.hud .flow{display:flex;align-items:center;gap:7px}
+.hud .flow .fb{display:inline-block;width:54px;height:5px;border-radius:3px;background:var(--dn);overflow:hidden}
+.hud .flow .fb i{display:block;height:100%;background:var(--up);transition:width .6s}
+.coins{display:flex;gap:4px;margin-top:9px;pointer-events:auto;flex-wrap:wrap}
+.coins button{font:600 10.5px var(--mono);color:var(--dim);border:1px solid var(--line2);border-radius:5px;padding:3px 7px;background:rgba(5,4,13,.7);cursor:pointer}
+.coins button:hover{color:var(--txt)}
+.coins button[aria-current=true]{color:var(--txt);border-color:var(--c);box-shadow:0 0 8px -2px var(--c)}
 .hud .r{text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end}
 .goal{font:600 11px var(--mono);border:1px solid var(--c);color:var(--c);border-radius:999px;padding:3px 9px;background:rgba(5,4,13,.6);
   box-shadow:0 0 12px -2px var(--c);white-space:nowrap}
@@ -108,12 +115,14 @@ html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--sa
 </style>
 </head>
 <body>
-<canvas id="city" tabindex="0" aria-label="Het orderboek van BTC als stad: de avenue is de prijs, de voorste rij gebouwen het orderboek (koopmuren groen, verkoopmuren rood), de middelste rij de geschatte stops, de achterste rij de geschatte liquidaties. Hoe groter de liquiditeit, hoe hoger het gebouw. Het lichtspoor is de koers van de laatste vier uur. Tik op een gebouw voor details; slepen schuift, knijpen of scrollen zoomt."></canvas>
+<canvas id="city" tabindex="0" aria-label="Het orderboek als stad: de avenue is de prijs, de voorste rij gebouwen het orderboek (koopmuren groen, verkoopmuren rood), de middelste rij de geschatte stops, de achterste rij de geschatte liquidaties. Hoe groter de liquiditeit, hoe hoger het gebouw. Het lichtspoor is de koers van de laatste vier uur. Tik op een gebouw voor details; slepen schuift, knijpen of scrollen zoomt."></canvas>
 <div class="hud">
   <div>
-    <div class="k"><i></i>BTC<span class="long"> · LIQUIDITEITSSTAD</span></div>
+    <div class="k"><i id="coin"></i><span id="cname">BTC</span><span class="long"> · LIQUIDITEITSSTAD</span></div>
     <div class="px" id="hp">—</div>
     <div class="sub" id="hs">&nbsp;</div>
+    <div class="sub flow" id="hf"></div>
+    <nav class="coins" id="coins" aria-label="Munt"></nav>
   </div>
   <div class="r" id="hg"></div>
 </div>
@@ -126,7 +135,7 @@ html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--sa
   <ol id="lad"></ol>
 </aside>
 <div class="tools">
-  <a href="./#btc">← <span class="long">GlassSphere</span></a>
+  <a id="back" href="./#btc">← <span class="long">GlassSphere</span></a>
   <button id="follow" type="button" aria-pressed="true" title="De prijs volgen (0)">⌖ Volg</button>
   <button id="sideb" type="button" aria-pressed="false">☰ Niveaus</button>
   <button type="button" data-layer="wall" aria-pressed="true"><span class="dot" style="background:linear-gradient(90deg,var(--up) 50%,var(--dn) 50%)"></span>Muren</button>
@@ -144,11 +153,33 @@ const $ = id => document.getElementById(id);
 const msg = t => { $('msg').hidden = !t; if (t) $('msg').textContent = t; };
 
 /* =====================================================================================================================
-   DATA: copied from held.html, which copies index.html (asset, fetching, estimates, levels and targets), BTC only for now
+   DATA: copied from held.html, which copies index.html (asset, fetching, estimates, levels and targets), for six coins
    ===================================================================================================================== */
-const A = { name: 'BTC', file: 'glasssphere-data.json', okx: 'BTC-USDT-SWAP', okxCt: 0.01, usdt: 'BTCUSDT', gate: 'BTC_USDT', gateMul: 1e-4, gateIv: '10',
-  htx: 'BTC-USDT', htxCt: 0.001, deribit: 'BTC-PERPETUAL', deribitUsd: true, bitmex: 'XBTUSD', cdc: 'BTCUSD-PERP', hl: 'BTC', hlSig: 3, dydx: 'BTC-USD',
-  bin: 10, histBin: 100, buckets: [25, 50, 100, 250, 500], auto: { 0.015: 50, 0.03: 100, 0.06: 250, 0.12: 500 }, dec: 0 };
+// per coin: copied from index.html (ASSETS), the coins the city offers
+const ASSETS = {
+  btc: { name: 'BTC', file: 'glasssphere-data.json', okx: 'BTC-USDT-SWAP', okxCt: 0.01, usdt: 'BTCUSDT', gate: 'BTC_USDT', gateMul: 1e-4, gateIv: '10',
+    htx: 'BTC-USDT', htxCt: 0.001, deribit: 'BTC-PERPETUAL', deribitUsd: true, bitmex: 'XBTUSD', cdc: 'BTCUSD-PERP', hl: 'BTC', hlSig: 3, dydx: 'BTC-USD',
+    bin: 10, histBin: 100, buckets: [25, 50, 100, 250, 500], auto: { 0.015: 50, 0.03: 100, 0.06: 250, 0.12: 500 }, dec: 0 },
+  eth: { name: 'ETH', file: 'glasssphere-eth.json', okx: 'ETH-USDT-SWAP', okxCt: 0.1, usdt: 'ETHUSDT', gate: 'ETH_USDT', gateMul: 0.01, gateIv: '1',
+    htx: 'ETH-USDT', htxCt: 0.01, deribit: 'ETH-PERPETUAL', deribitUsd: true, bitmex: null, cdc: 'ETHUSD-PERP', hl: 'ETH', hlSig: 4, dydx: 'ETH-USD',
+    bin: 0.25, histBin: 2.5, buckets: [0.5, 1, 2.5, 5, 10], auto: { 0.015: 1, 0.03: 2.5, 0.06: 5, 0.12: 10 }, dec: 1 },
+  sol: { name: 'SOL', file: 'glasssphere-sol.json', okx: 'SOL-USDT-SWAP', okxCt: 1, usdt: 'SOLUSDT', gate: 'SOL_USDT', gateMul: 1, gateIv: '0.1',
+    htx: 'SOL-USDT', htxCt: 1, deribit: 'SOL_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'SOLUSD-PERP', hl: 'SOL', hlSig: 4, dydx: 'SOL-USD',
+    bin: 0.01, histBin: 0.1, buckets: [0.02, 0.05, 0.1, 0.25, 0.5], auto: { 0.015: 0.05, 0.03: 0.1, 0.06: 0.25, 0.12: 0.5 }, dec: 2 },
+  xrp: { name: 'XRP', file: 'glasssphere-xrp.json', okx: 'XRP-USDT-SWAP', okxCt: 100, usdt: 'XRPUSDT', gate: 'XRP_USDT', gateMul: 10, gateIv: '0.001',
+    htx: 'XRP-USDT', htxCt: 10, deribit: 'XRP_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'XRPUSD-PERP', hl: 'XRP', hlSig: 4, dydx: 'XRP-USD', bitgetSc: 'scale1',
+    bin: 0.0001, histBin: 0.002, buckets: [0.0005, 0.001, 0.002, 0.005, 0.01], auto: { 0.015: 0.001, 0.03: 0.002, 0.06: 0.005, 0.12: 0.01 }, dec: 4 },
+  doge: { name: 'DOGE', file: 'glasssphere-doge.json', okx: 'DOGE-USDT-SWAP', okxCt: 1000, usdt: 'DOGEUSDT', gate: 'DOGE_USDT', gateMul: 10, gateIv: '0.0001',
+    htx: 'DOGE-USDT', htxCt: 100, deribit: 'DOGE_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'DOGEUSD-PERP', hl: 'DOGE', hlSig: 3, dydx: 'DOGE-USD', bitgetSc: 'scale1',
+    bin: 0.00001, histBin: 0.0001, buckets: [0.00002, 0.00005, 0.0001, 0.00025, 0.0005], auto: { 0.015: 0.00005, 0.03: 0.0001, 0.06: 0.00025, 0.12: 0.0005 }, dec: 5 },
+  sui: { name: 'SUI', file: 'glasssphere-sui.json', okx: 'SUI-USDT-SWAP', okxCt: 1, usdt: 'SUIUSDT', gate: 'SUI_USDT', gateMul: 1, gateIv: '0.001',
+    htx: 'SUI-USDT', htxCt: 1, deribit: 'SUI_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'SUIUSD-PERP', hl: 'SUI', hlSig: 3, dydx: 'SUI-USD', bitgetSc: 'scale1',
+    bin: 0.0001, histBin: 0.001, buckets: [0.0002, 0.0005, 0.001, 0.0025, 0.005], auto: { 0.015: 0.0005, 0.03: 0.001, 0.06: 0.0025, 0.12: 0.005 }, dec: 4 },
+};
+const COINS = Object.keys(ASSETS);
+const COIN = (() => { const h = location.hash.slice(1).toLowerCase(); if (ASSETS[h]) return h;
+  try { const c = localStorage.getItem('stad-coin'); if (ASSETS[c]) return c; } catch (e) {} return 'btc'; })();
+const A = ASSETS[COIN];
 const digits = step => Math.max(0, -Math.floor(Math.log10(step))) + 3;
 const nice = x => { const m = 10 ** Math.floor(Math.log10(x));
   return [1, 2, 2.5, 5, 10].map(c => c * m).reduce((a, b) => Math.abs(Math.log(x / b)) < Math.abs(Math.log(x / a)) ? b : a); };
@@ -187,7 +218,7 @@ const BOOKS = {
     const f = r => [+r.px, +r.sz * +r.px]; return { b: j.levels[0].map(f), a: j.levels[1].map(f) }; },
   bybit: async () => { const r = (await getJSON(`https://api.bybit.com/v5/market/orderbook?category=linear&symbol=${A.usdt}&limit=500`)).result;
     const f = x => [+x[0], +x[1] * +x[0]]; return { b: r.b.map(f), a: r.a.map(f) }; },
-  bitget: async () => { const d = (await getJSON(`https://api.bitget.com/api/v2/mix/market/merge-depth?productType=usdt-futures&symbol=${A.usdt}&limit=max&precision=scale2`)).data;
+  bitget: async () => { const d = (await getJSON(`https://api.bitget.com/api/v2/mix/market/merge-depth?productType=usdt-futures&symbol=${A.usdt}&limit=max&precision=${A.bitgetSc || 'scale2'}`)).data;
     const f = x => [+x[0], +x[1] * +x[0]]; return { b: d.bids.map(f), a: d.asks.map(f) }; },
   htx: async () => { const t = (await getJSON(`https://api.hbdm.com/linear-swap-ex/market/depth?contract_code=${A.htx}&type=step0`)).tick;
     const f = x => [x[0], x[1] * A.htxCt * x[0]]; return { b: t.bids.map(f), a: t.asks.map(f) }; },
@@ -224,7 +255,8 @@ const MARKET = {
 };
 async function fetchAll(table, wrap) {
   const out = {};
-  await Promise.all(Object.entries(table).map(async ([k, fn]) => { try { out[k] = wrap(await fn(), k); } catch (e) {} }));
+  await Promise.all(Object.entries(table).map(async ([k, fn]) => { if (A[k] === null) return;      // not listed there for this coin
+    try { out[k] = wrap(await fn(), k); } catch (e) {} }));
   return out;
 }
 const fetchBooks = () => fetchAll(BOOKS, r => ({ b: binLevels(r.b, 'b'), a: binLevels(r.a, 'a') }));
@@ -446,6 +478,9 @@ const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const LAYERS = { wall: true, stop: true, liq: true, goal: true, trail: true };
 try { Object.assign(LAYERS, JSON.parse(localStorage.getItem('stad-layers') || '{}')); } catch (e) {}
 const shown = k => LAYERS[rowOf(k)];
+const fmtB = v => '$' + v.toLocaleString('nl-NL', { maximumFractionDigits: 9 });
+const agoTxt = t => { const m = Math.round((Date.now() - t) / 6e4); return m < 60 ? `${m} min` : `${fx(m / 60, 1)} u`; };
+const START = Date.now();
 
 /* ---- the ground plan and the camera -------------------------------------------------------------------------------
    World units: x is the price (0 is the middle of the view, ±HW its edges), y is up, z runs away from the viewer.
@@ -504,8 +539,8 @@ setInterval(thinTrail, 30e3);
    through) goes dark ('out') and leaves a ruin, its outline on the ground. */
 let CITY = new Map(), CB = 0, built = false, T = 0, SEL = null, HOVB = null;
 const RUINS = [], SPARKS = [], FLARES = [], CONSUMED = [];
-const bucketFor = r => { const want = 2 * r / (phone ? 34 : 58);
-  return A.buckets.filter(b => b >= 50).reduce((a, b) => Math.abs(Math.log(b / want)) < Math.abs(Math.log(a / want)) ? b : a); };
+const bucketFor = r => { const want = 2 * r / (phone ? 26 : 58);
+  return A.buckets.slice(1).reduce((a, b) => Math.abs(Math.log(b / want)) < Math.abs(Math.log(a / want)) ? b : a); };
 function build() {
   if (!D) return;
   const P = D.price, B = bucketFor(V.r || P * .012), i0 = Math.floor(P * .85 / B), N = Math.ceil(P * 1.15 / B) - i0 + 1;
@@ -522,20 +557,31 @@ function build() {
   const gone = (k, p0, p1) => CONSUMED.some(c => c.k === k && now - c.t < 10 * 60e3 && c.p0 < p1 && c.p1 > p0);
   const next = new Map();
   for (const [k, arr, m, thr] of [['bid', bid, mB, .05], ['ask', ask, mB, .05], ['stop', stop, mS, .07], ['liq', liq, mL, .05]])
-    for (let j = 0; j < N; j++) { const v = arr[j], rel = v / m; if (!(rel >= thr)) continue;
+    for (let j = 0; j < N; j++) { const v = arr[j], rel = v / m; if (!(rel >= thr * .6)) continue;
+      const key = k + '|' + B + '|' + (i0 + j);
+      if (rel < thr && CITY.get(key)?.st !== 'live') continue;        // a building goes up at thr and stays until it drops under 60% of it
       const p = (i0 + j + .5) * B; if ((k === 'stop' || k === 'liq') && gone(k, p - B / 2, p + B / 2)) continue;
-      next.set(k + '|' + B + '|' + (i0 + j), { k, p, B, v, rel: Math.min(rel, 1.35), above: p > P, j: i0 + j }); }
+      next.set(key, { k, p, B, v, rel: Math.min(rel, 1.35), above: p > P, j: i0 + j,
+        ps: (k === 'bid' || k === 'ask') && Math.abs(p / P - 1) < .06 ? presenceAt(p - B / 2, p + B / 2, v) : null }); }
   const swap = B !== CB; CB = B;
-  for (const b of CITY.values()) if (!next.has(b.key) && b.st === 'live') { if (swap) { b.st = 'swap'; b.tOut = T; } else dim(b, 'niet meer in het boek'); }
+  for (const b of CITY.values()) if (!next.has(b.key) && b.st === 'live') {
+    if (swap) { b.st = 'swap'; b.tOut = T; } else if (++b.miss >= 2) dim(b, 'niet meer in het boek'); }   // gone on two refreshes in a row
   for (const [key, n] of next) {
     const b = CITY.get(key);
-    if (b && b.st === 'live') { b.v = n.v; b.ht = n.rel; b.above = n.above; continue; }
+    if (b && b.st === 'live') { Object.assign(b, { v: n.v, ht: n.rel, above: n.above, ps: n.ps, miss: 0 }); continue; }
     const delay = !built ? .15 + Math.abs(X(n.p)) / HW * .9 + hash(n.j) * .25 : swap ? hash(n.j) * .2 : 0;
-    CITY.set(key, { ...n, key, h: 0, ht: n.rel, st: 'live', t0: T + delay, seed: hash(n.j * 7.3 + n.k.length), born: built && !swap });
+    const nb = { ...n, key, h: 0, ht: n.rel, st: 'live', miss: 0, t0: T + delay, seed: hash(n.j * 7.3 + n.k.length), born: built && !swap, seen: built && !swap ? Date.now() : 0 };
+    CITY.set(key, nb);
     if (built && !swap && n.rel > .45 && shown(n.k) && Math.abs(n.p / P - 1) < nr)
-      note('new' + n.k, 'Nieuw: ' + nameOf(n.k, n.above).toLowerCase(), fmtP(n.p) + ' · ' + (n.k === 'stop' ? 'score ' + Math.round(n.rel * 100) : fmtUsd(n.v)), COL[n.k]);
+      note('new' + n.k, (ageOf(nb) === 'new' ? 'In de steigers: ' : 'Nieuw: ') + nameOf(n.k, n.above).toLowerCase(), fmtP(n.p) + ' · ' + (n.k === 'stop' ? 'score ' + Math.round(n.rel * 100) : fmtUsd(n.v)), COL[n.k]);
   }
   built = true;
+}
+// how long a wall has stood: new (in the scaffolding), established, or not known
+function ageOf(b) {
+  if (b.k !== 'bid' && b.k !== 'ask') return null;
+  if (b.ps) return b.ps[0] <= 1 ? 'new' : b.ps[0] >= b.ps[1] - 1 ? 'old' : null;
+  return b.seen && b.seen - START > 60e3 && Date.now() - b.seen < 20 * 60e3 ? 'new' : null;
 }
 // goes dark: the windows switch off one by one, the neon flickers, then the building sinks and leaves its outline
 function dim(b, why) {
@@ -546,27 +592,37 @@ function dim(b, why) {
   if (b.rel > .3 && shown(b.k) && why !== 'niet meer in het boek' || b.rel > .45 && shown(b.k))
     note('out' + b.k, nameOf(b.k, b.above) + ' ' + fmtP(b.p) + ' gedoofd', sizeOf(b) + ' · ' + why, COL[b.k]);
 }
-// the price runs through a zone: the wall is eaten, the stops and liquidations go off
+// the price at a wall: it touches (the wall shakes), turns back (defended) or runs through (eaten, the wall collapses);
+// stops and liquidations go off when the price crosses them
 function cross(prev, p) {
   for (const b of CITY.values()) {
     if (b.st !== 'live' || T < b.t0) continue;
     const lo = b.p - b.B / 2, hi = b.p + b.B / 2;
-    let hit = false;
-    if (b.k === 'ask') hit = prev <= hi && p > hi;
-    else if (b.k === 'bid') hit = prev >= lo && p < lo;
-    else hit = (prev - b.p) * (p - b.p) <= 0 && prev !== p;
-    if (!hit) continue;
-    if (b.k === 'stop' || b.k === 'liq') CONSUMED.push({ k: b.k, p0: lo, p1: hi, t: Date.now() });
-    burst(b, b.k === 'liq' ? 40 : b.k === 'stop' ? 26 : 18);
-    dim(b, b.k === 'ask' || b.k === 'bid' ? 'opgegeten door de prijs' : 'geraakt door de prijs');
+    if (b.k === 'ask' || b.k === 'bid') {
+      const ask = b.k === 'ask', inside = p >= lo && p <= hi;
+      if (ask ? prev <= hi && p > hi : prev >= lo && p < lo) { burst(b, 34, true); b.eaten = true; dim(b, 'opgegeten door de prijs'); continue; }
+      if (inside && (b.touch || (ask ? prev < lo : prev > hi))) { b.touch = b.touch || T; b.hitT = T;
+        b.deep = Math.max(b.deep || 0, ask ? (p - lo) / (hi - lo) : (hi - p) / (hi - lo));
+        if (T - (b.sparkT || 0) > .3) { b.sparkT = T; burst(b, 5); } }
+      else if (b.touch && !inside) {                // turned back: defended, if the price was in it for a while or got well in
+        const held = T - b.touch >= 1.5 || b.deep >= .3; b.touch = 0; b.deep = 0; if (!held) continue;
+        b.def = (b.def || 0) + 1; b.shieldT = T;
+        if (b.rel > .25 && shown(b.k)) note('def' + b.k, `${nameOf(b.k, b.above)} ${fmtP(b.p)} houdt stand`, `${sizeOf(b)} · ${b.def}× verdedigd`, COL[b.k]); }
+      continue;
+    }
+    if ((prev - b.p) * (p - b.p) <= 0 && prev !== p) {
+      CONSUMED.push({ k: b.k, p0: lo, p1: hi, t: Date.now() });
+      burst(b, b.k === 'liq' ? 40 : 26);
+      dim(b, 'geraakt door de prijs');
+    }
   }
   while (CONSUMED.length && Date.now() - CONSUMED[0].t > 10 * 60e3) CONSUMED.shift();
 }
-function burst(b, n) {
+function burst(b, n, debris) {
   const r = ROW[rowOf(b.k)], x = X(b.p), y = b.h * r.hMax, z = (r.z0 + r.z1) / 2;
   if (reduced) return;
   for (let i = 0; i < n; i++) { const a = R() * PI * 2, sp = 6 + R() * 18;
-    SPARKS.push({ x, y: y * (.4 + R() * .6), z, vx: Math.cos(a) * sp * .6, vy: 8 + R() * 22, vz: Math.sin(a) * sp * .4, age: 0, life: .8 + R() * 1.1, col: COL[b.k] }); }
+    SPARKS.push({ x, y: y * (.4 + R() * .6), z, vx: Math.cos(a) * sp * .6, vy: 8 + R() * 22, vz: Math.sin(a) * sp * .4, age: 0, life: .8 + R() * 1.1, col: debris && i % 3 ? '#cfc6b8' : COL[b.k] }); }
 }
 
 /* ---- the live price, real liquidations, notes ------------------------------------------------------------------------ */
@@ -579,16 +635,62 @@ function onPrice(prev, p) {
   if (prev && D && built) cross(prev, p);
 }
 function realLiq(ex, long, p, usd) {
-  if (!(p > 0) || !(usd >= 20e3)) return;
+  if (!(p > 0) || !(usd > 0)) return;
+  addWreck(ex, long, p, usd, Date.now());
+  if (usd < CARU / 7.5) return;
   FLARES.push({ p, long, usd, t: T });
-  if (usd >= 100e3) note('real', `${ex}: ${long ? 'long' : 'short'} geliquideerd`, `${fmtUsd(usd)} op ${fmtP(p)}`, long ? COL.dn : COL.up, true);
+  if (usd >= CARU * .67) note('real', `${ex}: ${long ? 'long' : 'short'} geliquideerd`, `${fmtUsd(usd)} op ${fmtP(p)}`, long ? COL.dn : COL.up, true);
 }
-// OKX trades, buy and sell volume per second (the price stream in the data part counts them here)
+// OKX trades: buy and sell volume per second for the last minute, and the traffic on the avenue (a car per CARU traded,
+// a bigger light for a single large order)
+const CARS = [], FLOW = { b: 0, s: 0 }, CARU = { BTC: 150e3, ETH: 60e3 }[A.name] || 25e3;
 const TAKER = (() => {
-  const sec = new Map();
-  return { add(side, usd) { const k = Math.floor(Date.now() / 1000), b = sec.get(k) || sec.set(k, { b: 0, s: 0 }).get(k); if (side === 'buy') b.b += usd; else b.s += usd;
-    for (const t of sec.keys()) if (t < k - 60) sec.delete(t); } };
+  const sec = new Map(); let seen = false;
+  return { add(side, usd) { seen = true; const k = Math.floor(Date.now() / 1000), b = sec.get(k) || sec.set(k, { b: 0, s: 0 }).get(k), sd = side === 'buy' ? 'b' : 's';
+      b[sd] += usd;
+      if (usd >= CARU * 8) spawnCar(sd, Math.min(3, 1.6 + Math.log2(usd / (CARU * 8)) * .5)); else FLOW[sd] += usd;
+      for (const t of sec.keys()) if (t < k - 60) sec.delete(t); },
+    now() { const k = Math.floor(Date.now() / 1000); let bb = 0, ss = 0; for (const [t, v] of sec) if (t > k - 10) { bb += v.b; ss += v.s; } return { b: bb, s: ss, seen }; } };
 })();
+function spawnCar(side, size) {
+  if (!V.r || !PXS || CARS.length > 160 || reduced) return; const dir = side === 'b' ? 1 : -1;
+  CARS.push({ pc: PXS, vp: dir * (26 + R() * 22) / (size > 1 ? 1.25 : 1) * V.r / HW, z: side === 'b' ? 1.4 + R() * 1.8 : 4.8 + R() * 1.8, size,
+    col: side === 'b' ? COL.up : COL.dn, t: T });
+}
+// real liquidations of the last 24 hours: what was seen here is kept in this browser, OKX's history fills in the rest
+const WRECKS = [], WIDS = new Set(), DAY = 24 * 3.6e6, WK = 'stad-wrecks-' + COIN; let wSave = 0;
+try { for (const w of JSON.parse(localStorage.getItem(WK) || '[]')) if (Date.now() - w.t < DAY && !WIDS.has(w.id)) { WIDS.add(w.id); WRECKS.push(w); } } catch (e) {}
+function addWreck(ex, long, p, usd, t) {
+  if (!(usd >= 1000) || !(p > 0)) return;
+  const id = ex + '|' + p + '|' + Math.round(usd); if (WIDS.has(id)) return; WIDS.add(id);
+  WRECKS.push({ id, t, p, usd: Math.round(usd), long, ex }); cratAt = -1;
+  if (!wSave) wSave = setTimeout(saveWrecks, 3000);
+}
+function saveWrecks() {
+  wSave = 0; const now = Date.now();
+  for (let i = WRECKS.length - 1; i >= 0; i--) if (now - WRECKS[i].t > DAY) { WIDS.delete(WRECKS[i].id); WRECKS.splice(i, 1); }
+  WRECKS.sort((a, b) => a.t - b.t); while (WRECKS.length > 4000) WIDS.delete(WRECKS.shift().id);
+  try { localStorage.setItem(WK, JSON.stringify(WRECKS)); } catch (e) {}
+}
+async function backfillWrecks() {
+  const base = `https://www.okx.com/api/v5/public/liquidation-orders?instType=SWAP&uly=${A.okx.replace(/-SWAP$/, '')}&state=filled&limit=100`;
+  let after = '';
+  for (let page = 0; page < 12; page++) {
+    let det; try { det = (await getJSON(base + (after ? '&after=' + after : ''))).data?.find(d => d.instId === A.okx)?.details || []; } catch (e) { break; }
+    if (!det.length) break;
+    for (const x of det) { const t = +x.ts, p = +x.bkPx; if (Date.now() - t < DAY) addWreck('OKX', x.posSide === 'long' || (x.posSide !== 'short' && x.side === 'sell'), p, +x.sz * A.okxCt * p, t); }
+    const oldest = Math.min(...det.map(x => +x.ts)); if (Date.now() - oldest > DAY || String(oldest) === after) break; after = String(oldest);
+  }
+}
+let CRAT = [], cratAt = -1, cratB = 0;
+function craters() {        // per zone and side
+  if (cratAt >= 0 && T - cratAt < 2 && cratB === CB) return CRAT;
+  cratAt = T; cratB = CB; const m = new Map(), B = CB || A.buckets[2], now = Date.now();
+  for (const w of WRECKS) { if (now - w.t > DAY) continue; const i = Math.floor(w.p / B), k = i + '|' + (w.long ? 1 : 0);
+    const c = m.get(k) || m.set(k, { p: (i + .5) * B, B, long: w.long, usd: 0, n: 0, t: 0, ex: new Set() }).get(k);
+    c.usd += w.usd; c.n++; c.t = Math.max(c.t, w.t); c.ex.add(w.ex); }
+  return CRAT = [...m.values()].filter(c => c.usd >= CARU * .1).sort((a, b) => a.usd - b.usd);
+}
 const NOTED = {};
 function note(kind, title, sub, col, always) {
   const now = Date.now(); if (!always && now - (NOTED[kind] || 0) < 4000) return; NOTED[kind] = now;
@@ -737,12 +839,18 @@ const HITS = [];
 function life(b) {          // 0..1: how much light is left in it, and the window fraction still on
   if (b.st === 'live') return { L: 1, win: 1, sink: 0 };
   if (b.st === 'swap') { const u = clamp((T - b.tOut) / .45, 0, 1); return { L: 1 - u, win: 1 - u, sink: u }; }
+  if (b.eaten) { const u = clamp((T - b.tOut) / 1.1, 0, 1); return { L: 1 - u * .6, win: 1 - u, sink: ease(u) }; }
   const u = (T - b.tOut) / 2.4;
   if (u < 1) { const fl = reduced ? 1 : hash(Math.floor(T * 18) + b.seed * 99) < 1 - u * .75 ? 1 : .2; return { L: (1 - u * .55) * fl, win: 1 - u, sink: 0 }; }
   const v = clamp((T - b.tOut - 2.4) / 1.4, 0, 1); return { L: .45 * (1 - v), win: 0, sink: ease(v) };
 }
 function drawBuilding(b) {
-  const r = ROW[rowOf(b.k)], lf = life(b), hW = b.h * (1 - lf.sink) * r.hMax;
+  const sh = (b.hitT && T - b.hitT < .5 ? (1 - (T - b.hitT) / .5) * 1.5 : 0) + (b.eaten && b.st === 'out' ? 2.5 * (1 - clamp((T - b.tOut) / 1.1, 0, 1)) : 0);
+  if (!sh || reduced) return drawBody(b);
+  g.save(); g.translate(Math.sin(T * 70 + b.seed * 20) * sh, 0); drawBody(b); g.restore();
+}
+function drawBody(b) {
+  const r = ROW[rowOf(b.k)], lf = life(b), hW = b.h * (1 - lf.sink) * r.hMax, age = ageOf(b);
   if (hW < .4) return;
   const w = b.B / V.r * HW, gap = Math.min(w * .14, w > 3 ? 1.2 : w * .14), x0 = X(b.p) - w / 2 + gap / 2, x1 = x0 + w - gap;
   const z0 = r.z0, z1 = z0 + Math.min(r.z1 - r.z0, Math.max(2.5, (x1 - x0) * (1.1 + .7 * b.seed)));
@@ -763,7 +871,7 @@ function drawBuilding(b) {
   // windows, counted from the ground so they stay put while the building rises
   const s = sAt(z0), cw = clamp(s * 1.5, 4, 9), ch = cw * 1.3, cols = Math.floor((fw - 2) / cw), rows = Math.floor((fh - 3) / ch);
   if (cols >= 1 && rows >= 1 && lf.win > 0) {
-    const ww = Math.max(1, cw * .5), wh = Math.max(1, ch * .45), ox = fb0[0] + (fw - cols * cw) / 2 + (cw - ww) / 2, lit = (.25 + .6 * Math.min(1, b.rel)) * lf.win;
+    const ww = Math.max(1, cw * .5), wh = Math.max(1, ch * .45), ox = fb0[0] + (fw - cols * cw) / 2 + (cw - ww) / 2, lit = (.25 + .6 * Math.min(1, b.rel)) * lf.win * (age === 'new' ? .3 : age === 'old' ? 1.15 : 1);
     const step = cols * rows > 900 ? 2 : 1;
     g.fillStyle = rgba(col, .75 * L);
     for (let i = 0; i < rows; i += step) for (let j = 0; j < cols; j += step) {
@@ -774,9 +882,35 @@ function drawBuilding(b) {
       const hsh = hash(b.seed * 1000 + i * 31 + j * 7); if (hsh > lit * .22) continue;
       g.fillRect(ox + j * cw, fb0[1] - 3 - (i + 1) * ch + (ch - wh), ww, wh); }
   }
+  // a new wall stands in the scaffolding, the large ones with a crane on the roof
+  if (age === 'new' && fw > 3 && fh > 6) {
+    const bw = Math.max(5, cw * 2), bh = Math.max(6, ch * 2);
+    g.strokeStyle = `rgba(255,214,150,${.38 * L})`; g.lineWidth = 1; g.beginPath();
+    for (let x = fb0[0]; x <= fb1[0] + .5; x += bw) { g.moveTo(x, fb0[1]); g.lineTo(x, ft0[1] - 3); }
+    for (let y = fb0[1], i = 0; y >= ft0[1] - 1; y -= bh, i++) { g.moveTo(fb0[0] - 1, y); g.lineTo(fb1[0] + 1, y);
+      if (y - bh >= ft0[1]) for (let x = fb0[0], k = 0; x + bw <= fb1[0] + .5; x += bw, k++) if ((k + i) % 2 === 0) { g.moveTo(x, y); g.lineTo(x + bw, y - bh); } }
+    g.stroke();
+    if (b.rel > .3) {
+      const mx = fb0[0] + fw * .3, top = ft0[1], mh = clamp(fh * .5, 14, 46), jl = clamp(fw * 1.3, 18, 56), dir = X(b.p) > 0 ? -1 : 1;
+      const sw = reduced ? 0 : Math.sin(T * 1.3 + b.seed * 9) * 3, cx = mx + dir * jl * .7, cl = mh * .55;
+      g.strokeStyle = `rgba(255,214,150,${.75 * L})`; g.lineWidth = 1.2; g.beginPath();
+      g.moveTo(mx, top); g.lineTo(mx, top - mh - 6);
+      g.moveTo(mx - dir * jl * .3, top - mh); g.lineTo(mx + dir * jl, top - mh);
+      g.moveTo(mx, top - mh - 6); g.lineTo(mx + dir * jl, top - mh); g.moveTo(mx, top - mh - 6); g.lineTo(mx - dir * jl * .3, top - mh);
+      g.moveTo(cx, top - mh); g.lineTo(cx + sw, top - mh + cl); g.stroke();
+      g.fillStyle = `rgba(255,214,150,${.8 * L})`; g.fillRect(cx + sw - 2.5, top - mh + cl, 5, 4); g.fillRect(mx - dir * jl * .3 - 3, top - mh, 5, 4);
+      if (Math.sin(T * 3 + b.seed * 5) > 0) { g.fillStyle = 'rgba(255,60,60,.95)'; g.fillRect(mx + dir * jl - 1.5, top - mh - 1.5, 3, 3); }
+    }
+  }
+  if (age === 'old') { g.fillStyle = rgba(col, .55 * L); g.fillRect(fb0[0], fb0[1] - 2, fw, 2); }
+  // under fire: the front flickers; defended: it lights up
+  if (b.touch && b.st === 'live') { g.save(); g.globalCompositeOperation = 'lighter'; g.fillStyle = rgba('#ffffff', .1 + .08 * Math.sin(T * 24)); g.fillRect(fb0[0], ft0[1], fw, fh); g.restore(); }
+  if (b.shieldT && T - b.shieldT < 1.2) { const u = (T - b.shieldT) / 1.2, e = u * 8;
+    g.save(); g.globalCompositeOperation = 'lighter'; g.strokeStyle = rgba(col, .9 * (1 - u)); g.lineWidth = 3; g.strokeRect(fb0[0] - e, ft0[1] - e, fw + 2 * e, fh + 2 * e);
+    g.fillStyle = rgba(col, .25 * (1 - u)); g.fillRect(fb0[0], ft0[1], fw, fh); g.restore(); }
   // neon edges, brighter when it was just built
   const fresh = b.born ? clamp(1 - (T - b.t0) / 1.6, 0, 1) : 0, edge = sel || hov ? '#ffffff' : fresh > 0 ? '#ffffff' : col;
-  g.strokeStyle = rgba(edge, (sel ? 1 : .55 + .35 * b.rel) * L); g.lineWidth = sel ? 2 : 1;
+  g.strokeStyle = rgba(edge, (sel ? 1 : age === 'new' ? .45 : .55 + .35 * b.rel) * L); g.lineWidth = sel ? 2 : 1;
   g.beginPath(); g.moveTo(fb0[0], fb0[1]); g.lineTo(ft0[0], ft0[1]); g.lineTo(ft1[0], ft1[1]); g.lineTo(fb1[0], fb1[1]);
   if (hW < CAMY) { g.moveTo(ft0[0], ft0[1]); g.lineTo(bt0[0], bt0[1]); g.lineTo(bt1[0], bt1[1]); g.lineTo(ft1[0], ft1[1]); }
   g.stroke();
@@ -800,6 +934,38 @@ function drawCity() {
     groups[k].sort((a, b) => Math.abs(X(b.p)) - Math.abs(X(a.p)));
     for (const b of groups[k]) drawBuilding(b);
   }
+}
+// craters: real liquidations of the last 24 hours, on the open ground between the stops and the liquidations
+const CHITS = [], CRZ = long => long ? 47.5 : 52;
+function drawCraters() {
+  CHITS.length = 0; if (!LAYERS.liq) return;
+  const now = Date.now();
+  for (const c of craters()) {
+    const z = CRZ(c.long), [x, y] = PJ(X(c.p), 0, z); if (x < -40 || x > W + 40) continue;
+    const r = clamp(2 + 4.5 * Math.log10(1 + c.usd / (CARU * .2)), 2, 18) * sAt(z) * .55, a = .3 + .7 * (1 - (now - c.t) / DAY), col = c.long ? COL.dn : COL.up;
+    g.fillStyle = 'rgba(0,0,0,.6)'; g.beginPath(); g.ellipse(x, y, r, r * .3, 0, 0, PI * 2); g.fill();
+    g.strokeStyle = rgba(col, .6 * a); g.lineWidth = 1; g.stroke();
+    if (now - c.t < 3.6e6) { const fl = .55 + .45 * Math.sin(T * 5 + c.p), k = 1 - (now - c.t) / 3.6e6;      // still smouldering
+      g.save(); g.globalCompositeOperation = 'lighter'; const gg = g.createRadialGradient(x, y, 0, x, y, r);
+      gg.addColorStop(0, rgba(col, .15 + .45 * fl * k)); gg.addColorStop(1, rgba(col, 0)); g.fillStyle = gg;
+      g.beginPath(); g.ellipse(x, y, r, r * .3, 0, 0, PI * 2); g.fill(); g.restore(); }
+    CHITS.push({ c, x, y, rx: Math.max(r, 7), ry: Math.max(r * .3, 6) });
+  }
+}
+// traffic on the avenue: buyers drive right in the near lane, sellers left in the far one
+function drawCars(dt) {
+  for (const sd of ['b', 's']) { FLOW[sd] = Math.min(FLOW[sd], CARU * 10); let n = 0; while (FLOW[sd] >= CARU && n++ < 3) { FLOW[sd] -= CARU; spawnCar(sd, 1); } }
+  if (!CARS.length) return;
+  g.save(); g.globalCompositeOperation = 'lighter'; g.lineCap = 'round';
+  for (let i = CARS.length - 1; i >= 0; i--) {
+    const c = CARS[i]; c.pc += c.vp * dt; const x = X(c.pc);
+    if (Math.abs(x) > HW * 1.5 || T - c.t > 8) { CARS.splice(i, 1); continue; }
+    const s = sAt(c.z), [hx, hy] = PJ(x, .5, c.z), dir = Math.sign(c.vp), len = (5 + 5 * c.size) * s, f = clamp((T - c.t) / .3, 0, 1);
+    const gr = g.createLinearGradient(hx - dir * len, hy, hx, hy); gr.addColorStop(0, rgba(c.col, 0)); gr.addColorStop(1, rgba(c.col, .9 * f));
+    g.strokeStyle = gr; g.lineWidth = Math.max(1.2, .3 * s * c.size); g.beginPath(); g.moveTo(hx - dir * len, hy); g.lineTo(hx, hy); g.stroke();
+    g.fillStyle = rgba('#ffffff', .9 * f); g.fillRect(hx - 1, hy - 1, 1.5 + c.size, 1.5 + c.size * .5);
+  }
+  g.restore();
 }
 // the two targets: searchlights behind the city
 function drawGoals(labels) {
@@ -886,15 +1052,17 @@ function step(dt) {
   for (const b of CITY.values()) {
     if (T < b.t0) continue;
     if (b.st === 'live') b.h += (b.ht - b.h) * Math.min(1, dt * (b.h < b.ht * .98 ? 2.6 : 1.5));
-    else if (b.st === 'swap' && T - b.tOut > .45 || b.st === 'out' && T - b.tOut > 3.8) CITY.delete(b.key);
+    else if (b.st === 'swap' && T - b.tOut > .45 || b.st === 'out' && T - b.tOut > (b.eaten ? 1.2 : 3.8)) CITY.delete(b.key);
   }
 }
 function draw(dt) {
   drawSky();
   drawGoals(false);
   drawGround();
+  drawCraters();
   drawTrail();
   drawCity();
+  drawCars(dt);
   drawFx(dt);
   drawCar();
   drawRowNames();
@@ -915,7 +1083,12 @@ function renderHud() {
   const hp = $('hp'); hp.textContent = fmtP(P); hp.className = 'px' + (T - tickT < 1.2 ? DIR > 0 ? ' up' : DIR < 0 ? ' dn' : '' : '');
   if (D) { const cs = D.candles, ref = cs.length > 24 ? cs[cs.length - 25][4] : cs[0][1];
     const age = Math.round((Date.now() - updAt) / 1000);
-    $('hs').textContent = `${pct(P, ref)} 24u · ${nBooks} beurzen` + (phone ? '' : ` · zones $${CB}`) + ` · ${mode === 'live' ? age < 60 ? 'live' : age + 's' : 'site'}`; }
+    $('hs').textContent = `${pct(P, ref)} 24u · ${nBooks} beurzen` + (phone ? '' : ` · zones ${fmtB(CB)}`) + ` · ${mode === 'live' ? age < 60 ? 'live' : age + 's' : 'site'}`; }
+  const hf = $('hf'), tk = TAKER.now(), tot = tk.b + tk.s, bp = tot ? tk.b / tot : .5;
+  if (!hf.firstChild) hf.innerHTML = '<span>verkeer 10s</span><span class="fb"><i></i></span><span class="fp"></span><span class="fu"></span>';
+  hf.querySelector('i').style.width = Math.round(bp * 100) + '%';
+  const fp = hf.querySelector('.fp'); fp.textContent = !tk.seen ? 'wacht op OKX' : Math.round(Math.max(bp, 1 - bp) * 100) + '% ' + (bp >= .5 ? 'kopers' : 'verkopers');
+  fp.style.color = !tk.seen ? '' : bp >= .5 ? COL.up : COL.dn; hf.querySelector('.fu').textContent = tk.seen ? fmtUsd(tot) : '';
   const gl = []; if (TG) for (const [p, up] of [[TG.up, true], [TG.dn, false]]) { if (!p) continue;
     const first = TG.first === p, pr = TG.prob != null ? first ? 'eerst · ' + pctN(TG.prob) : pctN(1 - TG.prob) : '';
     gl.push(`<div class="goal" style="--c:${up ? COL.up : COL.dn}">Doel ${up ? '▲' : '▼'} ${fmtP(p)}<em>${pr}</em></div>`); }
@@ -963,17 +1136,20 @@ function openCard(kind) {
   if (kind === 'legend') {
     c.innerHTML = `<button class="x" type="button" aria-label="Sluiten">×</button><h3>De liquiditeitsstad</h3><ul>
       <li><b>De avenue is de prijs</b>: links lager, rechts hoger. Het licht erop is de huidige prijs; het <i style="--c:${COL.cy}">lichtspoor</i> op het plein ervoor is de koers van de laatste vier uur, het oudste onderaan.</li>
-      <li><b>Elke prijszone is een gebouw</b> (nu $${CB} breed); hoe meer liquiditeit, hoe hoger. Waar veel aaneengesloten ligt, staat een muur van gebouwen.</li>
+      <li><b>Elke prijszone is een gebouw</b> (nu ${fmtB(CB)} breed); hoe meer liquiditeit, hoe hoger. Waar veel aaneengesloten ligt, staat een muur van gebouwen.</li>
       <li><b>Voorste rij, orderboek</b> (${nBooks} beurzen): <i style="--c:${COL.bid}">koopmuren</i> onder de prijs, <i style="--c:${COL.ask}">verkoopmuren</i> erboven.</li>
       <li><b>Middelste rij</b>: geschatte <i style="--c:${COL.stop}">stops</i>, net voorbij toppen en bodems waar de prijs nog niet doorheen ging.</li>
       <li><b>Achterste rij</b>: geschatte <i style="--c:${COL.liq}">liquidaties</i>; erboven shorts, eronder longs.</li>
       <li><b>Zoeklichten</b> zijn de twee doelen, met de kans welke eerst geraakt wordt.</li>
-      <li><b>Verdwijnt liquiditeit</b> uit het boek, of loopt de prijs erdoorheen, dan <b>dooft het gebouw uit</b>: de ramen gaan uit, het zakt weg en laat een omtrek achter. Een nieuw gebouw rijst op met een witte rand.</li>
-      <li><b>Bliksem</b> in de achterste rij is een echte liquidatie (OKX, Binance, Bybit).</li>
+      <li><b>Steigers en een bouwkraan</b>: een muur die er het afgelopen uur nog niet stond. Die kan weer verdwijnen voordat de prijs er is (spoofing); muren die er al uren staan zijn massief, volledig verlicht en hebben een gloeiende voet.</li>
+      <li><b>Raakt de prijs een muur</b>, dan trilt die en vliegen er vonken af. Kaatst de prijs terug, dan licht de muur op: <b>verdedigd</b>. Gaat de prijs erdoorheen, dan <b>stort hij in</b>.</li>
+      <li><b>Verdwijnt liquiditeit</b> uit het boek (twee verversingen achter elkaar), dan <b>dooft het gebouw uit</b>: de ramen gaan uit, het zakt weg en laat een omtrek achter. Een nieuw gebouw rijst op met een witte rand.</li>
+      <li><b>Verkeer op de avenue</b>: agressieve kopers rijden als <i style="--c:${COL.up}">groene lichten</i> naar rechts, verkopers als <i style="--c:${COL.dn}">rode</i> naar links (trades op OKX); een grote order is een groter licht.</li>
+      <li><b>Bliksem</b> in de achterste rij is een echte liquidatie (OKX, Binance, Bybit). Ze laat een <b>krater</b> achter vóór die rij, 24 uur lang: rood voor longs, groen voor shorts; het eerste uur gloeit hij na.</li>
       <li>Tik op een gebouw voor details. Slepen schuift, knijpen of scrollen zoomt, dubbeltik of <b>⌖ Volg</b> brengt je terug.</li></ul>`;
   } else if (SEL?.b) {
     const b = SEL.b, P = live.fresh() || D.price, lo = b.p - b.B / 2, hi = b.p + b.B / 2, col = COL[b.k];
-    const ps = b.k === 'bid' || b.k === 'ask' ? presenceAt(lo, hi, b.v) : null;
+    const ps = b.ps, age = ageOf(b), wall = b.k === 'bid' || b.k === 'ask';
     const what = { bid: 'Openstaande kooporders in deze zone, opgeteld over alle beurzen (gewogen naar wat er echt verhandeld wordt).',
       ask: 'Openstaande verkooporders in deze zone, opgeteld over alle beurzen (gewogen naar wat er echt verhandeld wordt).',
       stop: b.above ? 'Geschatte stops van shorts boven een top waar de prijs nog niet doorheen ging: geraakt worden het kooporders.' : 'Geschatte stops van longs onder een bodem waar de prijs nog niet doorheen ging: geraakt worden het verkooporders.',
@@ -981,9 +1157,18 @@ function openCard(kind) {
     c.innerHTML = `<button class="x" type="button" aria-label="Sluiten">×</button><h3>${pillOf(b.k, b.above)} ${fmtP(b.p)}</h3><dl>
       <dt>Zone</dt><dd>${fmtP(lo)} – ${fmtP(hi)}</dd><dt>Afstand</dt><dd>${pct(b.p, P)}</dd><dt>Grootte</dt><dd style="color:${col}">${sizeOf(b)}</dd>
       <dt>Hoogte</dt><dd>${Math.round(Math.min(1, b.rel) * 100)}% van de grootste</dd>
-      ${ps ? `<dt>Aanwezig</dt><dd>${ps[0]} van de ${ps[1]} uur</dd>` : ''}
+      ${wall ? `<dt>Leeftijd</dt><dd>${age === 'new' ? '<span style="color:#ffd696">nieuw · in de steigers</span>' : age === 'old' ? 'gevestigd' : ps ? 'wisselend' : 'nog onbekend'}</dd>` : ''}
+      ${ps ? `<dt>Aanwezig</dt><dd>${ps[0]} van de vorige ${ps[1]} uur</dd>` : ''}
+      ${b.def ? `<dt>Verdedigd</dt><dd>${b.def}× teruggekaatst</dd>` : ''}
       ${b.k === 'bid' || b.k === 'ask' ? `<dt>Beurzen</dt><dd>${exchangesAt(lo, hi) || '—'}</dd>` : ''}
-      ${b.st !== 'live' ? `<dt>Status</dt><dd style="color:${COL.faint}">gedoofd · ${b.why || ''}</dd>` : ''}</dl><p>${what}</p>`;
+      ${b.st !== 'live' ? `<dt>Status</dt><dd style="color:${COL.faint}">${b.eaten ? 'ingestort' : 'gedoofd'} · ${b.why || ''}</dd>` : ''}</dl><p>${what}${age === 'new' ? ' Deze muur stond er een uur geleden nog niet: hij kan weer verdwijnen voordat de prijs er is.' : ''}</p>`;
+  } else if (SEL?.cr) {
+    const cr = SEL.cr, P = live.fresh() || D.price, col = cr.long ? COL.dn : COL.up;
+    c.innerHTML = `<button class="x" type="button" aria-label="Sluiten">×</button><h3><span class="pill" style="--c:${col}">Krater · ${cr.long ? 'longs' : 'shorts'}</span> ${fmtP(cr.p)}</h3><dl>
+      <dt>Zone</dt><dd>${fmtP(cr.p - cr.B / 2)} – ${fmtP(cr.p + cr.B / 2)}</dd><dt>Afstand</dt><dd>${pct(cr.p, P)}</dd>
+      <dt>Geliquideerd</dt><dd style="color:${col}">${fmtUsd(cr.usd)}</dd><dt>Aantal</dt><dd>${cr.n}</dd>
+      <dt>Laatste</dt><dd>${agoTxt(cr.t)} geleden</dd><dt>Beurzen</dt><dd>${[...cr.ex].join(' · ')}</dd></dl>
+      <p>Echte liquidaties van ${cr.long ? 'longs' : 'shorts'} in deze zone, de afgelopen 24 uur.</p>`;
   } else if (SEL) {
     const P = live.fresh() || D.price, near = {};
     for (const b of CITY.values()) { if (b.st !== 'live' || !shown(b.k)) continue; const k = b.k, d = Math.abs(b.p - SEL.p);
@@ -1012,14 +1197,15 @@ function onLevels() {
 /* ---- input ------------------------------------------------------------------------------------------------------------ */
 const ptrs = new Map(); let drag = null, pinch = null, lastTap = 0;
 function pick(x, y) {
-  for (let i = HITS.length - 1; i >= 0; i--) { const h = HITS[i]; if (x >= h.x0 - 2 && x <= h.x1 + 2 && y >= h.y0 - 2 && y <= h.y1 + 2) return h.b; }
+  for (let i = HITS.length - 1; i >= 0; i--) { const h = HITS[i]; if (x >= h.x0 - 2 && x <= h.x1 + 2 && y >= h.y0 - 2 && y <= h.y1 + 2) return { b: h.b }; }
+  for (let i = CHITS.length - 1; i >= 0; i--) { const h = CHITS[i]; if (((x - h.x) / h.rx) ** 2 + ((y - h.y) / h.ry) ** 2 <= 1) return { cr: h.c }; }
   return null;
 }
 function tap(x, y) {
   const now = performance.now(); if (now - lastTap < 300) { lastTap = 0; home(); return; } lastTap = now;
   if (y < HOR - 40) return;
-  const b = pick(x, y); setSide(false);
-  SEL = b ? { b, p: b.p } : { b: null, p: priceAt(x) };
+  const o = pick(x, y); setSide(false);
+  SEL = o?.b ? { b: o.b, p: o.b.p } : o?.cr ? { b: null, cr: o.cr, p: o.cr.p } : { b: null, p: priceAt(x) };
   openCard('sel');
 }
 cv.addEventListener('pointerdown', e => {
@@ -1028,7 +1214,7 @@ cv.addEventListener('pointerdown', e => {
   else if (ptrs.size === 2 && D) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.max(20, Math.abs(a.x - b.x)), r: V.r, mid: (a.x + b.x) / 2 }; pinch.p = priceAt(pinch.mid); if (drag) drag.moved = true; }
 });
 cv.addEventListener('pointermove', e => {
-  if (e.pointerType === 'mouse' && !ptrs.size) { HOVB = pick(e.clientX, e.clientY); cv.classList.toggle('hand', !!HOVB); }
+  if (e.pointerType === 'mouse' && !ptrs.size) { const o = pick(e.clientX, e.clientY); HOVB = o?.b || null; cv.classList.toggle('hand', !!o); }
   if (!ptrs.has(e.pointerId) || !D) return; ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pinch && ptrs.size >= 2) { const [a, b] = [...ptrs.values()], d = Math.max(20, Math.abs(a.x - b.x)), mid = (a.x + b.x) / 2;
     V.r = clamp(pinch.r * pinch.d / d, rMin(), rMax()); V.c = pinch.p - (mid - W / 2) / sAt(AVE.zc) / HW * V.r; V.anim = null; V.zt = T; setFollow(false); return; }
@@ -1056,9 +1242,19 @@ cv.addEventListener('keydown', e => {
 });
 addEventListener('resize', resize);
 
+/* ---- the coin: chosen with the buttons under the price, or with #eth etc. in the address ---------------------------------- */
+const COINCOL = { btc: '#f7931a', eth: '#8c9eff', sol: '#14f195', xrp: '#d8dde6', doge: '#c2a633', sui: '#4da2ff' };
+$('coins').innerHTML = COINS.map(k => `<button type="button" data-c="${k}" style="--c:${COINCOL[k]}" aria-current="${k === COIN}">${ASSETS[k].name}</button>`).join('');
+$('coins').onclick = e => { const k = e.target.closest('[data-c]')?.dataset.c; if (k && k !== COIN) location.hash = k; };
+addEventListener('hashchange', () => { const k = location.hash.slice(1).toLowerCase();
+  if (ASSETS[k] && k !== COIN) { try { localStorage.setItem('stad-coin', k); } catch (e) {} location.reload(); } });
+document.documentElement.style.setProperty('--coin', COINCOL[COIN]); $('cname').textContent = A.name; $('back').href = './#' + COIN;
+document.title = `GlassSphere · Stad · ${A.name}`;
+try { localStorage.setItem('stad-coin', COIN); } catch (e) {}
+
 /* ---- start ------------------------------------------------------------------------------------------------------------ */
 (async () => {
-  resize(); live.start(); liqFeeds(); loadTrail();
+  resize(); live.start(); liqFeeds(); loadTrail(); backfillWrecks();
   requestAnimationFrame(frame);
   site = await loadSite(); if (site) setData(site, 'site');
   if (await loadLive()) setInterval(loadLive, 15e3);
@@ -1067,7 +1263,7 @@ addEventListener('resize', resize);
   let seen = false; try { seen = localStorage.getItem('stad-seen') === '1'; localStorage.setItem('stad-seen', '1'); } catch (e) {}
   if (!seen && D) openCard('legend');
 })();
-window.STAD = { get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, V, CITY: () => CITY, realLiq, onPrice, cross, live, dim, build, get CB() { return CB; } };
+window.STAD = { COIN, CARS, WRECKS, addWreck, TAKER, ageOf, get D() { return D; }, get LV() { return LV; }, get TG() { return TG; }, V, CITY: () => CITY, realLiq, onPrice, cross, live, dim, build, get CB() { return CB; } };
 })();
 </script>
 </body>

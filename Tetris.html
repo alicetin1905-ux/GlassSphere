@@ -1107,7 +1107,16 @@ let nextP = null;
 
 // apply a fresh set of levels: known ones change size (their bar grows or shrinks block by block), new ones drop in,
 // gone ones dissolve; a level that was swept and is still listed on its side rebuilds
+// beyond a target at most two tubes per side (the two nearest to it), so the whole stays readable
+function trimBeyondTargets(rows) {
+  const tu = rows.filter(r => r.type === 'tup').map(r => r.price), td = rows.filter(r => r.type === 'tdn').map(r => r.price);
+  const U = tu.length ? Math.max(...tu) : Infinity, D = td.length ? Math.min(...td) : -Infinity, tgt = r => r.type === 'tup' || r.type === 'tdn';
+  const drop = new Set([...rows.filter(r => !tgt(r) && r.price > U).sort((a, b) => a.price - b.price).slice(2),
+    ...rows.filter(r => !tgt(r) && r.price < D).sort((a, b) => b.price - a.price).slice(2)]);
+  return rows.filter(r => !drop.has(r));
+}
 function applyLevels(L) {
+  L = { ...L, rows: trimBeyondTargets(L.rows) };
   refP = L.P; ref24 = L.ref24 || 0; bucket = L.B || bucket;
   for (const k in REGS) { const R = REGS[k]; R.tot = L.ex?.[k] || 0; R.on = k === 'model' || R.tot > 0;
     if (k !== 'model' && R.tot > 0) { R.hist = R.hist || []; if (R.hist[R.hist.length - 1] !== R.tot) { R.hist.push(R.tot); if (R.hist.length > 40) R.hist.shift(); } } }

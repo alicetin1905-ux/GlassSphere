@@ -618,7 +618,7 @@ header.top .px{transform-origin:left center;transform:scale(calc(1 - var(--sh,0)
       <summary>Uitleg: waar de cijfers vandaan komen</summary>
       <p><b>Limietorders</b> zijn echt: het zichtbare orderboek van de perp op tot 23 beurzen (niet elke munt staat op elke beurs; BitMEX heeft alleen BTC), in USD per blok. Waar een beurs PEPE per 1000 noteert (Binance, Bybit, Hyperliquid, Deribit) is de prijs teruggerekend naar 1 PEPE. Elk boek reikt maar zo ver als de beurs het geeft, dus verder van de prijs is het boek onvolledig: HTX ±0,35%, Crypto.com ±0,4%, OKX ±0,8%, MEXC ±1%, Bitget ±1,2%, dYdX ±1,5%, Hyperliquid ±2,4% (grove blokken), Gate ±3,5%, Bitfinex ±11%, Binance 1000 niveaus, Bybit 500 niveaus, en Deribit, BitMEX en Kraken het hele boek. MEXC, Kraken, Bitfinex, KuCoin, Aster, Lighter, Backpack, Paradex, BloFin, Toobit, Bitunix en XT komen alleen uit de uurlijkse data, ook als de pagina live is (de beurs blokkeert browsers of staat alleen in dat script). Toobit, Bitunix en XT staan standaard uit: hun volume en orderboek zijn veel groter dan bij hun omvang past (mogelijk opgeblazen); zet ze aan met de knoppen boven de grafiek. De uurlijkse data staat in glasssphere-data.json en glasssphere-&lt;munt&gt;.json. Met <b>Gewogen naar volume</b> telt een beurs met meer diepte binnen ±1% dan zijn aandeel in het handelsvolume naar rato minder mee (dYdX en MEXC vooral). De kolom Stabiel in de tabel zegt hoeveel van de laatste 6 uur een muur er al stond, zodat muren die net verschijnen (mogelijke nepmuren) opvallen.</p>
       <p><b>Stops</b> (stop-loss, koopstop, verkoopstop) staan bij geen enkele beurs in het publieke boek. Hier geschat: net boven elke top die nog niet is geraakt (koopstops van shorts en uitbraakkopers), net onder elke ongeraakte bodem (verkoopstops van longs), gewogen naar het volume rond die top of bodem en hoe recent die is, plus een kleine bijdrage op ronde $1000-niveaus. In de grafiek staan de sterkste stop-niveaus boven en onder de prijs als gele stippellijn; een score 0–100, geen bedrag.</p>
-      <p><b>Liquidaties</b> zijn geschat uit de groei van de openstaande posities (open interest) per uur over alle beurzen samen: Gate, OKX en HTX met hun eigen uurgeschiedenis, de andere beurzen met hun stand die elk uur bewaard wordt (die vullen zich aan tot 400 uur). Nieuwe posities op de gemiddelde prijs van dat uur, voor de helft verdeeld naar waar de kaars sloot en voor de helft naar het aandeel kopende marktorders (Gate en OKX, gewogen naar volume), met 5×, 10×, 25× en 50× hefboom (30/35/25/10%). Die mix paste het best bij Gates echte liquidaties (correlatie 0,78 per uur over 161 dagen). Niveaus die de prijs al raakte zijn weggehaald, en de bedragen zijn opgeschaald naar de openstaande posities van alle beurzen samen. De grootste liquidatieniveaus staan in de grafiek als paarse stippellijn.</p>
+      <p><b>Liquidaties</b> zijn geschat uit de groei van de openstaande posities (open interest) per uur over alle beurzen samen: Gate, OKX, HTX en Binance met hun eigen uurgeschiedenis, Bybit live op de pagina (de beurs weigert de servers van de uurlijkse data), de andere beurzen met hun stand die elk uur bewaard wordt (die vullen zich aan tot 400 uur). Nieuwe posities op de gemiddelde prijs van dat uur, voor de helft verdeeld naar waar de kaars sloot en voor de helft naar het aandeel kopende marktorders (Gate, OKX en Binance, gewogen naar volume), met 5×, 10×, 25× en 50× hefboom (30/35/25/10%). Die mix paste het best bij Gates echte liquidaties (correlatie 0,78 per uur over 161 dagen). Niveaus die de prijs al raakte zijn weggehaald, en de bedragen zijn opgeschaald naar de openstaande posities van alle beurzen samen. De grootste liquidatieniveaus staan in de grafiek als paarse stippellijn.</p>
       <p><b>Eerste doel</b> in GlassSphere: voor de gekozen termijn (1 dag, 3 dagen of 1 week; standaard 1 dag) het grootste cluster boven en onder de prijs tussen 0,3× en 1× de verwachte bewegingsruimte (gemiddeld dagbereik × √dagen). De kans dat het bovenste eerst geraakt wordt, is de afstand naar het onderste gedeeld door de som van beide afstanden. Getest op Binance-data van 2022 tot 2026 (<code>backtests/glasssphere.md</code>): die kansen kwamen elk jaar goed uit, maar een trade richting het waarschijnlijkste doel met de stop op het andere cluster leverde na kosten gemiddeld niets op. Momentum, openstaande posities, financiering (funding), CVD en de liquiditeitstrek voorspelden de richting niet of te zwak, en tellen daarom niet mee.</p>
     </details>
   </footer>
@@ -843,6 +843,17 @@ const fetchBooks = () => fetchAll(BOOKS, (r, k) => {
   return { b: binLevels(f(r.b), 'b'), a: binLevels(f(r.a), 'a') };
 });
 const fetchMarket = () => fetchAll(MARKET, r => r);
+// another exchange's own open interest {ms: usd} added into the hourly line over all exchanges, as combine_oi in the
+// snapshot script does: its level at the end, its hourly changes back from there (not a jump of more than 30%)
+function addOi(line, extra) {
+  const ts = Object.keys(extra).map(Number).sort((a, b) => a - b); if (ts.length < 2) return line;
+  let e = extra[ts[ts.length - 1]]; const out = [];
+  for (let i = line.length - 1; i >= 0; i--) {
+    const t = line[i][0], a = line[i - 1]?.[0]; out.push([t, Math.round(line[i][1] + e)]);
+    if (a != null && extra[a] > 0 && extra[t] != null && Math.abs(extra[t] / extra[a] - 1) <= 0.3) e -= extra[t] - extra[a];
+  }
+  return out.reverse();
+}
 async function fetchSeries() {
   const base = 'https://www.okx.com/api/v5/market/';
   const toC = r => [+r[0], +r[1], +r[2], +r[3], +r[4], +r[7]];
@@ -855,7 +866,15 @@ async function fetchSeries() {
   const [candles15, candles4h] = await Promise.all([okx('15m').catch(() => null), okx('4H').catch(() => null)]);
   // Gate hourly stats: open interest, taker buy share and real liquidations
   const st = await getJSON(`https://api.gateio.ws/api/v4/futures/usdt/contract_stats?contract=${A.gate}&interval=1h&from=${candles[0][0] / 1000}&limit=1000`);
-  return { candles, candles15, candles4h,
+  // Bybit's own open interest per hour (it refuses the servers of the hourly data, not a phone): added into the line over
+  // all exchanges (addOi); in coins, priced at the hour's open
+  let bybitOi = null;
+  try {
+    const l = (await getJSON(`https://api.bybit.com/v5/market/open-interest?category=linear&symbol=${A.usdt}&intervalTime=1h&limit=200`)).result.list;
+    const px = new Map(candles.map(c => [c[0], c[1]])), m = A.div?.bybit || 1; bybitOi = {};
+    for (const x of l) { const t = +x.timestamp, p = px.get(t); if (p) bybitOi[t] = +x.openInterest * p * m; }
+  } catch (e) {}
+  return { candles, candles15, candles4h, bybitOi,
     oi: st.map(r => [r.time * 1000, Math.round(r.open_interest_usd)]),
     taker: st.map(r => [r.time * 1000, r.lsr_taker / (1 + r.lsr_taker)]),
     liqReal: st.map(r => [r.time * 1000, Math.round(r.long_liq_usd), Math.round(r.short_liq_usd)]) };
@@ -1877,6 +1896,9 @@ async function loadLive() {
     // the reading's open interest and taker share: the hourly line over all exchanges, while it is fresh (Gate's own
     // live stats otherwise)
     const agg = site?.oiSrc && Date.now() - site.ts < 2 * 3.6e6 ? { oi: site.oi, taker: site.taker, oiSrc: site.oiSrc } : {};
+    if (agg.oi && series.bybitOi && Object.keys(series.bybitOi).length > 1) {
+      agg.oi = addOi(agg.oi, series.bybitOi); agg.oiSrc = { ...agg.oiSrc, bybit: Object.keys(series.bybitOi).length };
+    }
     const ts = Date.now(), raw = { ts, price: live.fresh() || last, books, ...series, ...agg, market, bookHist: state.data?.bookHist || site?.bookHist };
     setData(raw, 'live');
     const e = histEntry(books, state.data.weights, last, ts);

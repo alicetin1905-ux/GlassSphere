@@ -12,9 +12,9 @@ Data shape:
   books     {exchange: {b: [[price, usd], ...], a: [...]}} in bins of `bin`, within ±15% of the price
   candles   [[open_ms, open, high, low, close, volume_usd], ...] OKX <coin>-USDT-SWAP 1H (400), oldest first
   candles15, candles4h   the same for 15m and 4H (300 each), for display only
-  oi        [[ms, usd], ...] open interest over all exchanges, 1H: Gate, OKX and HTX from their own history, the others
+  oi        [[ms, usd], ...] open interest over all exchanges, 1H: Gate, OKX, HTX and Binance from their own history, the others
             from oiHist (see combine_oi)
-  taker     [[ms, buy share 0..1], ...] taker buy / (buy + sell) of Gate and OKX, weighted by volume, 1H
+  taker     [[ms, buy share 0..1], ...] taker buy / (buy + sell) of Gate, OKX and Binance, weighted by volume, 1H
   liqReal   [[ms, long_usd, short_usd], ...] Gate real liquidations, 1H
   oiSrc     {exchange: hours} which exchanges' open interest the oi line has, and for how many hours
   oiHist    {exchange: [[ms, usd], ...]} open interest kept each hour for the exchanges without a history (last 400)
@@ -171,8 +171,9 @@ def book_okx(A):
     return [f(r) for r in b['bids']], [f(r) for r in b['asks']]
 
 
+# Binance through www.binance.com: fapi.binance.com refuses the US servers this script runs on (451), www does not
 def book_binance(A):
-    j = get(f'https://fapi.binance.com/fapi/v1/depth?symbol={A["usdt"]}&limit=1000')
+    j = get(f'https://www.binance.com/fapi/v1/depth?symbol={A["usdt"]}&limit=1000')
     f = lambda r: (float(r[0]), float(r[1]) * float(r[0]))
     return [f(r) for r in j['bids']], [f(r) for r in j['asks']]
 
@@ -383,9 +384,9 @@ def mk_bitfinex(A):
 
 
 def mk_binance(A):
-    oi = get(f'https://fapi.binance.com/fapi/v1/openInterest?symbol={A["usdt"]}')
-    t = get(f'https://fapi.binance.com/fapi/v1/ticker/24hr?symbol={A["usdt"]}')
-    f = get(f'https://fapi.binance.com/fapi/v1/premiumIndex?symbol={A["usdt"]}')
+    oi = get(f'https://www.binance.com/fapi/v1/openInterest?symbol={A["usdt"]}')
+    t = get(f'https://www.binance.com/fapi/v1/ticker/24hr?symbol={A["usdt"]}')
+    f = get(f'https://www.binance.com/fapi/v1/premiumIndex?symbol={A["usdt"]}')
     return {'oi': float(oi['openInterest']) * float(f['markPrice']), 'vol': float(t['quoteVolume']),
             'fund': float(f['lastFundingRate'])}
 
@@ -457,9 +458,9 @@ MARKET = [('binance', mk_binance), ('okx', mk_okx), ('bybit', mk_bybit), ('bitge
 
 
 # ---------- open interest and taker share over all exchanges, for the reading's liquidation estimate ----------
-# Gate, OKX and HTX give an hourly history; the others only their open interest now, which this script keeps per hour
+# Gate, OKX, HTX and Binance give an hourly history; the others only their open interest now, which this script keeps per hour
 # in oiHist (carried forward like the book history), so their history fills up over 400 hours.
-OWN_HIST = ('gate', 'okx', 'htx')
+OWN_HIST = ('gate', 'okx', 'htx', 'binance')
 
 
 def okx_pages(path, since):
@@ -483,6 +484,18 @@ def oi_hist_htx(A):
     t = get(f'https://api.hbdm.com/linear-swap-api/v1/swap_his_open_interest?contract_code={A["htx"]}'
             '&period=60min&amount_type=1&size=200')['data']['tick']
     return {int(x['ts']): float(x['value']) for x in t}
+
+
+def oi_hist_binance(A):
+    rows = get(f'https://www.binance.com/futures/data/openInterestHist?symbol={A["usdt"]}&period=1h&limit=500')
+    return {int(x['timestamp']): float(x['sumOpenInterestValue']) for x in rows}
+
+
+def taker_binance(A):
+    """{hour: buy share} from Binance's taker buy and sell volume."""
+    rows = get(f'https://www.binance.com/futures/data/takerlongshortRatio?symbol={A["usdt"]}&period=1h&limit=500')
+    return {int(x['timestamp']): float(x['buyVol']) / (float(x['buyVol']) + float(x['sellVol']))
+            for x in rows if float(x['buyVol']) + float(x['sellVol']) > 0}
 
 
 def taker_okx(A, since):
@@ -593,7 +606,7 @@ def main():
     hour = ts // 3600000 * 3600000
     # open interest per exchange: own histories, plus the hourly values kept for the rest (and this hour's)
     series = {'gate': {r['time'] * 1000: float(r['open_interest_usd']) for r in st}}
-    for name, fn in (('okx', lambda: oi_hist_okx(A, hours[0])), ('htx', lambda: oi_hist_htx(A))):
+    for name, fn in (('okx', lambda: oi_hist_okx(A, hours[0])), ('htx', lambda: oi_hist_htx(A)), ('binance', lambda: oi_hist_binance(A))):
         if A.get(name, True) is None:
             continue
         try:
@@ -607,12 +620,13 @@ def main():
     kept = {k: dict(sorted(v.items())[-400:]) for k, v in kept.items()}
     series.update({k: v for k, v in kept.items() if len(v) >= 2})
     oi = combine_oi(series, hours)
-    # taker buy share: Gate and OKX, weighted by their 24h volume
+    # taker buy share: Gate, OKX and Binance, weighted by their 24h volume
     tk = {'gate': {r['time'] * 1000: r['lsr_taker'] / (1 + r['lsr_taker']) for r in st}}
-    try:
-        tk['okx'] = taker_okx(A, hours[0])
-    except Exception as e:
-        print(f'taker  okx          skipped: {e}')
+    for name, fn in (('okx', lambda: taker_okx(A, hours[0])), ('binance', lambda: taker_binance(A))):
+        try:
+            tk[name] = fn()
+        except Exception as e:
+            print(f'taker  {name:12s} skipped: {e}')
     w = {k: market.get(k, {}).get('vol') or 1 for k in tk}
     taker = []
     for t in hours:

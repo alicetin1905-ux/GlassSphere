@@ -615,21 +615,21 @@ function drawKindIcon(g, x, cy, s, r) {
   g.restore();
 }
 function drawLabel(r) {
-  const d = fmtPct((r.price / p - 1) * 100);
-  if (d === r.lblStr) return; r.lblStr = d;
+  const key = r.price + '|' + r.type;   // no distance in % any more: the price itself gets the room, big
+  if (key === r.lblStr) return; r.lblStr = key;
   const { g, c, t } = r.lbl; g.clearRect(0, 0, c.width, c.height);
   g.textBaseline = 'middle'; const my = c.height / 2;
-  const ps = fmtP(r.price), pf = Math.min(COMPACT ? 62 : 44, (COMPACT ? 300 : 220) / (ps.length * 0.6));
-  const fP = `800 ${pf}px "JetBrains Mono", monospace`, fD = '600 30px "JetBrains Mono", monospace', fT = `700 ${COMPACT ? 42 : 32}px Inter, system-ui, sans-serif`;
+  const ps = fmtP(r.price), pf = Math.min(COMPACT ? 76 : 60, c.height * 0.8, (COMPACT ? 330 : 290) / (ps.length * 0.6));
+  const fP = `800 ${pf}px "JetBrains Mono", monospace`, fT = `700 ${COMPACT ? 42 : 32}px Inter, system-ui, sans-serif`;
   const wOf = (f, txt) => { g.font = f; return g.measureText(txt).width; };
-  const IS = Math.min(c.height * 0.5, COMPACT ? 40 : 34), IW = KIND[r.type] ? IS + 12 : 0, x1 = 18 + IW + wOf(fP, ps) + 22, x2 = COMPACT ? x1 : x1 + wOf(fD, d) + 20, end = Math.min(c.width - 2, x2 + wOf(fT, r.t.n) + 16);
+  const IS = Math.min(c.height * 0.5, COMPACT ? 40 : 34), IW = KIND[r.type] ? IS + 12 : 0, x2 = 18 + IW + wOf(fP, ps) + 22, tw = wOf(fT, r.t.n), fit = Math.min(1, (c.width - 20 - x2) / tw), end = Math.min(c.width - 2, x2 + tw * fit + 16);
   const tg = KIND[r.type] === 'target';   // a target: a solid plate in its colour with dark letters, so it jumps out
   roundRect(g, 2, 3, end - 2, c.height - 6, Math.min(16, c.height / 3)); g.fillStyle = tg ? r.t.c : 'rgba(5,4,12,.82)'; g.fill();
   g.lineWidth = tg ? 4 : 3; g.strokeStyle = tg ? '#ffffff' : r.t.c + (KIND[r.type] === 'push' ? 'dd' : '99'); g.setLineDash(KIND[r.type] === 'push' ? [12, 8] : []); g.stroke(); g.setLineDash([]);
   drawKindIcon(g, 14, my, IS, r);
   g.font = fP; g.fillStyle = tg ? '#06110c' : '#ffffff'; g.fillText(ps, 18 + IW, my + 1);
-  if (!COMPACT) { g.font = fD; g.fillStyle = tg ? 'rgba(6,17,12,.72)' : '#9fb3aa'; g.fillText(d, x1, my + 1); }
-  g.font = fT; g.fillStyle = tg ? '#06110c' : new THREE.Color(r.t.c).lerp(WHITE, 0.35).getStyle(); g.fillText(r.t.n, x2, my + 2);
+  g.font = fit < 1 ? fT.replace(/\d+px/, m => Math.floor(parseInt(m) * fit) + 'px') : fT;   // a long kind shrinks to fit beside the big price
+  g.fillStyle = tg ? '#06110c' : new THREE.Color(r.t.c).lerp(WHITE, 0.35).getStyle(); g.fillText(r.t.n, x2, my + 2);
   t.needsUpdate = true;
 }
 function drawSize(r) {

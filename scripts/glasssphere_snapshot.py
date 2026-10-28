@@ -12,9 +12,12 @@ Data shape:
   books     {exchange: {b: [[price, usd], ...], a: [...]}} in bins of `bin`, within ±15% of the price
   candles   [[open_ms, open, high, low, close, volume_usd], ...] OKX <coin>-USDT-SWAP 1H (400), oldest first
   candles15, candles4h   the same for 15m and 4H (300 each), for display only
-  oi        [[ms, usd], ...] Gate <coin>_USDT open interest, 1H
-  taker     [[ms, buy share 0..1], ...] Gate taker buy / (buy + sell), 1H
+  oi        [[ms, usd], ...] open interest over all exchanges, 1H: Gate, OKX and HTX from their own history, the others
+            from oiHist (see combine_oi)
+  taker     [[ms, buy share 0..1], ...] taker buy / (buy + sell) of Gate and OKX, weighted by volume, 1H
   liqReal   [[ms, long_usd, short_usd], ...] Gate real liquidations, 1H
+  oiSrc     {exchange: hours} which exchanges' open interest the oi line has, and for how many hours
+  oiHist    {exchange: [[ms, usd], ...]} open interest kept each hour for the exchanges without a history (last 400)
   market    {exchange: {oi, vol, fund}} open interest (USD), 24h volume (USD), funding per 8h
   bookHist  [{t, b: [[price, bid_usd, ask_usd], ...]}] hourly combined books in bins of `histBin` within ±6%,
             last 48 hours
@@ -453,6 +456,59 @@ MARKET = [('binance', mk_binance), ('okx', mk_okx), ('bybit', mk_bybit), ('bitge
           ('lighter', mk_lighter), ('toobit', mk_toobit), ('xt', mk_xt), ('blofin', mk_blofin)]
 
 
+# ---------- open interest and taker share over all exchanges, for the reading's liquidation estimate ----------
+# Gate, OKX and HTX give an hourly history; the others only their open interest now, which this script keeps per hour
+# in oiHist (carried forward like the book history), so their history fills up over 400 hours.
+OWN_HIST = ('gate', 'okx', 'htx')
+
+
+def okx_pages(path, since):
+    rows, end = [], ''
+    for _ in range(5):                                    # 100 hours a page
+        r = get(f'https://www.okx.com/api/v5/rubik/stat/{path}&period=1H&limit=100{end}')['data']
+        if not r:
+            break
+        rows += r
+        end = f'&end={r[-1][0]}'
+        if int(r[-1][0]) <= since:
+            break
+    return rows
+
+
+def oi_hist_okx(A, since):
+    return {int(x[0]): float(x[3]) for x in okx_pages(f'contracts/open-interest-history?instId={A["okx"]}', since)}
+
+
+def oi_hist_htx(A):
+    t = get(f'https://api.hbdm.com/linear-swap-api/v1/swap_his_open_interest?contract_code={A["htx"]}'
+            '&period=60min&amount_type=1&size=200')['data']['tick']
+    return {int(x['ts']): float(x['value']) for x in t}
+
+
+def taker_okx(A, since):
+    """{hour: buy share} from OKX's taker buy and sell volume."""
+    out = {}
+    for x in okx_pages(f'taker-volume-contract?instId={A["okx"]}', since):
+        sell, buy = float(x[1]), float(x[2])
+        if buy + sell > 0:
+            out[int(x[0])] = buy / (buy + sell)
+    return out
+
+
+def combine_oi(series, hours):
+    """One open-interest line over all exchanges: each hour moves by the sum of the exchanges' own change over that hour
+    (an exchange counts where it has both ends, and not for a jump of more than 30%, a data glitch), anchored at the
+    sum of their latest values. series: {exchange: {ms: usd}}."""
+    out = {hours[-1]: sum(v[max(v)] for v in series.values() if v)}
+    for a, b in reversed(list(zip(hours, hours[1:]))):
+        d = 0.0
+        for v in series.values():
+            if a in v and b in v and v[a] > 0 and abs(v[b] / v[a] - 1) <= 0.3:
+                d += v[b] - v[a]
+        out[a] = out[b] - d
+    return [[t, round(out[t])] for t in hours]
+
+
 def okx_candles(A, bar, pages):
     base = 'https://www.okx.com/api/v5/market/'
     rows = get(base + f'candles?instId={A["okx"]}&bar={bar}&limit=300')['data']
@@ -523,28 +579,59 @@ def main():
 
     st = get('https://api.gateio.ws/api/v4/futures/usdt/contract_stats'
              f'?contract={A["gate"]}&interval=1h&from={candles[0][0] // 1000}&limit=1000')
-    oi = [[r['time'] * 1000, round(r['open_interest_usd'])] for r in st]
-    taker = [[r['time'] * 1000, round(r['lsr_taker'] / (1 + r['lsr_taker']), 4)] for r in st]
     liq_real = [[r['time'] * 1000, round(r['long_liq_usd']), round(r['short_liq_usd'])] for r in st]
+    hours = [r['time'] * 1000 for r in st]
+
+    prev = {}
+    for url in prev_urls:  # the live site's file: its book history and the open interest kept per hour
+        try:
+            prev = get(url)
+            break
+        except Exception as e:
+            print(f'no previous data at {url}: {e}')
+    ts = int(time.time() * 1000)
+    hour = ts // 3600000 * 3600000
+    # open interest per exchange: own histories, plus the hourly values kept for the rest (and this hour's)
+    series = {'gate': {r['time'] * 1000: float(r['open_interest_usd']) for r in st}}
+    for name, fn in (('okx', lambda: oi_hist_okx(A, hours[0])), ('htx', lambda: oi_hist_htx(A))):
+        if A.get(name, True) is None:
+            continue
+        try:
+            series[name] = fn()
+        except Exception as e:
+            print(f'oi     {name:12s} history skipped: {e}')
+    kept = {k: {int(t): v for t, v in rows} for k, rows in (prev.get('oiHist') or {}).items()}
+    for name, m in market.items():
+        if name not in OWN_HIST and m.get('oi', 0) > 0:
+            kept.setdefault(name, {})[hour] = m['oi']
+    kept = {k: dict(sorted(v.items())[-400:]) for k, v in kept.items()}
+    series.update({k: v for k, v in kept.items() if len(v) >= 2})
+    oi = combine_oi(series, hours)
+    # taker buy share: Gate and OKX, weighted by their 24h volume
+    tk = {'gate': {r['time'] * 1000: r['lsr_taker'] / (1 + r['lsr_taker']) for r in st}}
+    try:
+        tk['okx'] = taker_okx(A, hours[0])
+    except Exception as e:
+        print(f'taker  okx          skipped: {e}')
+    w = {k: market.get(k, {}).get('vol') or 1 for k in tk}
+    taker = []
+    for t in hours:
+        have = [(tk[k][t], w[k]) for k in tk if t in tk[k]]
+        if have:
+            taker.append([t, round(sum(x * wt for x, wt in have) / sum(wt for _, wt in have), 4)])
+    print('oi     ' + ', '.join(f'{k} {len(v)}h' for k, v in series.items()) + f'; taker from {", ".join(tk)}')
 
     for v in books.values():  # keep the file small: ±15% is more than the page ever shows
         v['b'] = [r for r in v['b'] if r[0] >= price * 0.85]
         v['a'] = [r for r in v['a'] if r[0] <= price * 1.15]
-    ts = int(time.time() * 1000)
     entry = book_hist_entry(books, volume_weights(books, market, price), price, ts, hist_step)
     snap = {'ts': ts, 'asset': A['name'], 'bin': step, 'histBin': hist_step, 'price': price, 'books': books,
             'candles': candles, 'candles15': candles15, 'candles4h': candles4h, 'oi': oi, 'taker': taker,
-            'liqReal': liq_real, 'market': market}
-    print(f'{A["name"]}: {len(candles)} 1H candles, {len(oi)} Gate stat hours, price {price}, bins {step} / {hist_step}')
+            'liqReal': liq_real, 'market': market,
+            'oiSrc': {k: len(v) for k, v in series.items()}, 'oiHist': {k: [[t, round(x)] for t, x in v.items()] for k, v in kept.items()}}
+    print(f'{A["name"]}: {len(candles)} 1H candles, {len(oi)} stat hours, price {price}, bins {step} / {hist_step}')
 
-    prev = []
-    for url in prev_urls:  # carry the book history of the live site forward, one entry per hour, last 48
-        try:
-            prev = get(url).get('bookHist', [])
-            break
-        except Exception as e:
-            print(f'no previous data at {url}: {e}')
-    hist = {e['t']: e for e in prev}
+    hist = {e['t']: e for e in prev.get('bookHist', [])}   # the book history, one entry per hour, last 48
     hist[entry['t']] = entry
     snap['bookHist'] = [hist[k] for k in sorted(hist)][-48:]
     os.makedirs(out_dir, exist_ok=True)

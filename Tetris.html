@@ -647,7 +647,7 @@ function drawSize(r) {
 
 // the current price: a heart monitor across the tubes in the colour of the last tick (green up, red down). A bright
 // head sweeps along the line and writes the trace one beat at a time; the heart beats faster and harder while the
-// price moves and calms down when it is still. A price tag in the middle tells the change and how far the walls are
+// price moves and calms down when it is still. A tag in the middle shows the price itself, big
 const slab = new THREE.Group(); scene.add(slab);
 const ecgCol = new THREE.Color(0x7ff0d0), ECGN = 280, ecgX0 = -0.7, ecgW = BW + 1.4, ecgV = new Float32Array(ECGN);
 const heart = { ph: 0, heat: 0, head: 0, beat: 0 };
@@ -696,28 +696,18 @@ const laserGlow = new THREE.Mesh(new THREE.PlaneGeometry(BW + 1.8, 1.0), new THR
 laserGlow.position.set(BW / 2, 0, 0.7); slab.add(laserGlow);
 const sweep = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.9, blending: ADD, depthWrite: false }));
 sweep.position.z = 0.8; slab.add(sweep);
-const TAGH = COMPACT ? RS * 0.82 : Math.min(1.45, RS * 1.12), slabL = textPlane(1536, 180, TAGH * 8.53, TAGH); slabL.m.material.opacity = 1; slabL.m.position.set(BW / 2, 0, 0.9); slabL.m.renderOrder = 4; slab.add(slabL.m);   // in the middle of the tubes, between the prices and the amounts
+const TAGH = COMPACT ? RS * 0.82 : Math.min(1.45, RS * 1.12), slabL = textPlane(800, 180, TAGH * 4.44, TAGH); slabL.m.material.opacity = 1; slabL.m.position.set(BW / 2, 0, 0.9); slabL.m.renderOrder = 4; slab.add(slabL.m);   // in the middle of the tubes, between the prices and the amounts
 let slabStr = '', tagDir = 0, tagFlash = 0;
 const UPC = '#35ffb0', DNC = '#ff4d6a', NTC = '#7ff0d0';
-function drawSlab() {
-  const d = ref24 ? fmtPct((shown / ref24 - 1) * 100) + ' 24u' : fmtPct((shown / P0 - 1) * 100);
-  const lv = liveRows(), asks = lv.filter(r => r.type === 'ask' && !r.cleared && r.price > shown), bids = lv.filter(r => r.type === 'bid' && !r.cleared && r.price < shown);
-  const up = asks.length ? Math.min(...asks.map(r => r.price)) - shown : null, dn = bids.length ? shown - Math.max(...bids.map(r => r.price)) : null;
-  const s = [fmtP(shown), d, tagDir, Math.round(up ?? -1), Math.round(dn ?? -1)].join('|'); if (s === slabStr) return; slabStr = s;
+function drawSlab() {   // only the current price, big, with an arrow for the last tick
+  const s = fmtP(shown) + '|' + tagDir; if (s === slabStr) return; slabStr = s;
   const col = tagDir > 0 ? UPC : tagDir < 0 ? DNC : NTC;
   const { g, c, t } = slabL; g.clearRect(0, 0, c.width, c.height); g.textBaseline = 'middle';
-  roundRect(g, 8, 12, 1520, 156, 78); g.fillStyle = 'rgba(8,6,16,.94)'; g.fill();
+  roundRect(g, 8, 12, c.width - 16, 156, 78); g.fillStyle = 'rgba(8,6,16,.94)'; g.fill();
   g.shadowColor = col; g.shadowBlur = 24; g.lineWidth = 6; g.strokeStyle = col; g.stroke();
-  g.font = '800 84px "JetBrains Mono", monospace'; g.fillStyle = col; g.fillText(tagDir > 0 ? '▲' : tagDir < 0 ? '▼' : '●', 44, 92);
-  const ps = fmtP(shown), pf = Math.min(128, 470 / (ps.length * 0.6));
-  g.font = `800 ${pf}px "JetBrains Mono", monospace`; g.fillStyle = '#f2fbf6'; g.shadowBlur = 18; g.fillText(ps, 140, 94); g.shadowBlur = 0;
-  const cx = Math.max(640, 140 + g.measureText(ps).width + 40);
-  g.font = '700 62px "JetBrains Mono", monospace'; g.fillStyle = col; g.fillText(d.replace(' 24u', ''), cx, 70);
-  g.font = '600 38px "JetBrains Mono", monospace'; g.fillStyle = '#8fa39a'; g.fillText(ref24 ? '24 uur' : 't.o.v. 13:21', cx + 2, 128);
-  const ux = Math.max(1010, cx + 370), t1 = up != null ? '↑ ' + fmtDist(up) + ' verkoopmuur' : '↑ geen muur', t2 = dn != null ? '↓ ' + fmtDist(dn) + ' koopmuur' : '↓ geen muur';
-  g.font = `700 ${Math.min(46, (1510 - ux) / (Math.max(t1.length, t2.length) * 0.6))}px "JetBrains Mono", monospace`;
-  g.fillStyle = DNC; g.fillText(t1, ux, 62);
-  g.fillStyle = UPC; g.fillText(t2, ux, 122);
+  g.font = '800 84px "JetBrains Mono", monospace'; g.fillStyle = col; g.fillText(tagDir > 0 ? '▲' : tagDir < 0 ? '▼' : '●', 50, 92);
+  const ps = fmtP(shown), pf = Math.min(136, 560 / (ps.length * 0.6));
+  g.font = `800 ${pf}px "JetBrains Mono", monospace`; g.fillStyle = '#f2fbf6'; g.shadowBlur = 18; g.textAlign = 'center'; g.fillText(ps, (150 + c.width - 30) / 2, 94); g.textAlign = 'left'; g.shadowBlur = 0;
   t.needsUpdate = true;
 }
 

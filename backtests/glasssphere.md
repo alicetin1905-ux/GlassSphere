@@ -780,3 +780,35 @@ not enough to rely on.
 
 **Order book imbalance** has no history to test on; the data files now keep the depth within 0.5% and 1% each hour
 (`bookImb`, 2000 hours) so it can be tested later.
+
+## 7. BTC as a guide, the weekday, and the liquidation model on 17 coins
+
+**BTC as a guide for the other coins** (16 coins, the 1-day reading, BTC's point at the same hour). On top of the coin's
+own calibrated chance, fitted on 2022 – 2024: BTC's net taker buying weight +0.30, log loss 2025 – 26 −0.0016; BTC's
+reading +0.05 (−0.0003), BTC's 24h move +0.01 (−0.0002). BTC's buying is not stable: fitted per year +0.29, +0.30,
++0.39, +0.91, −0.05 (2022 – 2026), and walking forward it made 2026 worse (0.6323 → 0.6347). Not used.
+
+**Weekday and hour** (all 17 coins, all years). How often neither target was reached, by the weekday the horizon starts:
+
+| horizon | Mo | Tu | We | Th | Fr | Sa | Su |
+|---|---|---|---|---|---|---|---|
+| 1 day | 44% | 46% | 42% | 45% | 52% | 66% | 45% |
+| 3 days | 35% | 35% | 36% | 44% | 44% | 42% | 36% |
+| 1 week | 26% | 26% | 26% | 26% | 26% | 27% | 27% |
+
+The chance came true about as shown on every day (Saturday a little more: 65% shown, 69% came true) and at every hour
+(00, 06, 12, 18 UTC: 64.5 – 65.8% for 64.6 – 64.9% shown; neither 48 – 49%). The page shows the neither share of the day.
+
+**Liquidation model against Gate's real liquidations**, 17 coins, Gate's own open interest, taker share and candles,
+the last 4000 hours. Hourly correlation of the USD the model liquidates with the real liquidations (mean over the coins):
+
+| leverage mix | longs | shorts | total | best on |
+|---|---|---|---|---|
+| 5/10/25/50× = 30/35/25/10% **(used)** | 0.61 | 0.53 | 0.53 | 5 coins |
+| 3/5/10/25× = 25/35/30/10% | 0.58 | 0.53 | 0.49 | 3 |
+| 5/10/20× = 35/40/25% | 0.59 | 0.53 | 0.51 | 1 |
+| 10/20/50/100× = 35/35/20/10% | 0.60 | 0.49 | 0.51 | 6 |
+| 10× only | 0.45 | 0.46 | 0.42 | 1 |
+| 20× only | 0.50 | 0.40 | 0.43 | 1 |
+
+BTC 0.78, ETH 0.80, the smaller coins (thin liquidations on Gate) 0.24 – 0.65. The mix in use stays.

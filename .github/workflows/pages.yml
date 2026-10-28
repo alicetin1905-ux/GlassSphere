@@ -47,16 +47,19 @@ jobs:
           done
           # every asset's verdict in one small file, for the coin tiles on the start page
           python3 scripts/glasssphere_summary.py _site
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          # the Buy / Sell signals as a log with their outcome (the scoreboard), carried forward from the live site
+          python3 scripts/glasssphere_signals.py _site --prev "$base/glasssphere-signals.json" || echo "signals skipped"
       - name: Send alerts
-        # hourly runs only, so a push does not repeat the alerts of the last scheduled run
+        # hourly runs only, so a push does not repeat the alerts of the last scheduled run; before the upload, so the
+        # signals marked as sent are carried forward
         if: github.event_name != 'push'
         continue-on-error: true
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         # per coin on / off and the quiet hours are in alerts.json
         run: python3 scripts/glasssphere_notify.py _site "${{ steps.pages.outputs.base_url }}"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

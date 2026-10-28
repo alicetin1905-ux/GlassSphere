@@ -2,6 +2,10 @@
 
 Usage: glasssphere_notify.py SITE_DIR BASE_URL [--now HH:MM]
 
+Besides the check of glasssphere_alert.py, each coin's new Buy / Sell signals and their outcomes from
+SITE_DIR/glasssphere-signals.json (glasssphere_signals.py) are sent once: they are marked sent in that file, which is
+written back (so run this before the site is uploaded). Signals and outcomes over 3 hours old are marked without sending.
+
 Settings are in alerts.json at the repo root:
   - "munten": coin -> true / false, which coins send alerts (a coin left out sends them)
   - "stil": quiet hours "van" - "tot" in "tijdzone"; inside them nothing is sent, except liquidation waves when
@@ -24,7 +28,9 @@ import glasssphere_snapshot as SN   # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # ntfy emoji tags, most important kind first; the first kind present sets the leading emoji
-KIND_TAG = {'wave': 'boom', 'hit': 'dart', 'switch': 'arrows_counterclockwise', 'near': 'eyes'}
+KIND_TAG = {'signal': 'rotating_light', 'wave': 'boom', 'score': 'white_check_mark', 'hit': 'dart',
+            'switch': 'arrows_counterclockwise', 'near': 'eyes'}
+STALE = 3 * 3600000   # signals and outcomes older than this are not sent any more
 VERDICT_TAG = {'up': 'chart_with_upwards_trend', 'down': 'chart_with_downwards_trend', 'neutral': 'left_right_arrow'}
 
 
@@ -55,11 +61,44 @@ def message(r, key, base):
         'title': f'GlassSphere {name}',
         'message': r['status'] + '\n' + '\n'.join('• ' + text for _, text in r['alerts']),
         'tags': tags,
-        'priority': 4 if kinds and kinds[0] in ('wave', 'hit') else 3,
+        'priority': 4 if kinds and kinds[0] in ('signal', 'wave', 'hit') else 3,
         'click': url,
         'icon': f'{base.rstrip("/")}/icons/coins/{key}.png',
         'actions': [{'action': 'view', 'label': f'Open {name}', 'url': url, 'clear': True}],
     }
+
+
+def pc(x):
+    return f'{x * 100:+.1f}%'.replace('.', ',').replace('-', '−')
+
+
+def when(ms, cfg):
+    tz = ZoneInfo(cfg.get('stil', {}).get('tijdzone', 'Europe/Amsterdam'))
+    return dt.datetime.fromtimestamp(ms / 1000, tz).strftime('%d-%m %H:%M')
+
+
+def signal_alerts(coin, cfg, now, send):
+    """(kind, text) for the coin's unsent signals and outcomes, marking them sent; stale ones are marked only.
+    With send False (quiet hours, coin off) the fresh ones are left for a later run."""
+    out = []
+    for s in (coin or {}).get('list', []):
+        side = s['side'].upper()
+        if not s.get('sent'):
+            if now - s['t'] > STALE:
+                s['sent'] = 1
+            elif send:
+                out.append(('signal', f'nieuw {side}-signaal {s["pct"]}% (1 dag): doel {AL.fmt(s["tp"])} '
+                                      f'({pc(s["tp"] / s["entry"] - 1)}), stop {AL.fmt(s["sl"])} ({pc(s["sl"] / s["entry"] - 1)}), '
+                                      f'instap {AL.fmt(s["entry"])}'))
+                s['sent'] = 1
+        if 'out' in s and not s.get('sentOut'):
+            if now - s['tOut'] > STALE:
+                s['sentOut'] = 1
+            elif send:
+                what = {'doel': 'doel geraakt', 'stop': 'stop geraakt', 'geen': 'geen doel binnen 24 uur'}[s['out']]
+                out.append(('score', f'{side} van {when(s["t"], cfg)}: {what}, {pc(s["res"])}'))
+                s['sentOut'] = 1
+    return out
 
 
 def main():
@@ -71,6 +110,12 @@ def main():
     only_waves = is_quiet and cfg['stil'].get('behalve_liquidatiegolf', True)
     topic = os.environ.get('NTFY_TOPIC')
     print('stille uren' + (' (alleen liquidatiegolven)' if only_waves else '') if is_quiet else 'geen stille uren')
+    sig_path = os.path.join(site, 'glasssphere-signals.json')
+    try:
+        signals = json.load(open(sig_path))
+    except (OSError, ValueError):
+        signals = {'coins': {}}
+    now_ms = int(dt.datetime.now().timestamp() * 1000)
     for key, A in SN.ASSETS.items():
         path = os.path.join(site, A['file'])
         if not os.path.exists(path):
@@ -80,6 +125,8 @@ def main():
         except Exception as e:   # one broken file must not stop the other coins
             print(f'== {A["name"]}: fout {e}')
             continue
+        sig = signal_alerts(signals['coins'].get(key), cfg, now_ms, on.get(key, True) and not is_quiet)
+        r['alerts'] = sig + r['alerts']
         print(f'== {A["name"]}: {r["status"]}')
         for _, text in r['alerts']:
             print('   MELDING: ' + text)
@@ -101,6 +148,7 @@ def main():
             print('   verstuurd')
         except Exception as e:
             print(f'   versturen mislukt: {e}')
+    json.dump(signals, open(sig_path, 'w'), separators=(',', ':'))   # what was sent, carried forward by the site
 
 
 if __name__ == '__main__':

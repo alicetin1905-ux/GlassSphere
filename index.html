@@ -169,6 +169,12 @@ main{display:grid;gap:12px;padding-block:12px 28px;padding-left:max(16px,env(saf
 .levels td{text-align:right;padding:6px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
 .levels th:nth-child(3),.levels td:nth-child(3){text-align:left}
 .levels tr.now td{color:var(--txt);background:var(--panel2);font-weight:700}
+.sbt{overflow-x:auto}
+.sbt table{width:100%;border-collapse:collapse;font-size:12px;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.sbt th{text-align:left;font-family:var(--sans);font-weight:600;color:var(--faint);letter-spacing:.08em;text-transform:uppercase;font-size:10px;padding:8px 10px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+.sbt td{padding:6px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+@media (max-width:560px){.sbt .ix{display:none}.sbt table{font-size:11px}.sbt th,.sbt td{padding-left:5px;padding-right:5px}}
+.sbt .o-doel{color:var(--up)}.sbt .o-stop{color:var(--dn)}.sbt .o-geen{color:var(--dim)}.sbt .o-run{color:var(--nt)}
 .pill{display:inline-block;font-family:var(--sans);font-size:11px;font-weight:600;padding:1px 8px;border-radius:20px;border:1px solid}
 .meter{display:inline-block;width:70px;height:6px;background:var(--line);border-radius:3px;overflow:hidden;vertical-align:1px}
 .meter i{display:block;height:100%}
@@ -595,6 +601,11 @@ header.top .px{transform-origin:left center;transform:scale(calc(1 - var(--sh,0)
     </div>
     <div class="stage"><canvas id="cv"></canvas><canvas id="fxc" aria-hidden="true"></canvas><div id="tip" hidden></div></div>
   </section>
+
+  <details class="card" id="sb" open hidden>
+    <summary class="bar"><span class="chev" aria-hidden="true"></span><h2>Scorebord Buy / Sell</h2><span class="chip" id="sb-chip">—</span><div class="legend"><span>live bijgehouden · doel of stop binnen 24 uur</span></div></summary>
+    <div class="story" id="sb-body"></div>
+  </details>
 
   <details class="card" id="lvls" open>
     <summary class="bar"><span class="chev" aria-hidden="true"></span><h2>Alle niveaus</h2><div class="legend"><span>muren, stops en liquidaties binnen het bereik</span></div></summary>
@@ -1639,9 +1650,13 @@ const SIG = { days: 1, min: 80, hours: 168 };
 // The chance shown: the distance chance sharpened (a) and tilted by the net taker buying of the last 24 hours
 // (b x tanh(flow / 10%)), per horizon (days), fitted on 17 coins, Binance 2022 - Sep 2026 (scripts/glasssphere_edge_test.py,
 // backtests/glasssphere.md section 6). Fitted on 2022 - 2024 alone it matched 2025 - 2026: shown 72% came true 71%, 82% 81%
-// (of the times a target was reached within the horizon). NONE: how often neither target was reached (%). Keep in step
+// (of the times a target was reached within the horizon). Keep in step
 // with CAL in scripts/glasssphere_model.py
-const CAL = { 1: [1.561, 0.428], 3: [1.486, 0.421], 7: [1.411, 0.333] }, NONE = { 1: 48, 3: 39, 7: 26 }, NEUTRAL = 65;
+const CAL = { 1: [1.561, 0.428], 3: [1.486, 0.421], 7: [1.411, 0.333] }, NEUTRAL = 65;
+// how often neither target was reached (%), by the weekday the horizon starts (UTC, Sunday first): a day from Saturday
+// moves least
+const NONE = { 1: [45, 44, 46, 42, 45, 52, 66], 3: [36, 35, 35, 36, 44, 44, 42], 7: [27, 26, 26, 26, 26, 26, 27] };
+const DAYNAME = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag'];
 // net taker buying of the 24 bars up to i as a share of their volume (tk: Map open ms -> buy share)
 function flowOf(cs, tk, i = cs.length - 1) {
   let v = 0, net = 0;
@@ -1676,7 +1691,12 @@ function signals() {
     for (const sd of ['buy', 'sell']) if (sd !== cur && pct(h, sd) >= SIG.min) return sd;
     return cur;
   };
-  const out = []; let cur = step(null, all[0]);           // one already running at the start of the window is not marked
+  // the signal running when the window begins: from the live log when it covers that hour, else from that hour alone
+  // (then one already running is not known). The log keeps the close of the hour, the chart the open
+  const lg = sigLog?.coins?.[state.asset], t0 = all[0].t + 3.6e6;
+  const covered = lg && lg.last >= t0 && (lg.list.length < 100 || lg.list[0].t <= t0);
+  const seed = covered ? lg.list.filter(s => s.t <= t0).pop() : null;
+  const out = []; let cur = covered ? seed?.side ?? null : step(null, all[0]);
   for (const h of all.slice(1)) {
     const nx = step(cur, h);
     if (nx && nx !== cur) out.push({ t: h.t, side: nx, prob: pct(h, nx) / 100 });
@@ -1684,8 +1704,47 @@ function signals() {
   }
   if (out.length && cur === out[out.length - 1].side) out[out.length - 1].active = true;
   // the one running now, also when it began before the window (then without a start)
-  out.running = cur ? { side: cur, t: out.length && out[out.length - 1].active ? out[out.length - 1].t : null, pct: pct(all[all.length - 1], cur) } : null;
+  const since = out.length && out[out.length - 1].active ? out[out.length - 1].t : seed?.side === cur ? seed.t - 3.6e6 : null;
+  out.running = cur ? { side: cur, t: since, pct: pct(all[all.length - 1], cur) } : null;
   return out;
+}
+/* ---------- scoreboard ----------
+   The Buy / Sell signals as kept every hour by scripts/glasssphere_signals.py (glasssphere-signals.json): each one scored
+   as a trade from the close of its hour, take profit at the more likely target, stop at the other one, at most 24 hours.
+   The log also gives signals() the signal running when its 7-day window begins. */
+let sigLog = null, sigLogAt = 0;
+async function loadSigLog() {
+  if (Date.now() - sigLogAt < 5 * 60e3) return; sigLogAt = Date.now();
+  try { const r = await fetch('glasssphere-signals.json', { cache: 'no-store' }); if (r.ok) { sigLog = await r.json(); if (state.data) refresh(); } } catch (e) {}
+}
+const whenNl = (t, o = { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) => new Date(t).toLocaleString('nl-NL', o);
+function scoreOf(list) {
+  const d = list.filter(s => s.out), c = o => d.filter(s => s.out === o).length;
+  return { n: d.length, doel: c('doel'), stop: c('stop'), geen: c('geen'), avg: d.length ? d.reduce((a, s) => a + s.res, 0) / d.length : 0 };
+}
+function renderScore() {
+  const log = sigLog?.coins; $('sb').hidden = !log; if (!log) return;
+  const FEE = 0.001, mine = log[state.asset]?.list || [], all = Object.values(log).flatMap(c => c.list || []);
+  const a = scoreOf(mine), b = scoreOf(all), sh = (k, x) => x.n ? Math.round(x[k] / x.n * 100) + '%' : '—';
+  $('sb-chip').textContent = a.n ? `${a.doel} van ${a.n} doel` : 'nog geen';
+  const P = state.data?.price;
+  const rows = mine.slice(-12).reverse().map(s => {
+    const buy = s.side === 'buy', sg = buy ? 1 : -1;
+    const out = s.out ? `<span class="o-${s.out}">${s.out} ${pc(s.res, 1)}</span>` : `<span class="o-run">loopt${P ? ' ' + pc((P / s.entry - 1) * sg, 1) : ''}</span>`;
+    const d = new Date(s.t), pp = x => pc(x, 1).replace('%', '');
+    return `<tr><td>${d.getDate()}-${d.getMonth() + 1} ${d.getHours()}u</td><td style="color:var(--${buy ? 'up' : 'dn'})">${buy ? 'BUY' : 'SELL'} ${s.pct}%</td>` +
+      `<td class="ix">${fmtP(s.entry)}</td><td>${pp(s.tp / s.entry - 1)} / ${pp(s.sl / s.entry - 1)}</td><td>${out}</td></tr>`;
+  }).join('');
+  let html = `<div class="kv">` +
+    `<div><span>${state.asset.toUpperCase()}</span><b>${a.doel} / ${a.n}</b><em>doel ${sh('doel', a)} · stop ${sh('stop', a)} · geen ${sh('geen', a)}</em></div>` +
+    `<div><span>Gemiddeld ${state.asset.toUpperCase()}</span><b>${a.n ? pc(a.avg, 2) : '—'}</b><em>per trade${a.n ? `, na 0,1% kosten ${pc(a.avg - FEE, 2)}` : ''}</em></div>` +
+    `<div><span>Alle munten</span><b>${b.doel} / ${b.n}</b><em>doel ${sh('doel', b)} · stop ${sh('stop', b)} · na kosten ${b.n ? pc(b.avg - FEE, 2) : '—'} per trade</em></div></div>`;
+  html += rows ? `<div class="sbt"><table><thead><tr><th>Slot uur</th><th>Signaal</th><th class="ix">Instap</th><th>Doel / stop %</th><th>Uitkomst</th></tr></thead><tbody>${rows}</tbody></table></div>`
+    : `<p class="lead">Nog geen signaal voor deze munt.</p>`;
+  html += `<p class="fine">Elk uur bijgehouden${sigLog.since ? ` sinds ${whenNl(sigLog.since, { day: 'numeric', month: 'long' })}; de signalen daarvoor zijn teruggerekend uit de data van toen` : ''}. ` +
+    `Een signaal telt als trade vanaf het slot van zijn uur: doel het waarschijnlijkste cluster, stop het andere, hooguit 24 uur (geen: de koers na 24 uur). ` +
+    `Uitkomst zonder kosten; in de test 2022–2026 was het na kosten gemiddeld rond −0,1% per trade.</p>`;
+  $('sb-body').innerHTML = html;
 }
 function analyze() {
   const D = state.data, P = D.price, B = nice(P * 0.0012), cs = D.candles, n = cs.length;
@@ -1768,7 +1827,7 @@ function renderReading() {
       `<span class="tg-k">bewegingsruimte ${hl} ±${dist(r.rH)}</span></div>${row(r.tDn, false)}</div>`;
     html += `<div class="kv">` +
       `<div><span>Kans eerst</span><b>${Math.round(prob * 100)}%</b><em>${fmtP(first.p)} vóór ${fmtP(other.p)}</em></div>` +
-      `<div><span>Geen van beide</span><b>${NONE[H] ?? NONE[1]}%</b><em>zo vaak werd binnen ${hl} geen doel geraakt (test)</em></div>` +
+      `<div><span>Geen van beide</span><b>${(NONE[H] || NONE[1])[new Date().getUTCDay()]}%</b><em>zo vaak werd binnen ${hl} vanaf een ${DAYNAME[new Date().getUTCDay()]} geen doel geraakt (test)</em></div>` +
       `<div><span>Winst : risico</span><b>1 : ${fx(dS / dT, 1)}</b><em>doel ${dist(Math.abs(first.p - P))}, stop ${dist(Math.abs(other.p - P))}</em></div></div>`;
     html += `<p class="lead">De kans komt uit de afstanden (het dichtste cluster wordt vaker eerst geraakt) en de koopdruk van het laatste etmaal ` +
       `(${r.netBuy >= 0 ? 'netto kopers' : 'netto verkopers'} ${pc(r.netBuy, 1)} van het volume), geijkt op 17 munten 2022–2026: ` +
@@ -1838,6 +1897,7 @@ function refresh() {
   const rn = state.signals.running, when = t => new Date(t).toLocaleString('nl-NL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
   $('sig-now').textContent = rn ? ` · nu: ${rn.side === 'buy' ? 'BUY' : 'SELL'} ${rn.t ? 'sinds ' + when(rn.t) : 'al meer dan 7 dagen'}${rn.pct >= 50 ? ` · ${rn.pct}%` : ''}` : '';
   $('sig-now').style.color = rn ? (rn.side === 'buy' ? 'var(--up)' : 'var(--dn)') : '';
+  renderScore(); loadSigLog();
   renderLevels();
   draw();
 }

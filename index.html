@@ -1594,31 +1594,12 @@ const orbFx = (() => {
   return { set, nudge, kick };
 })();
 
-/* ---------- tooltip ---------- */
-function showTip(e) {
+/* ---------- crosshair ---------- */
+function showTip(e) {          // only the crosshair: no box over the chart, so the candles stay in view
   if (!model || !geo) return;
   const r = cv.getBoundingClientRect(), yy = e.clientY - r.top, xx = e.clientX - r.left;
   if (yy < geo.top || yy > geo.bot) { hideTip(); return; }
-  const p = geo.hi - (yy - geo.top) / (geo.bot - geo.top) * (geo.hi - geo.lo);
   state.hover = yy; state.hoverX = xx; draw();
-  const j = Math.floor(p / model.B) - model.i0; if (j < 0 || j >= model.N) { $('tip').hidden = true; return; }
-  const p0 = (model.i0 + j) * model.B, rows = [];
-  rows.push(['Kooporders', fmtUsd(model.bid[j])], ['Verkooporders', fmtUsd(model.ask[j])]);
-  const byEx = Object.keys(EXCH).map(ex => [ex, model.per[ex].b[j] + model.per[ex].a[j]]).filter(x => x[1]).sort((a, b) => b[1] - a[1]);
-  const narrow = geo.W < 640;
-  for (const [ex, v] of narrow ? byEx.slice(0, 3) : byEx) rows.push(['  ' + EXCH[ex].name, fmtUsd(v)]);
-  if (narrow && byEx.length > 3) rows.push(['  ' + (byEx.length - 3) + ' andere', fmtUsd(byEx.slice(3).reduce((t, x) => t + x[1], 0))]);
-  const ps = model.persist(j);
-  if (ps) rows.push(['Stabiel', `${ps[0]}/${ps[1]} uur`]);
-  rows.push(['Stops (score)', Math.round(model.stop[j] / model.max.stop * 100)], ['Liquidaties', fmtUsd(model.liq[j])]);
-  const tip = $('tip');
-  tip.innerHTML = `<div class="h">${fmtP(p0)} – ${fmtP(p0 + model.B)} <span style="color:var(--dim)">${pct(p0 + model.B / 2)}</span></div>` +
-    rows.map(([k, v]) => `<div class="r"><span>${k}</span><b>${v}</b></div>`).join('') +
-    (state.weighted && !narrow ? '<div class="r"><span>gewogen naar volume</span></div>' : '');
-  tip.hidden = false;
-  const tw = tip.offsetWidth, th = tip.offsetHeight;
-  tip.style.left = Math.max(4, Math.min(geo.W - tw - 4, xx < geo.W / 2 ? xx + 14 : xx - tw - 14)) + 'px';
-  tip.style.top = Math.max(4, Math.min(geo.H - th - 4, yy - th / 2)) + 'px';
 }
 function hideTip() { $('tip').hidden = true; if (state.hover != null) { state.hover = null; state.hoverX = null; draw(); } }
 // Two fingers on the chart zoom in time (more or fewer candles) and move through it; ctrl + wheel or a trackpad pinch

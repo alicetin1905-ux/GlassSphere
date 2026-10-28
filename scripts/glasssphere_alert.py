@@ -1,12 +1,13 @@
-"""Hourly check for GlassSphere: the first-target verdict on the page's standard horizon (1 day) now and an
-hour ago, and alerts.
+"""Check for GlassSphere: the first-target verdict on the page's standard horizon (1 day), and alerts since the
+last check (or, without one, in the last hour).
 
 Reads a data file written by `glasssphere_snapshot.py DIR --asset ...` (BTC, ETH, SOL, ..., WLD) and prints one status line,
 then one line per alert starting with "MELDING:". glasssphere_notify.py sends them to ntfy (check() here gives them as
 data). Alerts:
   - the price is within 0.3% of the cluster it is most likely to reach first
-  - a cluster from an hour ago was hit in the last hour
-  - the most likely first target switched side since an hour ago
+  - a target of the last check was hit since (15-minute candles; without a last check: a target of an hour ago in
+    the last hour)
+  - the most likely first target switched side since the last check (or an hour ago)
   - Gate's real liquidations in the last hour were over a minimum per asset (LIQ_MIN, BTC $1M) and 3x the hourly
     average of the day before
 
@@ -70,9 +71,10 @@ def fmt(p):
     return f'{p:,.{DEC}f}'.replace(',', ' ').replace('.', ',').replace(' ', '.')
 
 
-def check(snap):
+def check(snap, last=None):
     """The status line and the alerts of one data file: {asset, price, verdict ('up' / 'down' / 'neutral' / None),
-    status, alerts: [(kind, text)]} with kind near / hit / switch / wave."""
+    status, alerts: [(kind, text, key)], state} with kind near / hit / switch / wave. key names the event, so a
+    caller can send it once; state ({t, up, dn, lab}) is what the next check compares with (last)."""
     global DEC
     asset = snap.get('asset', 'BTC')   # files from before ETH / SOL have no asset field: BTC
     DEC = DECIMALS.get(asset, 2)
@@ -81,8 +83,12 @@ def check(snap):
     taker = {t: v for t, v in snap['taker']}
     days = DAYS
     price, up, dn, p_up = verdict(candles, oi, taker, days)
-    _, up0, dn0, p_up0 = verdict(candles[:-1], oi, taker, days)
-    lab, lab0 = label(p_up), label(p_up0)
+    if last:
+        up0, dn0, lab0, since = last.get('up'), last.get('dn'), last.get('lab'), last['t']
+    else:
+        _, u, d, p_up0 = verdict(candles[:-1], oi, taker, days)
+        up0, dn0, lab0, since = u and u[0], d and d[0], label(p_up0), candles[-1][0]
+    lab = label(p_up)
     alerts = []
     if p_up is None:
         status = f'{lab} · prijs {fmt(price)}'
@@ -91,26 +97,32 @@ def check(snap):
         status = (f'{lab} {round(max(p_up, 1 - p_up) * 100)}% ({"1 dag" if days == 1 else f"{days} dagen"}): '
                   f'{fmt(first[0])} vóór {fmt(other[0])} · prijs {fmt(price)}')
         if abs(first[0] / price - 1) <= 0.003:
-            alerts.append(('near', f'prijs {fmt(price)} zit binnen 0,3% van het eerste doel {fmt(first[0])}'))
-    last = candles[-1]
-    if up0 and last[2] >= up0[0]:
-        alerts.append(('hit', f'cluster boven {fmt(up0[0])} geraakt in het laatste uur (hoog {fmt(last[2])})'))
-    if dn0 and last[3] <= dn0[0]:
-        alerts.append(('hit', f'cluster onder {fmt(dn0[0])} geraakt in het laatste uur (laag {fmt(last[3])})'))
+            alerts.append(('near', f'prijs {fmt(price)} zit binnen 0,3% van het eerste doel {fmt(first[0])}',
+                           f'near:{first[0]}'))
+    # the candles since the last check: 15 minutes where the file has them
+    c15 = snap.get('candles15') or []
+    bars = [c for c in c15 if c[0] + 900000 > since] if c15 and c15[0][0] <= since else [c for c in candles if c[0] + 3600000 > since]
+    word = 'sinds de vorige check' if last else 'in het laatste uur'
+    hi, lo = max((c[2] for c in bars), default=None), min((c[3] for c in bars), default=None)
+    if up0 and hi is not None and hi >= up0:
+        alerts.append(('hit', f'cluster boven {fmt(up0)} geraakt {word} (hoog {fmt(hi)})', f'hit:{up0}'))
+    if dn0 and lo is not None and lo <= dn0:
+        alerts.append(('hit', f'cluster onder {fmt(dn0)} geraakt {word} (laag {fmt(lo)})', f'hit:{dn0}'))
     if lab in ('Eerst omhoog', 'Eerst omlaag') and lab0 in ('Eerst omhoog', 'Eerst omlaag') and lab != lab0:
-        alerts.append(('switch', f'eerste doel wisselde van kant: {lab0} → {lab}'))
+        alerts.append(('switch', f'eerste doel wisselde van kant: {lab0} → {lab}', f'switch:{lab}'))
     w = liq_wave(snap, asset)
     if w:
         alerts.append(('wave', f'liquidatiegolf op Gate: ${w["usd"] / 1e6:.1f}M in het laatste uur, vooral {w["side"]} '
-                               f'({w["x"]}× het uurgemiddelde)'))
+                               f'({w["x"]}× het uurgemiddelde)', f'wave:{w["t"]}'))
     v = {'Eerst omhoog': 'up', 'Eerst omlaag': 'down', 'Neutraal': 'neutral'}.get(lab)
-    return {'asset': asset, 'price': price, 'verdict': v, 'status': status, 'alerts': alerts}
+    state = {'t': snap.get('ts') or candles[-1][0], 'up': up and up[0], 'dn': dn and dn[0], 'lab': lab}
+    return {'asset': asset, 'price': price, 'verdict': v, 'status': status, 'alerts': alerts, 'state': state}
 
 
 def main():
     r = check(json.load(open(sys.argv[1])))
     print(r['status'])
-    for _, text in r['alerts']:
+    for _, text, _ in r['alerts']:
         print('MELDING: ' + text)
 
 if __name__ == '__main__':

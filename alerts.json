@@ -1,8 +1,8 @@
 {
   "munten": {
-    "btc": true, "eth": true, "sol": true, "bnb": true, "xrp": true, "doge": true,
-    "sui": true, "ena": true, "pepe": true, "wld": true, "near": true,
-    "hype": true, "zec": true, "ltc": true, "ada": true, "uni": true, "link": true
+    "btc": true, "eth": true, "sol": true, "bnb": "signalen", "xrp": "signalen", "doge": "signalen",
+    "sui": "signalen", "ena": "signalen", "pepe": "signalen", "wld": "signalen", "near": "signalen",
+    "hype": "signalen", "zec": "signalen", "ltc": "signalen", "ada": "signalen", "uni": "signalen", "link": "signalen"
   },
   "stil": {
     "van": "01:00",

@@ -14,7 +14,8 @@ written back (so run this before the site is uploaded). Signals and outcomes ove
 sending; older than 90 minutes they say how long ago.
 
 Settings are in alerts.json at the repo root:
-  - "munten": coin -> true / false, which coins send alerts (a coin left out sends them)
+  - "munten": coin -> true (all alerts), "signalen" (only new Buy / Sell signals and their outcome) or false (none);
+    a coin left out sends all
   - "stil": quiet hours "van" - "tot" in "tijdzone"; inside them nothing is sent, except liquidation waves when
     "behalve_liquidatiegolf" is true
 
@@ -161,6 +162,8 @@ def main():
         if not on.get(key, True):
             print('   (meldingen uit voor deze munt)')
             continue
+        if on.get(key, True) == 'signalen':
+            r['alerts'] = [a for a in r['alerts'] if a[0] in ('signal', 'score')]
         if is_quiet:
             r['alerts'] = [a for a in r['alerts'] if a[0] == 'wave'] if only_waves else []
         if not r['alerts']:

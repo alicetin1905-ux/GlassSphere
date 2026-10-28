@@ -737,3 +737,46 @@ The take profit at (1×) or just before (0.9×) the target cluster, the stop 0.2
 | 65% | 1.0× | 1.0 | 9.3% | 51% | 18% | 31% | -0.08% | 8 of 17 |
 
 Between −0.03% and −0.12% after cost: placing the take profit and stop at the clusters does no better than fixed multiples. A take profit just before the cluster is slightly worse than at it.
+
+## 6. Beyond the distances: what else tells the direction (1-day reading, 17 coins)
+
+`scripts/glasssphere_edge_test.py`, Binance archive 2022 (or the listing) – Sep 2026, every 6 hours, 102,148 points.
+Each feature is fitted on 2022 – 2024 as a tilt on the distance chance (logistic, the distance chance as offset) and
+judged on 2025 – Sep 2026. Log loss: of the times a target was reached within the day (distance alone 0.6367).
+
+| feature | weight | log loss 2025–26 | trade toward it (edge ≥ 5%, 0.1% cost) |
+|---|---|---|---|
+| net taker buying 24h (flow) | +0.60 | −0.0035 | +0.10%, t +1.3 |
+| trend (price vs 7-day average) | +0.24 | −0.0025 | −0.12%, t −1.3 |
+| size of the target pools | +0.14 | −0.0011 | +0.08%, t +0.9 |
+| open interest change with the move | +0.09 | −0.0001 | no trades |
+| funding | −0.12 | +0.0003 | no trades |
+| all five | | −0.0042 | −0.02%, t −0.3 |
+
+Flow is the only one that holds: fitted on each year alone its weight is +0.61, +0.66, +0.58, +0.78, +0.52 (2022 – 2026),
+and fitted on the years before it improved every later year (2024, 2025, 2026). Adding the pool size or the trend to it
+barely changes the log loss and makes the trades no better. Simple rules on a band of ±0.5 × the expected range, 2025 – 26:
+with the trend −0.13% (t −4.1), rising OI with the move −0.15%, against crowded funding −0.14%, with net buying −0.02%.
+
+**Expected range.** It already comes from the average daily range of the last 14 days. From 7 or 3 days instead: log
+loss the same (7) or worse (3), the reading at 70%+ −0.08% → +0.02% / 0.00% per trade, within the noise. Kept at 14.
+
+**The chance shown, calibrated.** P(up first) = σ(a · logit(distance chance) + b · tanh(flow / 10%)), fitted on all years:
+
+| horizon | a | b | neither target reached |
+|---|---|---|---|
+| 1 day | 1.561 | 0.428 | 48% |
+| 3 days | 1.486 | 0.421 | 39% |
+| 1 week | 1.411 | 0.333 | 26% |
+
+Fitted on 2022 – 2024 alone, 2025 – 26 (1 day): shown 55% came true 55%, 62% 62%, 67% 68%, 72% 71%, 77% 78%, 82% 81%,
+86% 88%; 3 days and a week within 3 points. The distance chance alone at 60% is about 65% calibrated, at 70% about 79%:
+the page shows Neutraal below 65% and Buy / Sell from 80% (the same strength as 70% before). Out of sample, 1 day:
+distance ≥ 70% 3,082 signals, came true 82%, −0.14% per trade; calibrated ≥ 80% 2,878, 82%, −0.10%.
+
+**Costs.** With limit (maker) orders in and out, about 0.04% round trip instead of 0.10%: every result above is 0.06%
+better. The calibrated signals at 80% are then −0.04% per trade, flow trades +0.16% (t +2.1, 10 of 17 coins positive):
+not enough to rely on.
+
+**Order book imbalance** has no history to test on; the data files now keep the depth within 0.5% and 1% each hour
+(`bookImb`, 2000 hours) so it can be tested later.

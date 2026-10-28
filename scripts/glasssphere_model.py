@@ -184,3 +184,26 @@ def first_targets(pl, price, r24, days=3, lo=0.3):
     dn = best([q for q in pl if lo * rh < price - q[0] <= rh])
     p_up = (price - dn[0]) / (up[0] - dn[0]) if up and dn else None
     return up, dn, p_up
+
+
+# The chance shown: the distance chance p_up, sharpened (a) and tilted by the net taker buying of the last 24 hours
+# (b x tanh(flow / 10%)), fitted per horizon (days) on 17 coins, Binance 2022 - Sep 2026 (scripts/glasssphere_edge_test.py,
+# backtests/glasssphere.md section 6). Fitted on 2022 - 2024 alone it matched 2025 - 2026: shown 72% came true 71%,
+# 82% 81% (of the times a target was reached within the horizon). Keep in step with CAL in index.html.
+CAL = {1: (1.561, 0.428), 3: (1.486, 0.421), 7: (1.411, 0.333)}
+
+
+def flow_of(candles, taker):
+    """Net taker buying of the last 24 bars as a share of their volume; taker: {open_ms: buy share 0..1}."""
+    day = candles[-24:]
+    vt = sum(c[5] for c in day)
+    return sum(c[5] * (2 * taker.get(c[0], 0.5) - 1) for c in day) / vt if vt else 0.0
+
+
+def chance(p_up, flow, days=1):
+    """P(upper target first), calibrated: what came true in the test."""
+    if p_up is None:
+        return None
+    a, b = CAL.get(days, CAL[1])
+    p = min(max(p_up, 1e-4), 1 - 1e-4)
+    return 1 / (1 + math.exp(-(a * math.log(p / (1 - p)) + b * math.tanh(flow / 0.1))))

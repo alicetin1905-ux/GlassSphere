@@ -24,6 +24,7 @@ DECIMALS = {'BTC': 0, 'ETH': 1, 'SOL': 2, 'BNB': 2, 'XRP': 4, 'DOGE': 5, 'SUI': 
             'HYPE': 2, 'ZEC': 2, 'LTC': 2, 'ADA': 4, 'UNI': 3, 'LINK': 3}   # as the page shows prices
 # smallest liquidation wave worth an alert, USD per hour (Gate's liquidations in the smaller coins are small)
 DAYS = 1   # the standard horizon of the page
+NEUTRAL = 65   # below this chance (calibrated) the verdict is Neutraal, as on the page
 LIQ_MIN = {'BTC': 1e6, 'ETH': 5e5, 'SOL': 2e5, 'BNB': 2.5e4, 'XRP': 1e5, 'DOGE': 1e5, 'SUI': 5e4, 'ENA': 2.5e4,
            'PEPE': 1e5, 'WLD': 5e4, 'NEAR': 5e4,
            'HYPE': 1e5, 'ZEC': 1e5, 'LTC': 5e4, 'ADA': 5e4, 'UNI': 5e4, 'LINK': 5e4}
@@ -37,7 +38,7 @@ def verdict(candles, oi, taker, days=3):
     stops = M.estimate_stops(candles, price)
     pl = M.pools(stops, [(q[0], q[1], q[2]) for q in book.pos], price, rng=0.15)
     up, dn, p_up = M.first_targets(pl, price, M.r24_of(candles), days=days)
-    return price, up, dn, p_up
+    return price, up, dn, M.chance(p_up, M.flow_of(candles, taker), days)
 
 
 def liq_wave(snap, asset):
@@ -58,7 +59,7 @@ def label(p_up):
     if p_up is None:
         return 'Geen doelen'
     prob = max(p_up, 1 - p_up)
-    return 'Neutraal' if round(prob * 100) < 60 else 'Eerst omhoog' if p_up > 0.5 else 'Eerst omlaag'
+    return 'Neutraal' if round(prob * 100) < NEUTRAL else 'Eerst omhoog' if p_up > 0.5 else 'Eerst omlaag'
 
 
 DEC = 0

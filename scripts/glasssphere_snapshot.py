@@ -21,6 +21,8 @@ Data shape:
   market    {exchange: {oi, vol, fund}} open interest (USD), 24h volume (USD), funding per 8h
   bookHist  [{t, b: [[price, bid_usd, ask_usd], ...]}] hourly combined books in bins of `histBin` within ±6%,
             last 48 hours
+  bookImb   [[ms, price, bid_0.5%, ask_0.5%, bid_1%, ask_1%], ...] hourly depth near the price over all books
+            (volume-weighted, USD), last 2000 hours: to test later whether the imbalance foretells the direction
 
     python3 scripts/glasssphere_snapshot.py DIR [--asset btc|eth|...|wld] [--prev URL ...]
         writes the asset's file into DIR, carrying the book history of the first --prev URL that answers forward
@@ -638,7 +640,8 @@ def main():
     for v in books.values():  # keep the file small: ±15% is more than the page ever shows
         v['b'] = [r for r in v['b'] if r[0] >= price * 0.85]
         v['a'] = [r for r in v['a'] if r[0] <= price * 1.15]
-    entry = book_hist_entry(books, volume_weights(books, market, price), price, ts, hist_step)
+    weights = volume_weights(books, market, price)
+    entry = book_hist_entry(books, weights, price, ts, hist_step)
     snap = {'ts': ts, 'asset': A['name'], 'bin': step, 'histBin': hist_step, 'price': price, 'books': books,
             'candles': candles, 'candles15': candles15, 'candles4h': candles4h, 'oi': oi, 'taker': taker,
             'liqReal': liq_real, 'market': market,
@@ -648,6 +651,11 @@ def main():
     hist = {e['t']: e for e in prev.get('bookHist', [])}   # the book history, one entry per hour, last 48
     hist[entry['t']] = entry
     snap['bookHist'] = [hist[k] for k in sorted(hist)][-48:]
+    near = lambda side, f: round(sum(u * weights.get(ex, 1) for ex, v in books.items() for p, u in v[side]
+                                     if (p >= price * (1 - f) if side == 'b' else p <= price * (1 + f))))
+    imb = {r[0]: r for r in prev.get('bookImb', [])}
+    imb[hour] = [hour, price, near('b', 0.005), near('a', 0.005), near('b', 0.01), near('a', 0.01)]
+    snap['bookImb'] = [imb[k] for k in sorted(imb)][-2000:]
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, A['file'])
     json.dump(snap, open(path, 'w'), separators=(',', ':'))

@@ -590,7 +590,7 @@ header.top .px{transform-origin:left center;transform:scale(calc(1 - var(--sh,0)
         <span><i class="sw" style="background:linear-gradient(90deg,var(--up),var(--dn))"></i>Doelen GlassSphere</span>
         <span><i class="sw" style="background:var(--stop)"></i>Stops (stippellijn, schatting)</span>
         <span><i class="sw" style="background:var(--liq)"></i>Liquidaties (stippellijn, schatting)</span>
-        <span><i class="sw" style="background:linear-gradient(90deg,var(--up) 50%,var(--dn) 50%)"></i>Buy / Sell: 1 dag ≥ 70%<b id="sig-now"></b></span>
+        <span><i class="sw" style="background:linear-gradient(90deg,var(--up) 50%,var(--dn) 50%)"></i>Buy / Sell: 1 dag ≥ 80%<b id="sig-now"></b></span>
       </div>
     </div>
     <div class="stage"><canvas id="cv"></canvas><canvas id="fxc" aria-hidden="true"></canvas><div id="tip" hidden></div></div>
@@ -619,7 +619,7 @@ header.top .px{transform-origin:left center;transform:scale(calc(1 - var(--sh,0)
       <p><b>Limietorders</b> zijn echt: het zichtbare orderboek van de perp op tot 23 beurzen (niet elke munt staat op elke beurs; BitMEX heeft alleen BTC), in USD per blok. Waar een beurs PEPE per 1000 noteert (Binance, Bybit, Hyperliquid, Deribit) is de prijs teruggerekend naar 1 PEPE. Elk boek reikt maar zo ver als de beurs het geeft, dus verder van de prijs is het boek onvolledig: HTX ±0,35%, Crypto.com ±0,4%, OKX ±0,8%, MEXC ±1%, Bitget ±1,2%, dYdX ±1,5%, Hyperliquid ±2,4% (grove blokken), Gate ±3,5%, Bitfinex ±11%, Binance 1000 niveaus, Bybit 500 niveaus, en Deribit, BitMEX en Kraken het hele boek. MEXC, Kraken, Bitfinex, KuCoin, Aster, Lighter, Backpack, Paradex, BloFin, Toobit, Bitunix en XT komen alleen uit de uurlijkse data, ook als de pagina live is (de beurs blokkeert browsers of staat alleen in dat script). Toobit, Bitunix en XT staan standaard uit: hun volume en orderboek zijn veel groter dan bij hun omvang past (mogelijk opgeblazen); zet ze aan met de knoppen boven de grafiek. De uurlijkse data staat in glasssphere-data.json en glasssphere-&lt;munt&gt;.json. Met <b>Gewogen naar volume</b> telt een beurs met meer diepte binnen ±1% dan zijn aandeel in het handelsvolume naar rato minder mee (dYdX en MEXC vooral). De kolom Stabiel in de tabel zegt hoeveel van de laatste 6 uur een muur er al stond, zodat muren die net verschijnen (mogelijke nepmuren) opvallen.</p>
       <p><b>Stops</b> (stop-loss, koopstop, verkoopstop) staan bij geen enkele beurs in het publieke boek. Hier geschat: net boven elke top die nog niet is geraakt (koopstops van shorts en uitbraakkopers), net onder elke ongeraakte bodem (verkoopstops van longs), gewogen naar het volume rond die top of bodem en hoe recent die is, plus een kleine bijdrage op ronde $1000-niveaus. In de grafiek staan de sterkste stop-niveaus boven en onder de prijs als gele stippellijn; een score 0–100, geen bedrag.</p>
       <p><b>Liquidaties</b> zijn geschat uit de groei van de openstaande posities (open interest) per uur over alle beurzen samen: Gate, OKX, HTX en Binance met hun eigen uurgeschiedenis, Bybit live op de pagina (de beurs weigert de servers van de uurlijkse data), de andere beurzen met hun stand die elk uur bewaard wordt (die vullen zich aan tot 400 uur). Nieuwe posities op de gemiddelde prijs van dat uur, voor de helft verdeeld naar waar de kaars sloot en voor de helft naar het aandeel kopende marktorders (Gate, OKX en Binance, gewogen naar volume), met 5×, 10×, 25× en 50× hefboom (30/35/25/10%). Die mix paste het best bij Gates echte liquidaties (correlatie 0,78 per uur over 161 dagen). Niveaus die de prijs al raakte zijn weggehaald, en de bedragen zijn opgeschaald naar de openstaande posities van alle beurzen samen. De grootste liquidatieniveaus staan in de grafiek als paarse stippellijn.</p>
-      <p><b>Eerste doel</b> in GlassSphere: voor de gekozen termijn (1 dag, 3 dagen of 1 week; standaard 1 dag) het grootste cluster boven en onder de prijs tussen 0,3× en 1× de verwachte bewegingsruimte (gemiddeld dagbereik × √dagen). De kans dat het bovenste eerst geraakt wordt, is de afstand naar het onderste gedeeld door de som van beide afstanden. Getest op Binance-data van 2022 tot 2026 (<code>backtests/glasssphere.md</code>): die kansen kwamen elk jaar goed uit, maar een trade richting het waarschijnlijkste doel met de stop op het andere cluster leverde na kosten gemiddeld niets op. Momentum, openstaande posities, financiering (funding), CVD en de liquiditeitstrek voorspelden de richting niet of te zwak, en tellen daarom niet mee.</p>
+      <p><b>Eerste doel</b> in GlassSphere: voor de gekozen termijn (1 dag, 3 dagen of 1 week; standaard 1 dag) het grootste cluster boven en onder de prijs tussen 0,3× en 1× de verwachte bewegingsruimte (gemiddeld dagbereik × √dagen). De kans dat het bovenste eerst geraakt wordt, begint bij de afstand naar het onderste gedeeld door de som van beide afstanden, en schuift mee met de koopdruk van het laatste etmaal (netto kopen of verkopen van de takers, als deel van het volume). Die twee zijn geijkt op Binance-data van 17 munten, 2022 tot 2026 (<code>backtests/glasssphere.md</code>), zodat de getoonde kans is wat er in de test uitkwam (van de keren dat binnen de termijn een doel geraakt werd). Een trade richting het waarschijnlijkste doel met de stop op het andere cluster leverde na kosten toch gemiddeld niets op. Openstaande posities, financiering (funding), de trend van de week, de grootte van de clusters en de liquiditeitstrek voorspelden de richting niet of te zwak, en tellen daarom niet mee. Neutraal onder 65%; Buy en Sell vanaf 80%.</p>
     </details>
   </footer>
 </main>
@@ -1632,32 +1632,45 @@ function targetsOf(cs, pools, P, days) {
   return { range24, rH, minD, tUp, tDn, pUp: tUp && tDn ? (P - tDn.p) / (tUp.p - tDn.p) : null };
 }
 /* ---------- buy / sell signals ----------
-   The 1-day reading (the standard one) at 70% or more: Buy when "eerst omhoog", Sell when "eerst omlaag", marked on the candle where it
+   The 1-day reading (the standard one) at 80% or more (the calibrated chance; the same strength as 70% by distance alone): Buy when "eerst omhoog", Sell when "eerst omlaag", marked on the candle where it
    began, over the last 7 days; it runs until the other one starts. Each closed hour is worked out from the data as it was then (the same calculation as
    the reading), the current hour from the data now. Cached per coin and hour. */
-const SIG = { days: 1, min: 70, hours: 168 };
-// How often the reading came true by the chance shown, per horizon (days): the more likely target reached first, of the
-// times one was reached within the horizon. 17 coins on the Binance archive, 2022 - Sep 2026
-// (scripts/glasssphere_threshold_test.py, backtests/glasssphere.md section 5). With the stop as far as the target it won
-// half the time: the chance comes from the distances, not from foreseeing the direction
-const HIST = { 1: [[75, 86], [70, 81], [65, 75], [60, 68], [55, 61], [50, 54]], 3: [[75, 86], [70, 79], [65, 75], [60, 68], [55, 60], [50, 54]] };
-const histOf = (days, pct) => (HIST[days]?.find(([lo]) => pct >= lo) || [])[1];
+const SIG = { days: 1, min: 80, hours: 168 };
+// The chance shown: the distance chance sharpened (a) and tilted by the net taker buying of the last 24 hours
+// (b x tanh(flow / 10%)), per horizon (days), fitted on 17 coins, Binance 2022 - Sep 2026 (scripts/glasssphere_edge_test.py,
+// backtests/glasssphere.md section 6). Fitted on 2022 - 2024 alone it matched 2025 - 2026: shown 72% came true 71%, 82% 81%
+// (of the times a target was reached within the horizon). NONE: how often neither target was reached (%). Keep in step
+// with CAL in scripts/glasssphere_model.py
+const CAL = { 1: [1.561, 0.428], 3: [1.486, 0.421], 7: [1.411, 0.333] }, NONE = { 1: 48, 3: 39, 7: 26 }, NEUTRAL = 65;
+// net taker buying of the 24 bars up to i as a share of their volume (tk: Map open ms -> buy share)
+function flowOf(cs, tk, i = cs.length - 1) {
+  let v = 0, net = 0;
+  for (let k = Math.max(0, i - 23); k <= i; k++) { v += cs[k][5]; net += cs[k][5] * (2 * (tk.get(cs[k][0]) ?? 0.5) - 1); }
+  return v ? net / v : 0;
+}
+function chanceOf(pDist, flow, days) {
+  if (pDist == null) return null;
+  const [a, b] = CAL[days] || CAL[1], p = Math.min(Math.max(pDist, 1e-4), 1 - 1e-4);
+  return 1 / (1 + Math.exp(-(a * Math.log(p / (1 - p)) + b * Math.tanh(flow / 0.1))));
+}
 const sigCache = new Map();
 function signals() {
   const D = state.data, cs = D.candles, n = cs.length; if (n < 72) return [];
   const key = `${state.asset}:${cs[n - 1][0]}:${n}`;
   let hist = sigCache.get(key);
   if (!hist) {
-    const from = Math.max(48, n - SIG.hours); hist = [];
+    const from = Math.max(48, n - SIG.hours), tk = new Map(D.taker || []); hist = [];
     estimateLiqs(cs, D.oi || [], D.taker, (i, pos) => {
       if (i < from || i >= n - 1) return;
       const c = cs.slice(0, i + 1), P = cs[i][4];
-      hist.push({ t: cs[i][0], pUp: targetsOf(c, poolsOf(estimateStops(c, P, P * 0.85, P * 1.15), pos, P), P, SIG.days).pUp });
+      const pDist = targetsOf(c, poolsOf(estimateStops(c, P, P * 0.85, P * 1.15), pos, P), P, SIG.days).pUp;
+      hist.push({ t: cs[i][0], pUp: chanceOf(pDist, flowOf(cs, tk, i), SIG.days) });
     });
     sigCache.set(key, hist); if (sigCache.size > 30) sigCache.delete(sigCache.keys().next().value);
   }
-  const all = [...hist, { t: cs[n - 1][0], pUp: targetsOf(cs, poolsOf(D.stops, D.liqs, D.price), D.price, SIG.days).pUp }];
-  // a signal starts at 70% and runs until the other signal starts
+  const now = targetsOf(cs, poolsOf(D.stops, D.liqs, D.price), D.price, SIG.days).pUp;
+  const all = [...hist, { t: cs[n - 1][0], pUp: chanceOf(now, flowOf(cs, new Map(D.taker || [])), SIG.days) }];
+  // a signal starts at 80% and runs until the other signal starts
   const pct = (h, sd) => h.pUp == null ? 0 : Math.round((sd === 'buy' ? h.pUp : 1 - h.pUp) * 100);
   const step = (cur, h) => {
     for (const sd of ['buy', 'sell']) if (sd !== cur && pct(h, sd) >= SIG.min) return sd;
@@ -1680,7 +1693,7 @@ function analyze() {
   let up = 0, dn = 0;
   for (const q of pools) { const w = q.v / Math.max(Math.abs(q.p / P - 1) * 100, 0.25); q.p > P ? up += w : dn += w; }
   const pull = up + dn ? (up - dn) / (up + dn) : 0;
-  const { range24, rH, minD, tUp, tDn, pUp } = targetsOf(cs, pools, P, state.horizon);
+  const { range24, rH, minD, tUp, tDn, pUp: pDist } = targetsOf(cs, pools, P, state.horizon);
   // context factors (shown, not counted)
   const ret24 = P / cs[Math.max(0, n - 25)][4] - 1;
   const closes = cs.map(c => c[4]), ef = ema(closes, 20), es = ema(closes, 50);
@@ -1701,6 +1714,7 @@ function analyze() {
   const vols = cs.slice(-24), tk = new Map(D.taker || []);
   const vt = vols.reduce((s, c) => s + c[5], 0), netBuy = vt ? vols.reduce((s, c) => s + c[5] * (2 * (tk.get(c[0]) ?? 0.5) - 1), 0) / vt : 0;
   const cvd = Math.tanh(netBuy / 0.1);
+  const pUp = chanceOf(pDist, netBuy, state.horizon);      // the chance shown: distances and the net buying, calibrated
   const lr = (D.liqReal || []).filter(r => r[0] > D.ts - 24 * 3.6e6);
   const liq24 = [lr.reduce((s, r) => s + r[1], 0), lr.reduce((s, r) => s + r[2], 0)];
   const walls = key => { const m = new Map();
@@ -1708,7 +1722,7 @@ function analyze() {
       if (Math.abs(p / P - 1) > 0.01 || (key === 'b') !== (p < P)) continue;
       const k = Math.floor(p / B + 1e-9) * B; m.set(k, (m.get(k) || 0) + v * f); } }
     return [...m].map(([k, v]) => ({ p: k + B / 2, v })).sort((x, y) => y.v - x.v)[0]; };
-  return { P, range24, rH, minD, tUp, tDn, pUp, pull, up, dn, ret24, ef, es, mom, b05, a05, b10, a10, book, oiChg, oiS, oiTot,
+  return { P, range24, rH, minD, tUp, tDn, pUp, pDist, pull, up, dn, ret24, ef, es, mom, b05, a05, b10, a10, book, oiChg, oiS, oiTot,
     fund, fundS, netBuy, cvd, liq24, support: walls('b'), resist: walls('a') };
 }
 function renderReading() {
@@ -1719,16 +1733,15 @@ function renderReading() {
   if (r.pUp != null) {
     const upFirst = r.pUp >= 0.5; prob = upFirst ? r.pUp : 1 - r.pUp;
     first = upFirst ? r.tUp : r.tDn; other = upFirst ? r.tDn : r.tUp;
-    lab = Math.round(prob * 100) < 60 ? 'Neutraal' : upFirst ? 'Eerst omhoog' : 'Eerst omlaag';
+    lab = Math.round(prob * 100) < NEUTRAL ? 'Neutraal' : upFirst ? 'Eerst omhoog' : 'Eerst omlaag';
   }
-  const col = prob == null || Math.round(prob * 100) < 60 ? 'var(--nt)' : r.pUp > 0.5 ? 'var(--up)' : 'var(--dn)';
+  const col = prob == null || Math.round(prob * 100) < NEUTRAL ? 'var(--nt)' : r.pUp > 0.5 ? 'var(--up)' : 'var(--dn)';
   $('rd-lab').textContent = lab; $('rd-lab').style.color = col;
   $('aurora').style.setProperty('--mood', col); orbFx.set(prob, r.pUp != null && r.pUp >= 0.5, col);
-  const hp = prob != null ? histOf(H, Math.round(prob * 100)) : null;     // measured for 1 and 3 days, not for a week
-  $('rd-sc').textContent = prob == null ? `geen cluster aan beide kanten binnen ${hl}` : `${fmtP(first.p)} vóór ${fmtP(other.p)} · ${Math.round(prob * 100)}% kans${hp ? ` · historisch ${hp}%` : ''}`;
+  $('rd-sc').textContent = prob == null ? `geen cluster aan beide kanten binnen ${hl}` : `${fmtP(first.p)} vóór ${fmtP(other.p)} · ${Math.round(prob * 100)}% kans`;
   $('rd-chip').textContent = prob == null ? `${lab} · ${hl}` : `${lab} · ${Math.round(prob * 100)}% · ${hl}`; $('rd-chip').style.color = col;
   // the target bar: lower target left, upper right, the live price as a dot at its place between them
-  const pos = r.pUp == null ? 50 : Math.max(0, Math.min(100, r.pUp * 100));
+  const pos = r.pDist == null ? 50 : Math.max(0, Math.min(100, r.pDist * 100));
   $('rd-dot').style.left = pos + '%'; $('rd-now').textContent = fmtP(P);
   $('rd-now').style.transform = `translateX(${pos > 80 ? -85 : pos < 20 ? -15 : -50}%)`;
   const end = (q, cls) => q ? `<b>${fmtP(q.p)}</b><em>${pc(q.p / P - 1, 1)}${first === q ? ' · eerst' : ''}</em>` : '<b>—</b><em>geen doel</em>';
@@ -1755,11 +1768,12 @@ function renderReading() {
       `<span class="tg-k">bewegingsruimte ${hl} ±${dist(r.rH)}</span></div>${row(r.tDn, false)}</div>`;
     html += `<div class="kv">` +
       `<div><span>Kans eerst</span><b>${Math.round(prob * 100)}%</b><em>${fmtP(first.p)} vóór ${fmtP(other.p)}</em></div>` +
-      (hp ? `<div><span>Kwam uit (test)</span><b>${hp}%</b><em>bij ${Math.round(prob * 100)}% getoond, 17 munten 2022–2026</em></div>` : '') +
+      `<div><span>Geen van beide</span><b>${NONE[H] ?? NONE[1]}%</b><em>zo vaak werd binnen ${hl} geen doel geraakt (test)</em></div>` +
       `<div><span>Winst : risico</span><b>1 : ${fx(dS / dT, 1)}</b><em>doel ${dist(Math.abs(first.p - P))}, stop ${dist(Math.abs(other.p - P))}</em></div></div>`;
-    html += `<p class="lead">De kans komt alleen uit de afstanden: het dichtste cluster wordt vaker eerst geraakt. ` +
-      (hp ? `In de test kwam een getoonde ${Math.round(prob * 100)}% in ${hp}% van de keren uit (als binnen ${hl} een doel geraakt werd). ` : '') +
-      `Omdat de stop dan verder weg ligt dan het doel, levert een trade erop gemiddeld niets op; met een stop even ver als het doel won hij in de test maar de helft van de keren.</p>`;
+    html += `<p class="lead">De kans komt uit de afstanden (het dichtste cluster wordt vaker eerst geraakt) en de koopdruk van het laatste etmaal ` +
+      `(${r.netBuy >= 0 ? 'netto kopers' : 'netto verkopers'} ${pc(r.netBuy, 1)} van het volume), geijkt op 17 munten 2022–2026: ` +
+      `een getoonde ${Math.round(prob * 100)}% kwam ongeveer zo vaak uit, als binnen ${hl} een doel geraakt werd. ` +
+      `Omdat de stop verder weg ligt dan het doel, levert een trade erop na kosten gemiddeld nog niets op.</p>`;
   } else {
     html += `<p class="lead">Voor ${hl} (bewegingsruimte ±${dist(r.rH)}) ligt er niet aan beide kanten een cluster tussen ${dist(r.minD)} en ${dist(r.rH)} van de prijs. Kies een andere termijn.</p>`;
   }

@@ -3,8 +3,8 @@
 Reads the data files written by glasssphere_snapshot.py in DIR and writes DIR/glasssphere-summary.json:
   ts      when written
   assets  {asset: {price, ts, hz: {days: {v, prob, first, other}}, wave?}} for 1, 3 and 7 days, where v is 'up' or 'down'
-          (the more likely first target, at 60% or more), 'neutral' (below 60%) or null (no target on one side).
-          The same calculation as the reading on the page (glasssphere_alert.verdict).
+          (the more likely first target, at 65% or more), 'neutral' (below 65%) or null (no target on one side).
+          The same calculation as the reading on the page (glasssphere_alert.verdict): prob is the calibrated chance.
           wave: {usd, side, x, t} when Gate's liquidations in the last hour were a wave (glasssphere_alert.liq_wave).
           spark: the last 25 hourly closes (24 hours), for the line on the tile.
 
@@ -39,7 +39,7 @@ def main():
                 continue
             prob = max(p_up, 1 - p_up)
             first, other = (up, dn) if p_up >= 0.5 else (dn, up)
-            v = 'neutral' if round(prob * 100) < 60 else 'up' if p_up > 0.5 else 'down'
+            v = 'neutral' if round(prob * 100) < AL.NEUTRAL else 'up' if p_up > 0.5 else 'down'
             hz[days] = {'v': v, 'prob': round(prob, 4), 'first': first[0], 'other': other[0]}
         closes = [c[4] for c in snap['candles'][-25:]]
         assets[key] = {'price': snap['price'], 'ts': snap['ts'], 'hz': hz,

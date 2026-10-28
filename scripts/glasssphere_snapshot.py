@@ -107,6 +107,33 @@ ASSETS = {
 }
 
 
+# per asset on the exchanges added later: symbol (and contract size); None = not listed there.
+# 1000PEPE-style contracts quote 1000 coins: div brings them back to one coin. Generated from each exchange's contract list.
+EXTRA = {
+    'btc': {'kucoin': 'XBTUSDTM', 'kucoin_ct': 0.001, 'aster': 'BTCUSDT', 'backpack': 'BTC_USDC_PERP', 'paradex': 'BTC-USD-PERP', 'bitunix': 'BTCUSDT', 'lighter': 1, 'woox': 'PERP_BTC_USDT', 'toobit': 'BTC-SWAP-USDT', 'toobit_ct': 0.001, 'xt': 'btc_usdt', 'xt_ct': 0.0001, 'blofin': 'BTC-USDT', 'blofin_ct': 0.001},
+    'eth': {'kucoin': 'ETHUSDTM', 'kucoin_ct': 0.01, 'aster': 'ETHUSDT', 'backpack': 'ETH_USDC_PERP', 'paradex': 'ETH-USD-PERP', 'bitunix': 'ETHUSDT', 'lighter': 0, 'woox': 'PERP_ETH_USDT', 'toobit': 'ETH-SWAP-USDT', 'toobit_ct': 0.01, 'xt': 'eth_usdt', 'xt_ct': 0.01, 'blofin': 'ETH-USDT', 'blofin_ct': 0.01},
+    'sol': {'kucoin': 'SOLUSDTM', 'kucoin_ct': 0.1, 'aster': 'SOLUSDT', 'backpack': 'SOL_USDC_PERP', 'paradex': 'SOL-USD-PERP', 'bitunix': 'SOLUSDT', 'lighter': 2, 'woox': 'PERP_SOL_USDT', 'toobit': 'SOL-SWAP-USDT', 'toobit_ct': 1.0, 'xt': 'sol_usdt', 'xt_ct': 0.1, 'blofin': 'SOL-USDT', 'blofin_ct': 1.0},
+    'bnb': {'kucoin': 'BNBUSDTM', 'kucoin_ct': 0.01, 'aster': 'BNBUSDT', 'backpack': 'BNB_USDC_PERP', 'paradex': 'BNB-USD-PERP', 'bitunix': 'BNBUSDT', 'lighter': 25, 'woox': 'PERP_BNB_USDT', 'toobit': 'BNB-SWAP-USDT', 'toobit_ct': 0.01, 'xt': 'bnb_usdt', 'xt_ct': 0.01, 'blofin': 'BNB-USDT', 'blofin_ct': 0.01},
+    'xrp': {'kucoin': 'XRPUSDTM', 'kucoin_ct': 10.0, 'aster': 'XRPUSDT', 'backpack': 'XRP_USDC_PERP', 'paradex': 'XRP-USD-PERP', 'bitunix': 'XRPUSDT', 'lighter': 7, 'woox': 'PERP_XRP_USDT', 'toobit': 'XRP-SWAP-USDT', 'toobit_ct': 0.1, 'xt': 'xrp_usdt', 'xt_ct': 10.0, 'blofin': 'XRP-USDT', 'blofin_ct': 100.0},
+    'doge': {'kucoin': 'DOGEUSDTM', 'kucoin_ct': 100.0, 'aster': 'DOGEUSDT', 'backpack': 'DOGE_USDC_PERP', 'paradex': 'DOGE-USD-PERP', 'bitunix': 'DOGEUSDT', 'lighter': 3, 'woox': 'PERP_DOGE_USDT', 'toobit': 'DOGE-SWAP-USDT', 'toobit_ct': 1.0, 'xt': 'doge_usdt', 'xt_ct': 10.0, 'blofin': 'DOGE-USDT', 'blofin_ct': 1000.0},
+    'sui': {'kucoin': 'SUIUSDTM', 'kucoin_ct': 1.0, 'aster': 'SUIUSDT', 'backpack': 'SUI_USDC_PERP', 'paradex': 'SUI-USD-PERP', 'bitunix': 'SUIUSDT', 'lighter': 16, 'woox': 'PERP_SUI_USDT', 'toobit': 'SUI-SWAP-USDT', 'toobit_ct': 0.1, 'xt': 'sui_usdt', 'xt_ct': 1.0, 'blofin': 'SUI-USDT', 'blofin_ct': 1.0},
+    'ena': {'kucoin': 'ENAUSDTM', 'kucoin_ct': 1.0, 'aster': 'ENAUSDT', 'backpack': 'ENA_USDC_PERP', 'paradex': 'ENA-USD-PERP', 'bitunix': 'ENAUSDT', 'lighter': 29, 'woox': 'PERP_ENA_USDT', 'toobit': 'ENA-SWAP-USDT', 'toobit_ct': 1.0, 'xt': 'ena_usdt', 'xt_ct': 1.0, 'blofin': 'ENA-USDT', 'blofin_ct': 10.0},
+    'pepe': {'kucoin': 'PEPEUSDTM', 'kucoin_ct': 520000.0, 'aster': '1000PEPEUSDT', 'backpack': None, 'paradex': None, 'bitunix': '1000PEPEUSDT', 'lighter': 4, 'woox': None, 'toobit': '1000PEPE-SWAP-USDT', 'toobit_ct': 1.0, 'xt': '1000pepe_usdt', 'xt_ct': 100.0, 'blofin': 'PEPE-USDT', 'blofin_ct': 10000000.0, 'div_extra': {'aster': 1000, 'bitunix': 1000, 'toobit': 1000, 'xt': 1000, 'lighter': 1000}},
+    'wld': {'kucoin': 'WLDUSDTM', 'kucoin_ct': 1.0, 'aster': 'WLDUSDT', 'backpack': 'WLD_USDC_PERP', 'paradex': None, 'bitunix': 'WLDUSDT', 'lighter': 6, 'woox': None, 'toobit': 'WLD-SWAP-USDT', 'toobit_ct': 1.0, 'xt': 'wld_usdt', 'xt_ct': 1.0, 'blofin': 'WLD-USDT', 'blofin_ct': 1.0},
+    'near': {'kucoin': 'NEARUSDTM', 'kucoin_ct': 0.1, 'aster': 'NEARUSDT', 'backpack': 'NEAR_USDC_PERP', 'paradex': 'NEAR-USD-PERP', 'bitunix': 'NEARUSDT', 'lighter': 10, 'woox': 'PERP_NEAR_USDT', 'toobit': 'NEAR-SWAP-USDT', 'toobit_ct': 1.0, 'xt': 'near_usdt', 'xt_ct': 1.0, 'blofin': 'NEAR-USDT', 'blofin_ct': 10.0},
+    'hype': {'kucoin': 'HYPEUSDTM', 'kucoin_ct': 0.1, 'aster': 'HYPEUSDT', 'backpack': 'HYPE_USDC_PERP', 'paradex': 'HYPE-USD-PERP', 'bitunix': 'HYPEUSDT', 'lighter': 24, 'woox': 'PERP_HYPE_USDT', 'toobit': 'HYPE-SWAP-USDT', 'toobit_ct': 1.0, 'xt': 'hype_usdt', 'xt_ct': 1.0, 'blofin': 'HYPE-USDT', 'blofin_ct': 0.1},
+    'zec': {'kucoin': 'ZECUSDTM', 'kucoin_ct': 0.01, 'aster': 'ZECUSDT', 'backpack': 'ZEC_USDC_PERP', 'paradex': 'ZEC-USD-PERP', 'bitunix': 'ZECUSDT', 'lighter': 90, 'woox': 'PERP_ZEC_USDT', 'toobit': 'ZEC-SWAP-USDT', 'toobit_ct': 0.001, 'xt': 'zec_usdt', 'xt_ct': 0.1, 'blofin': 'ZEC-USDT', 'blofin_ct': 0.1},
+    'ltc': {'kucoin': 'LTCUSDTM', 'kucoin_ct': 0.1, 'aster': 'LTCUSDT', 'backpack': 'LTC_USDC_PERP', 'paradex': 'LTC-USD-PERP', 'bitunix': 'LTCUSDT', 'lighter': 35, 'woox': 'PERP_LTC_USDT', 'toobit': 'LTC-SWAP-USDT', 'toobit_ct': 0.001, 'xt': 'ltc_usdt', 'xt_ct': 0.1, 'blofin': 'LTC-USDT', 'blofin_ct': 1.0},
+    'ada': {'kucoin': 'ADAUSDTM', 'kucoin_ct': 10.0, 'aster': 'ADAUSDT', 'backpack': 'ADA_USDC_PERP', 'paradex': 'ADA-USD-PERP', 'bitunix': 'ADAUSDT', 'lighter': 39, 'woox': 'PERP_ADA_USDT', 'toobit': 'ADA-SWAP-USDT', 'toobit_ct': 1.0, 'xt': 'ada_usdt', 'xt_ct': 10.0, 'blofin': 'ADA-USDT', 'blofin_ct': 100.0},
+    'uni': {'kucoin': 'UNIUSDTM', 'kucoin_ct': 1.0, 'aster': 'UNIUSDT', 'backpack': 'UNI_USDC_PERP', 'paradex': 'UNI-USD-PERP', 'bitunix': 'UNIUSDT', 'lighter': 30, 'woox': 'PERP_UNI_USDT', 'toobit': 'UNI-SWAP-USDT', 'toobit_ct': 1.0, 'xt': 'uni_usdt', 'xt_ct': 1.0, 'blofin': 'UNI-USDT', 'blofin_ct': 1.0},
+    'link': {'kucoin': 'LINKUSDTM', 'kucoin_ct': 0.1, 'aster': 'LINKUSDT', 'backpack': 'LINK_USDC_PERP', 'paradex': 'LINK-USD-PERP', 'bitunix': 'LINKUSDT', 'lighter': 8, 'woox': 'PERP_LINK_USDT', 'toobit': 'LINK-SWAP-USDT', 'toobit_ct': 0.01, 'xt': 'link_usdt', 'xt_ct': 0.1, 'blofin': 'LINK-USDT', 'blofin_ct': 1.0},
+}
+for _k, _e in EXTRA.items():
+    _d = _e.pop('div_extra', {})
+    ASSETS[_k].update(_e)
+    if _d:
+        ASSETS[_k]['div'] = {**ASSETS[_k].get('div', {}), **_d}
+
 def get(url, body=None):
     headers = {'User-Agent': 'curl/8.0'}
     if body is not None:
@@ -220,10 +247,70 @@ def book_bitfinex(A):
             [(r[0], -r[2] * r[0]) for r in rows if r[2] < 0])
 
 
+# ---------- exchanges added later: only this script reads them (none but Aster, Paradex and Lighter send CORS headers,
+# and for one place to keep them those three are read here too). Sizes to USD: contracts x contract size x price, or
+# coins x price.
+
+def book_kucoin(A):
+    d = get(f'https://api-futures.kucoin.com/api/v1/level2/snapshot?symbol={A["kucoin"]}')['data']
+    f = lambda r: (float(r[0]), float(r[1]) * A['kucoin_ct'] * float(r[0]))
+    return [f(r) for r in d['bids']], [f(r) for r in d['asks']]
+
+
+def book_aster(A):
+    j = get(f'https://fapi.asterdex.com/fapi/v1/depth?symbol={A["aster"]}&limit=1000')
+    f = lambda r: (float(r[0]), float(r[1]) * float(r[0]))
+    return [f(r) for r in j['bids']], [f(r) for r in j['asks']]
+
+
+def book_backpack(A):
+    j = get(f'https://api.backpack.exchange/api/v1/depth?symbol={A["backpack"]}')
+    f = lambda r: (float(r[0]), float(r[1]) * float(r[0]))
+    return [f(r) for r in j['bids']], [f(r) for r in j['asks']]
+
+
+def book_paradex(A):
+    j = get(f'https://api.prod.paradex.trade/v1/orderbook/{A["paradex"]}?depth=100')
+    f = lambda r: (float(r[0]), float(r[1]) * float(r[0]))
+    return [f(r) for r in j['bids']], [f(r) for r in j['asks']]
+
+
+def book_bitunix(A):
+    d = get(f'https://fapi.bitunix.com/api/v1/futures/market/depth?symbol={A["bitunix"]}&limit=max')['data']
+    f = lambda r: (float(r[0]), float(r[1]) * float(r[0]))
+    return [f(r) for r in d['bids']], [f(r) for r in d['asks']]
+
+
+def book_lighter(A):
+    j = get(f'https://mainnet.zklighter.elliot.ai/api/v1/orderBookOrders?market_id={A["lighter"]}&limit=250')
+    f = lambda o: (float(o['price']), float(o['remaining_base_amount']) * float(o['price']))   # one row per order
+    return [f(o) for o in j['bids']], [f(o) for o in j['asks']]
+
+
+def book_toobit(A):
+    j = get(f'https://api.toobit.com/quote/v1/depth?symbol={A["toobit"]}&limit=100')
+    f = lambda r: (float(r[0]), float(r[1]) * A['toobit_ct'] * float(r[0]))
+    return [f(r) for r in j['b']], [f(r) for r in j['a']]
+
+
+def book_xt(A):
+    r = get(f'https://fapi.xt.com/future/market/v1/public/q/depth?symbol={A["xt"]}&level=500')['result']
+    f = lambda x: (float(x[0]), float(x[1]) * A['xt_ct'] * float(x[0]))
+    return [f(x) for x in r['b']], [f(x) for x in r['a']]
+
+
+def book_blofin(A):
+    d = get(f'https://openapi.blofin.com/api/v1/market/books?instId={A["blofin"]}&size=400')['data'][0]
+    f = lambda x: (float(x[0]), float(x[1]) * A['blofin_ct'] * float(x[0]))
+    return [f(x) for x in d['bids']], [f(x) for x in d['asks']]
+
+
 BOOKS = [('binance', book_binance), ('okx', book_okx), ('bybit', book_bybit), ('bitget', book_bitget),
          ('gate', book_gate), ('htx', book_htx), ('mexc', book_mexc), ('deribit', book_deribit),
          ('bitmex', book_bitmex), ('kraken', book_kraken), ('cryptocom', book_cryptocom),
-         ('hyperliquid', book_hyperliquid), ('dydx', book_dydx), ('bitfinex', book_bitfinex)]
+         ('hyperliquid', book_hyperliquid), ('dydx', book_dydx), ('bitfinex', book_bitfinex),
+         ('kucoin', book_kucoin), ('aster', book_aster), ('backpack', book_backpack), ('paradex', book_paradex),
+         ('bitunix', book_bitunix), ('lighter', book_lighter), ('toobit', book_toobit), ('xt', book_xt), ('blofin', book_blofin)]
 
 
 # ---------- open interest (USD), 24h volume (USD), funding per 8h ----------
@@ -310,9 +397,60 @@ def mk_bitmex(A):
     return {'oi': x['openInterest'], 'vol': x.get('foreignNotional24h') or 0, 'fund': x['fundingRate']}
 
 
+def mk_kucoin(A):
+    x = get(f'https://api-futures.kucoin.com/api/v1/contracts/{A["kucoin"]}')['data']
+    return {'oi': float(x['openInterest']) * A['kucoin_ct'] * x['markPrice'], 'vol': float(x['turnoverOf24h']),
+            'fund': float(x.get('fundingFeeRate') or 0)}
+
+
+def mk_aster(A):
+    t = get(f'https://fapi.asterdex.com/fapi/v1/ticker/24hr?symbol={A["aster"]}')
+    oi = get(f'https://fapi.asterdex.com/fapi/v1/openInterest?symbol={A["aster"]}')
+    f = get(f'https://fapi.asterdex.com/fapi/v1/premiumIndex?symbol={A["aster"]}')
+    return {'oi': float(oi['openInterest']) * float(f['markPrice']), 'vol': float(t['quoteVolume']), 'fund': float(f['lastFundingRate'])}
+
+
+def mk_backpack(A):
+    t = get(f'https://api.backpack.exchange/api/v1/ticker?symbol={A["backpack"]}')
+    return {'vol': float(t['quoteVolume'])}
+
+
+def mk_paradex(A):
+    x = get(f'https://api.prod.paradex.trade/v1/markets/summary?market={A["paradex"]}')['results'][0]
+    return {'oi': float(x['open_interest']) * float(x['mark_price']), 'vol': float(x['volume_24h']), 'fund': float(x['funding_rate'])}
+
+
+def mk_bitunix(A):
+    t = get(f'https://fapi.bitunix.com/api/v1/futures/market/tickers?symbols={A["bitunix"]}')['data'][0]
+    return {'vol': float(t['quoteVol'])}
+
+
+def mk_lighter(A):
+    x = get(f'https://mainnet.zklighter.elliot.ai/api/v1/orderBookDetails?market_id={A["lighter"]}')['order_book_details'][0]
+    return {'oi': float(x['open_interest_usd']), 'vol': float(x['daily_quote_token_volume'])}
+
+
+def mk_toobit(A):
+    t = get(f'https://api.toobit.com/quote/v1/contract/ticker/24hr?symbol={A["toobit"]}')
+    t = t[0] if isinstance(t, list) else t
+    return {'vol': float(t['qv'])}
+
+
+def mk_xt(A):
+    t = get(f'https://fapi.xt.com/future/market/v1/public/q/ticker?symbol={A["xt"]}')['result']
+    return {'vol': float(t['v'])}
+
+
+def mk_blofin(A):
+    t = get(f'https://openapi.blofin.com/api/v1/market/tickers?instId={A["blofin"]}')['data'][0]
+    return {'vol': float(t['volCurrency24h']) * float(t['last'])}
+
+
 MARKET = [('binance', mk_binance), ('okx', mk_okx), ('bybit', mk_bybit), ('bitget', mk_bitget), ('gate', mk_gate),
           ('htx', mk_htx), ('mexc', mk_mexc), ('deribit', mk_deribit), ('bitmex', mk_bitmex), ('kraken', mk_kraken),
-          ('cryptocom', mk_cryptocom), ('hyperliquid', mk_hyperliquid), ('dydx', mk_dydx), ('bitfinex', mk_bitfinex)]
+          ('cryptocom', mk_cryptocom), ('hyperliquid', mk_hyperliquid), ('dydx', mk_dydx), ('bitfinex', mk_bitfinex),
+          ('kucoin', mk_kucoin), ('aster', mk_aster), ('backpack', mk_backpack), ('paradex', mk_paradex), ('bitunix', mk_bitunix),
+          ('lighter', mk_lighter), ('toobit', mk_toobit), ('xt', mk_xt), ('blofin', mk_blofin)]
 
 
 def okx_candles(A, bar, pages):

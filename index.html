@@ -616,7 +616,7 @@ header.top .px{transform-origin:left center;transform:scale(calc(1 - var(--sh,0)
     <span class="status"><i class="dot" id="dot"></i><span id="src">laden…</span></span>
     <details class="note">
       <summary>Uitleg: waar de cijfers vandaan komen</summary>
-      <p><b>Limietorders</b> zijn echt: het zichtbare orderboek van de perp op tot 14 beurzen (niet elke munt staat op elke beurs; BitMEX heeft alleen BTC), in USD per blok. Waar een beurs PEPE per 1000 noteert (Binance, Bybit, Hyperliquid, Deribit) is de prijs teruggerekend naar 1 PEPE. Elk boek reikt maar zo ver als de beurs het geeft, dus verder van de prijs is het boek onvolledig: HTX ±0,35%, Crypto.com ±0,4%, OKX ±0,8%, MEXC ±1%, Bitget ±1,2%, dYdX ±1,5%, Hyperliquid ±2,4% (grove blokken), Gate ±3,5%, Bitfinex ±11%, Binance 1000 niveaus, Bybit 500 niveaus, en Deribit, BitMEX en Kraken het hele boek. MEXC, Kraken en Bitfinex blokkeren browsers en komen alleen uit de uurlijkse data (glasssphere-data.json en glasssphere-&lt;munt&gt;.json). Met <b>Gewogen naar volume</b> telt een beurs met meer diepte binnen ±1% dan zijn aandeel in het handelsvolume naar rato minder mee (dYdX en MEXC vooral). De kolom Stabiel in de tabel zegt hoeveel van de laatste 6 uur een muur er al stond, zodat muren die net verschijnen (mogelijke nepmuren) opvallen.</p>
+      <p><b>Limietorders</b> zijn echt: het zichtbare orderboek van de perp op tot 23 beurzen (niet elke munt staat op elke beurs; BitMEX heeft alleen BTC), in USD per blok. Waar een beurs PEPE per 1000 noteert (Binance, Bybit, Hyperliquid, Deribit) is de prijs teruggerekend naar 1 PEPE. Elk boek reikt maar zo ver als de beurs het geeft, dus verder van de prijs is het boek onvolledig: HTX ±0,35%, Crypto.com ±0,4%, OKX ±0,8%, MEXC ±1%, Bitget ±1,2%, dYdX ±1,5%, Hyperliquid ±2,4% (grove blokken), Gate ±3,5%, Bitfinex ±11%, Binance 1000 niveaus, Bybit 500 niveaus, en Deribit, BitMEX en Kraken het hele boek. MEXC, Kraken, Bitfinex, KuCoin, Aster, Lighter, Backpack, Paradex, BloFin, Toobit, Bitunix en XT komen alleen uit de uurlijkse data, ook als de pagina live is (de beurs blokkeert browsers of staat alleen in dat script). Toobit, Bitunix en XT staan standaard uit: hun volume en orderboek zijn veel groter dan bij hun omvang past (mogelijk opgeblazen); zet ze aan met de knoppen boven de grafiek. De uurlijkse data staat in glasssphere-data.json en glasssphere-&lt;munt&gt;.json. Met <b>Gewogen naar volume</b> telt een beurs met meer diepte binnen ±1% dan zijn aandeel in het handelsvolume naar rato minder mee (dYdX en MEXC vooral). De kolom Stabiel in de tabel zegt hoeveel van de laatste 6 uur een muur er al stond, zodat muren die net verschijnen (mogelijke nepmuren) opvallen.</p>
       <p><b>Stops</b> (stop-loss, koopstop, verkoopstop) staan bij geen enkele beurs in het publieke boek. Hier geschat: net boven elke top die nog niet is geraakt (koopstops van shorts en uitbraakkopers), net onder elke ongeraakte bodem (verkoopstops van longs), gewogen naar het volume rond die top of bodem en hoe recent die is, plus een kleine bijdrage op ronde $1000-niveaus. In de grafiek staan de sterkste stop-niveaus boven en onder de prijs als gele stippellijn; een score 0–100, geen bedrag.</p>
       <p><b>Liquidaties</b> zijn geschat uit de groei van de openstaande posities (open interest) per uur op Gate (de enige beurs met gratis uurgeschiedenis): nieuwe posities op de gemiddelde prijs van dat uur, voor de helft verdeeld naar waar de kaars sloot en voor de helft naar het aandeel kopende marktorders, met 5×, 10×, 25× en 50× hefboom (30/35/25/10%). Die mix paste het best bij Gates echte liquidaties (correlatie 0,78 per uur over 161 dagen). Niveaus die de prijs al raakte zijn weggehaald, en de bedragen zijn opgeschaald naar de openstaande posities van alle beurzen samen. De grootste liquidatieniveaus staan in de grafiek als paarse stippellijn.</p>
       <p><b>Eerste doel</b> in GlassSphere: voor de gekozen termijn (1 dag, 3 dagen of 1 week; standaard 1 dag) het grootste cluster boven en onder de prijs tussen 0,3× en 1× de verwachte bewegingsruimte (gemiddeld dagbereik × √dagen). De kans dat het bovenste eerst geraakt wordt, is de afstand naar het onderste gedeeld door de som van beide afstanden. Getest op Binance-data van 2022 tot 2026 (<code>backtests/glasssphere.md</code>): die kansen kwamen elk jaar goed uit, maar een trade richting het waarschijnlijkste doel met de stop op het andere cluster leverde na kosten gemiddeld niets op. Momentum, openstaande posities, financiering (funding), CVD en de liquiditeitstrek voorspelden de richting niet of te zwak, en tellen daarom niet mee.</p>
@@ -641,6 +641,17 @@ const EXCH = {
   hyperliquid: { name: 'Hyperliquid' },
   dydx:        { name: 'dYdX' },
   bitfinex:    { name: 'Bitfinex', snap: true },
+  // added later, all from the hourly data. doubt: volume and book far above what the exchange's size suggests, so off
+  // until switched on
+  kucoin:      { name: 'KuCoin', snap: true },
+  aster:       { name: 'Aster', snap: true },
+  lighter:     { name: 'Lighter', snap: true },
+  backpack:    { name: 'Backpack', snap: true },
+  paradex:     { name: 'Paradex', snap: true },
+  blofin:      { name: 'BloFin', snap: true },
+  toobit:      { name: 'Toobit', snap: true, doubt: true },
+  bitunix:     { name: 'Bitunix', snap: true, doubt: true },
+  xt:          { name: 'XT', snap: true, doubt: true },
 };
 // Per asset: symbols and contract sizes on each exchange (null = not listed there), book bins (raw books and the
 // hourly history, as in scripts/glasssphere_snapshot.py), bucket choices, auto bucket per range and price decimals.
@@ -733,18 +744,21 @@ const hzOf = k => horizons[k] || hzDefault(k);
 const $ = id => document.getElementById(id);
 const state = { zoom: 1, hoverX: null, asset: 'btc', data: null, live: false, src: '', range: 0, bucket: 0, tf: 60, horizon: 1, weighted: true, off: new Set(), hover: null };   // bucket 0 = auto
 const buckets = {};      // bucket per asset (0 = auto)
+let doubtSeen = false;
 try {
   const s = JSON.parse(localStorage.getItem('glasssphere-prefs') || '{}');
   if (s.rg != null) state.range = s.rg; if (s.bucket) buckets.btc = s.bucket; Object.assign(buckets, s.bks || {});
   if (s.tf) state.tf = s.tf; Object.assign(horizons, s.hzs || {}); if (ASSETS[s.asset]) state.asset = s.asset;
   if (s.weighted === false) state.weighted = false; (s.off || []).forEach(x => state.off.add(x));
+  doubtSeen = !!s.doubt;
 } catch (e) {}
+if (!doubtSeen) Object.keys(EXCH).filter(k => EXCH[k].doubt).forEach(k => state.off.add(k));   // once: the doubtful ones start off
 if (ASSETS[location.hash.slice(1)]) state.asset = location.hash.slice(1);
 let A = ASSETS[state.asset];
 state.bucket = A.buckets.includes(buckets[state.asset]) ? buckets[state.asset] : 0;
 state.horizon = hzOf(state.asset);
 const savePrefs = () => { buckets[state.asset] = state.bucket;
-  if (state.horizon === hzDefault(state.asset)) delete horizons[state.asset]; else horizons[state.asset] = state.horizon; try { localStorage.setItem('glasssphere-prefs', JSON.stringify({ asset: state.asset, rg: state.range, bks: buckets, tf: state.tf, hzs: horizons, weighted: state.weighted, off: [...state.off] })); } catch (e) {} };
+  if (state.horizon === hzDefault(state.asset)) delete horizons[state.asset]; else horizons[state.asset] = state.horizon; try { localStorage.setItem('glasssphere-prefs', JSON.stringify({ asset: state.asset, rg: state.range, bks: buckets, tf: state.tf, hzs: horizons, weighted: state.weighted, off: [...state.off], doubt: 1 })); } catch (e) {} };
 
 /* ---------- fetching ---------- */
 async function getJSON(url, opts = {}) {
@@ -1745,7 +1759,7 @@ function renderExchanges() {
   $('ex').innerHTML = Object.entries(EXCH).map(([k, e]) => {
     const has = state.data && state.data.books[k];
     const why = A[k] === null ? `${A.name} staat niet op ${e.name}` : e.snap && state.live ? 'Alleen in de uurlijkse data (de beurs blokkeert browsers)' : 'Niet bereikbaar';
-    const w = state.data?.weights[k], wt = has && state.weighted && w < 0.995 ? ` title="Telt voor ${Math.round(w * 100)}% mee"` : '';
+    const w = state.data?.weights[k], wt = e.doubt ? ` title="Volume en orderboek veel hoger dan de beurs groot is: standaard uit"` : has && state.weighted && w < 0.995 ? ` title="Telt voor ${Math.round(w * 100)}% mee"` : '';
     return `<button data-k="${k}" ${has ? wt : `disabled title="${why}"`} class="${has ? (state.off.has(k) ? 'off' : 'on') : 'off'}" aria-pressed="${has && !state.off.has(k)}">${e.name}${has && state.weighted && w < 0.995 ? ` <span style="color:var(--faint)">${Math.round(w * 100)}%</span>` : ''}</button>`;
   }).join('');
 }
@@ -1852,6 +1866,7 @@ async function loadLive() {
     }
     const books = await fetchBooks(); if (g !== gen) return false;
     if (!Object.keys(books).length) throw new Error('no books');
+    for (const [k, v] of Object.entries(site?.books || {})) if (!books[k]) books[k] = v;   // hourly-only exchanges (and any that failed just now)
     const last = series.candles[series.candles.length - 1][4];
     const ts = Date.now(), raw = { ts, price: live.fresh() || last, books, ...series, market, bookHist: state.data?.bookHist || site?.bookHist };
     setData(raw, 'live');

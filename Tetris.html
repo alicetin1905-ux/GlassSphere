@@ -595,11 +595,15 @@ function textPlane(w, h, pw, ph) {
   return { c, g: c.getContext('2d'), t, m };
 }
 // walls brake the price, stops and liquidations push it on (up for buy stops and short liquidations, down for the others)
-const KIND = { ask: 'wall', bid: 'wall', bstop: 'push', sliq: 'push', sstop: 'push', lliq: 'push' };
+const KIND = { ask: 'wall', bid: 'wall', bstop: 'push', sliq: 'push', sstop: 'push', lliq: 'push', tup: 'target', tdn: 'target' };
 function drawKindIcon(g, x, cy, s, r) {
   const k = KIND[r.type]; if (!k) return;
   g.save(); g.fillStyle = g.strokeStyle = r.t.c; g.shadowColor = r.t.c; g.shadowBlur = 8;
-  if (k === 'wall') {   // a small brick wall
+  if (k === 'target') {   // a bullseye, dark on the coloured plate of a target
+    g.shadowBlur = 0; g.strokeStyle = g.fillStyle = '#06110c'; g.lineWidth = Math.max(2.5, s * 0.1); const R0 = s * 0.46, cx = x + R0;
+    for (const f of [1, 0.6]) { g.beginPath(); g.arc(cx, cy, R0 * f, 0, 7); g.stroke(); }
+    g.beginPath(); g.arc(cx, cy, R0 * 0.22, 0, 7); g.fill();
+  } else if (k === 'wall') {   // a small brick wall
     const h = s * 0.8, w = s * 0.9, y0 = cy - h / 2; g.fillRect(x, y0, w, h); g.shadowBlur = 0;
     g.strokeStyle = 'rgba(5,4,12,.9)'; g.lineWidth = Math.max(2, s * 0.08);
     g.beginPath(); g.moveTo(x, y0 + h / 2); g.lineTo(x + w, y0 + h / 2); g.moveTo(x + w / 2, y0); g.lineTo(x + w / 2, y0 + h / 2);
@@ -619,12 +623,13 @@ function drawLabel(r) {
   const fP = `800 ${pf}px "JetBrains Mono", monospace`, fD = '600 30px "JetBrains Mono", monospace', fT = `700 ${COMPACT ? 42 : 32}px Inter, system-ui, sans-serif`;
   const wOf = (f, txt) => { g.font = f; return g.measureText(txt).width; };
   const IS = Math.min(c.height * 0.5, COMPACT ? 40 : 34), IW = KIND[r.type] ? IS + 12 : 0, x1 = 18 + IW + wOf(fP, ps) + 22, x2 = COMPACT ? x1 : x1 + wOf(fD, d) + 20, end = Math.min(c.width - 2, x2 + wOf(fT, r.t.n) + 16);
-  roundRect(g, 2, 3, end - 2, c.height - 6, Math.min(16, c.height / 3)); g.fillStyle = 'rgba(5,4,12,.82)'; g.fill();
-  g.lineWidth = 3; g.strokeStyle = r.t.c + (KIND[r.type] === 'push' ? 'dd' : '99'); g.setLineDash(KIND[r.type] === 'push' ? [12, 8] : []); g.stroke(); g.setLineDash([]);
+  const tg = KIND[r.type] === 'target';   // a target: a solid plate in its colour with dark letters, so it jumps out
+  roundRect(g, 2, 3, end - 2, c.height - 6, Math.min(16, c.height / 3)); g.fillStyle = tg ? r.t.c : 'rgba(5,4,12,.82)'; g.fill();
+  g.lineWidth = tg ? 4 : 3; g.strokeStyle = tg ? '#ffffff' : r.t.c + (KIND[r.type] === 'push' ? 'dd' : '99'); g.setLineDash(KIND[r.type] === 'push' ? [12, 8] : []); g.stroke(); g.setLineDash([]);
   drawKindIcon(g, 14, my, IS, r);
-  g.font = fP; g.fillStyle = '#ffffff'; g.fillText(ps, 18 + IW, my + 1);
-  if (!COMPACT) { g.font = fD; g.fillStyle = '#9fb3aa'; g.fillText(d, x1, my + 1); }
-  g.font = fT; g.fillStyle = new THREE.Color(r.t.c).lerp(WHITE, 0.35).getStyle(); g.fillText(r.t.n, x2, my + 2);
+  g.font = fP; g.fillStyle = tg ? '#06110c' : '#ffffff'; g.fillText(ps, 18 + IW, my + 1);
+  if (!COMPACT) { g.font = fD; g.fillStyle = tg ? 'rgba(6,17,12,.72)' : '#9fb3aa'; g.fillText(d, x1, my + 1); }
+  g.font = fT; g.fillStyle = tg ? '#06110c' : new THREE.Color(r.t.c).lerp(WHITE, 0.35).getStyle(); g.fillText(r.t.n, x2, my + 2);
   t.needsUpdate = true;
 }
 function drawSize(r) {
@@ -633,20 +638,63 @@ function drawSize(r) {
   const { g, c, t } = r.sz; g.clearRect(0, 0, c.width, c.height);
   g.textBaseline = 'middle'; g.textAlign = 'right'; g.font = `800 ${COMPACT ? 52 : 40}px "JetBrains Mono", monospace`;
   const w = g.measureText(s).width + 34;
-  roundRect(g, c.width - 2 - w, 3, w, c.height - 6, Math.min(16, c.height / 3)); g.fillStyle = 'rgba(5,4,12,.82)'; g.fill();
-  g.lineWidth = 3; g.strokeStyle = r.t.c + '99'; g.stroke();
-  g.fillStyle = r.cleared ? '#8a9a93' : '#ffffff'; g.fillText(s, c.width - 18, c.height / 2 + 1);
+  const tg = r.t.u === 'pct';
+  roundRect(g, c.width - 2 - w, 3, w, c.height - 6, Math.min(16, c.height / 3)); g.fillStyle = tg ? r.t.c : 'rgba(5,4,12,.82)'; g.fill();
+  g.lineWidth = tg ? 4 : 3; g.strokeStyle = tg ? '#ffffff' : r.t.c + '99'; g.stroke();
+  g.fillStyle = tg ? '#06110c' : r.cleared ? '#8a9a93' : '#ffffff'; g.fillText(s, c.width - 18, c.height / 2 + 1);
   t.needsUpdate = true;
 }
 
-// the current price: a laser line across the bars in the colour of the last tick (green up, red down) with a spark
-// running along it, and a price tag in the middle with the change and how far the nearest walls are
+// the current price: a heart monitor across the tubes in the colour of the last tick (green up, red down). A bright
+// head sweeps along the line and writes the trace one beat at a time; the heart beats faster and harder while the
+// price moves and calms down when it is still. A price tag in the middle tells the change and how far the walls are
 const slab = new THREE.Group(); scene.add(slab);
-const slabEdge = new THREE.Mesh(new THREE.PlaneGeometry(BW + 1.4, 0.07), new THREE.MeshBasicMaterial({ color: 0x7ff0d0, transparent: true, opacity: 1, blending: ADD, depthWrite: false }));
-slabEdge.position.set(BW / 2, 0, 0.75); slab.add(slabEdge);
+const ecgCol = new THREE.Color(0x7ff0d0), ECGN = 280, ecgX0 = -0.7, ecgW = BW + 1.4, ecgV = new Float32Array(ECGN);
+const heart = { ph: 0, heat: 0, head: 0, beat: 0 };
+function ecgRibbon(hw, op, dark) {   // a strip of quads along the trace, hw thick on each side
+  const g = new THREE.BufferGeometry(), idx = [];
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ECGN * 6), 3).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(ECGN * 6), 3).setUsage(THREE.DynamicDrawUsage));
+  for (let i = 0; i < ECGN - 1; i++) idx.push(2 * i, 2 * i + 1, 2 * i + 2, 2 * i + 1, 2 * i + 3, 2 * i + 2);
+  g.setIndex(idx);
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: !dark, color: dark ? 0x020106 : 0xffffff, transparent: true, opacity: op, blending: dark ? THREE.NormalBlending : ADD, depthWrite: false, side: THREE.DoubleSide }));
+  m.frustumCulled = false; m.position.z = 0.78; m.renderOrder = dark ? 2.5 : 2.7; slab.add(m);   // over the glass, under the labels
+  return { m, g, hw, dark };
+}
+const ecgDark = ecgRibbon(0.1, 0.7, true), ecgCore = ecgRibbon(0.04, 1), ecgGlow = ecgRibbon(0.24, 0.45);   // a dark edge keeps the trace readable over the bright tubes
+// one heartbeat over u = 0..1: a small P wave, the sharp QRS spike, the round T wave, then the flat line
+function ecgShape(u) {
+  const bump = (a, b, h) => u > a && u < b ? h * Math.sin(Math.PI * (u - a) / (b - a)) : 0;
+  const tri = (a, m, b, h) => u > a && u < b ? h * (u < m ? (u - a) / (m - a) : (b - u) / (b - m)) : 0;
+  return bump(0.08, 0.18, 0.12) + tri(0.22, 0.24, 0.26, -0.14) + tri(0.25, 0.28, 0.31, 1.15) + tri(0.3, 0.32, 0.35, -0.3) + bump(0.44, 0.62, 0.26);
+}
+function updateHeart(rdt) {
+  heart.heat *= Math.exp(-rdt / 20);
+  const bpm = 54 + Math.min(80, heart.heat * 12), amp = Math.min(1.4, RS * (0.6 + Math.min(0.4, heart.heat * 0.08)));
+  const n0 = Math.floor(heart.head / ecgW * (ECGN - 1)), ph0 = heart.ph;
+  heart.ph += rdt * bpm / 60; heart.head = (heart.head + rdt * ecgW / 2.8) % ecgW;   // one sweep in 2.8 s
+  if (Math.floor(heart.ph - 0.28) > Math.floor(ph0 - 0.28)) heart.beat = 1;   // the spike: the glow and the tag throb
+  const n1 = Math.floor(heart.head / ecgW * (ECGN - 1)), cnt = (n1 - n0 + ECGN) % ECGN;
+  for (let k = 1; k <= cnt; k++) { const i = (n0 + k) % ECGN, ph = ph0 + (heart.ph - ph0) * k / cnt; ecgV[i] = ecgShape(ph - Math.floor(ph)) * amp; }
+  heart.beat = Math.max(0, heart.beat - rdt * 3);
+  const hot = tmpC.copy(ecgCol).lerp(WHITE, 0.55);
+  for (const R of [ecgDark, ecgCore, ecgGlow]) {
+    const cc = R === ecgCore ? hot : ecgCol;
+    const P = R.g.attributes.position.array, C = R.g.attributes.color.array;
+    for (let i = 0; i < ECGN; i++) {
+      const x = ecgX0 + i / (ECGN - 1) * ecgW, y = ecgV[i], a = Math.max(0, i - 1), b = Math.min(ECGN - 1, i + 1);
+      let tx = (b - a) / (ECGN - 1) * ecgW, ty = ecgV[b] - ecgV[a]; const l = Math.hypot(tx, ty) || 1; tx /= l; ty /= l;
+      const d = (heart.head - (x - ecgX0) + ecgW) % ecgW, br = d > ecgW * 0.93 ? 0 : 0.2 + 0.8 * Math.exp(-d / (ecgW * 0.3));   // fades behind the head, a gap in front of it
+      const j = i * 6;
+      P[j] = x + ty * R.hw; P[j + 1] = y - tx * R.hw; P[j + 2] = 0; P[j + 3] = x - ty * R.hw; P[j + 4] = y + tx * R.hw; P[j + 5] = 0;
+      for (const o of [0, 3]) { C[j + o] = cc.r * br; C[j + o + 1] = cc.g * br; C[j + o + 2] = cc.b * br; }
+    }
+    R.g.attributes.position.needsUpdate = true; R.g.attributes.color.needsUpdate = true;
+  }
+}
 const laserGlow = new THREE.Mesh(new THREE.PlaneGeometry(BW + 1.8, 1.0), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.3, blending: ADD, depthWrite: false }));
 laserGlow.position.set(BW / 2, 0, 0.7); slab.add(laserGlow);
-const sweep = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.9), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.9, blending: ADD, depthWrite: false }));
+const sweep = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), new THREE.MeshBasicMaterial({ map: glowTex, color: 0x7ff0d0, transparent: true, opacity: 0.9, blending: ADD, depthWrite: false }));
 sweep.position.z = 0.8; slab.add(sweep);
 const TAGH = COMPACT ? RS * 0.82 : Math.min(1.45, RS * 1.12), slabL = textPlane(1536, 180, TAGH * 8.53, TAGH); slabL.m.material.opacity = 1; slabL.m.position.set(BW / 2, 0, 0.9); slabL.m.renderOrder = 4; slab.add(slabL.m);   // in the middle of the tubes, between the prices and the amounts
 let slabStr = '', tagDir = 0, tagFlash = 0;
@@ -998,20 +1046,24 @@ function makeRow(lv) {
     for (const m of [r.glowA, r.refl]) scene.add(m);
     scene.add(r.edge); r.glowA.renderOrder = 0; r.gas.renderOrder = 1; r.bar.renderOrder = 2;
   }
-  if (t.u === 'pct') {
+  if (t.u === 'pct') {   // a target: a gate of running chevrons, framed, with a beacon at each end
     const tex = chevTex(lv.type === 'tup');
     const gm = new THREE.Mesh(new THREE.BoxGeometry(BW, 0.56, 0.56), new THREE.MeshBasicMaterial({ map: tex, color: t.col, transparent: true, opacity: 0, blending: ADD, depthWrite: false }));
     gm.position.x = BW / 2; scene.add(gm);
-    const ge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(BW, 0.8, 0.8)), new THREE.LineBasicMaterial({ color: t.col, transparent: true, opacity: 0, blending: ADD }));
+    const ge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(BW, 0.8, 0.8)), new THREE.LineBasicMaterial({ color: t.col.clone().lerp(WHITE, 0.45), transparent: true, opacity: 0, blending: ADD }));
     ge.position.x = BW / 2; scene.add(ge);
-    r.gate = { m: gm, e: ge, tex }; r.endX = BW;
+    const gd = [-1, 1].map(sg => { const d = new THREE.Mesh(diaGeo, new THREE.MeshBasicMaterial({ color: t.col.clone().lerp(WHITE, 0.35), transparent: true, opacity: 0, blending: ADD, depthWrite: false }));
+      d.position.x = sg < 0 ? -0.55 : BW + 0.55; scene.add(d); return d; });
+    r.gate = { m: gm, e: ge, tex, d: gd }; r.endX = BW;
   }
   rows.push(r); drawLabel(r);
   return r;
 }
+const diaGeo = new THREE.OctahedronGeometry(0.34);
 function disposeRow(r) {
   const objs = [r.lbl.m, r.sz.m, r.halo, r.hit]; if (r.gate) objs.push(r.gate.m, r.gate.e);
   for (const o of objs) { scene.remove(o); o.geometry.dispose(); if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+  if (r.gate) for (const d of r.gate.d) { scene.remove(d); d.material.dispose(); }
   for (const o of [r.bar, r.gas, r.glowA, r.refl, r.band]) if (o) { scene.remove(o); o.material.dispose(); }
   for (const k in r.wires || {}) { const w = r.wires[k]; scene.remove(w); w.geometry.dispose(); w.material.dispose(); }
   if (r.edge) scene.remove(r.edge);   // the caps share their material   // the geometry and texture are shared
@@ -1659,7 +1711,7 @@ function update(dt) {
       REGS.okx.open = Math.max(REGS.okx.open, 0.6);
       if (tr.usd >= 1e6) floatText(x, sy + (tr.buy ? 1 : -1), (tr.buy ? 'koop ' : 'verkoop ') + fmtUsd(tr.usd), tr.buy ? '#35ffb0' : '#ff4d6a');
       if (tr.usd >= 3e6) feed(`<b>${tr.buy ? 'Grote koop' : 'Grote verkoop'}</b> ${fmtUsd(tr.usd)} op ${fmtP(tr.px)}`, tr.buy ? TY.bid.c : TY.ask.c);
-      slabEdge.material.color.set(tr.buy ? 0x35ffb0 : 0xff4d6a);
+      ecgCol.set(tr.buy ? 0x35ffb0 : 0xff4d6a); heart.heat += 0.6;
     }
   }
 
@@ -1768,7 +1820,7 @@ function update(dt) {
 
   // HUD
   if ((shownT -= dt) <= 0) { shownT = 0.5; const v = Math.round(p * 10 ** A.dec);   // in the coin's own decimals
-    if (v !== lastPx) { const el = $('px'); el.textContent = fmtP(p); el.className = v > lastPx ? 'u' : 'd'; if (lastPx) { tagDir = v > lastPx ? 1 : -1; tagFlash = 1; } lastPx = v; shown = p; } }
+    if (v !== lastPx) { const el = $('px'); el.textContent = fmtP(p); el.className = v > lastPx ? 'u' : 'd'; if (lastPx) { tagDir = v > lastPx ? 1 : -1; tagFlash = 1; heart.heat += Math.abs(v - lastPx) / 10 ** A.dec / p * 1e4; } lastPx = v; shown = p; } }
   const chg = ref24 ? fmtPct((shown / ref24 - 1) * 100) + (COMPACT ? '' : ' 24u') : mode === 'demo' ? fmtPct((shown / P0 - 1) * 100) + ' t.o.v. 13:21' : '';
   if ($('chg').textContent !== chg) $('chg').textContent = chg;
   $('s-clr').textContent = nCleared; $('s-eat').textContent = eaten ? fmtUsd(eaten).replace(' mln', 'M').replace(' mld', 'B') : '$0';
@@ -1784,12 +1836,13 @@ function render(rdt) {
   { // the tag stays in the gap between the two sides (where no label is), the laser line itself sits at the price
     const lhh = (COMPACT ? Math.min(1.05, 0.86 * RS) : 0.8) / 2, mo = Math.max(0, RS - lhh - TAGH / 2 - 0.03), y0 = slab.position.y;
     const ty = Math.abs(y0) < 1.5 * RS ? Math.max(-mo, Math.min(mo, y0)) : y0; slabL.m.position.y = ty - y0; }
-  sweep.position.x = -0.7 + ((t * 9) % (BW + 1.4));
-  slabEdge.material.color.lerp(tmpC.set(tagDir > 0 ? UPC : tagDir < 0 ? DNC : NTC), Math.min(1, rdt * 4));
-  slabEdge.material.opacity = 0.8 + 0.2 * Math.sin(t * 6);
-  laserGlow.material.color.copy(slabEdge.material.color); sweep.material.color.copy(slabEdge.material.color).lerp(WHITE, 0.3);
-  laserGlow.material.opacity = 0.28 + 0.35 * tagFlash; laserGlow.scale.y = 1 + 0.6 * tagFlash;
-  tagFlash = Math.max(0, tagFlash - rdt * 2.5); slabL.m.scale.setScalar(1 + 0.05 * tagFlash);
+  ecgCol.lerp(tmpC.set(tagDir > 0 ? UPC : tagDir < 0 ? DNC : NTC), Math.min(1, rdt * 4));
+  updateHeart(rdt);
+  const hi = Math.round(heart.head / ecgW * (ECGN - 1));   // the writing head
+  sweep.position.set(ecgX0 + heart.head, ecgV[hi], 0.8); sweep.scale.setScalar(0.8 + 0.8 * heart.beat);
+  laserGlow.material.color.copy(ecgCol); sweep.material.color.copy(ecgCol).lerp(WHITE, 0.5);
+  laserGlow.material.opacity = 0.16 + 0.3 * heart.beat + 0.2 * tagFlash; laserGlow.scale.y = 1 + 0.8 * heart.beat;
+  tagFlash = Math.max(0, tagFlash - rdt * 2.5); slabL.m.scale.setScalar(1 + 0.04 * heart.beat + 0.03 * tagFlash);
   const scanY = 15 * RS - ((t * 5 * RS) % (34 * RS));
   beam.position.y = scanY;
 
@@ -1876,7 +1929,7 @@ function render(rdt) {
     r.halo.scale.set(Math.max(1.5, r.endX + 1.6), 1.7 + near * 0.6, 1);
     r.halo.position.set(r.endX / 2, y, -0.6);
     r.band.position.set(RX, y, -0.68); r.band.material.opacity = (r.gone ? 0 : Math.abs(Math.round(r.y / RS)) % 2 ? 0.035 : 0) * dim;
-    r.halo.material.opacity = fade * (r.cleared ? 0.03 : 0.16 + 0.07 * Math.sin(t * 2.2 + y * 0.7) + near * 0.22 + r.hl * 0.45 + 0.7 * wb + (r.flare > 0 ? 0.35 * Math.abs(Math.sin(t * 22)) : 0));
+    r.halo.material.opacity = fade * (r.cleared ? 0.03 : 0.16 + (r.gate ? 0.3 + 0.15 * Math.sin(t * 4) : 0) + 0.07 * Math.sin(t * 2.2 + y * 0.7) + near * 0.22 + r.hl * 0.45 + 0.7 * wb + (r.flare > 0 ? 0.35 * Math.abs(Math.sin(t * 22)) : 0));
     const lo = (r.gone ? fadeL : T - r.born < 0.35 ? 0 : r.cleared ? 0.3 : 1) * (exS === 0 ? 0.35 : 1);
     r.lbl.m.material.opacity = r.gone ? Math.min(r.lbl.m.material.opacity, lo) : r.lbl.m.material.opacity + (lo - r.lbl.m.material.opacity) * Math.min(1, rdt * 6);
     r.sz.m.material.opacity = r.lbl.m.material.opacity;
@@ -1884,9 +1937,10 @@ function render(rdt) {
       r.gate.m.position.y = r.gate.e.position.y = y;
       r.gate.tex.offset.y += rdt * (r.type === 'tup' ? -1.2 : 1.2);
       const pulse = 0.5 + 0.5 * Math.sin(t * 4);
-      r.gate.m.material.opacity = fade * (r.cleared ? 0.06 : 0.45 + 0.35 * pulse + near * 0.3);
-      r.gate.e.material.opacity = fade * (r.cleared ? 0.15 : 0.6 + 0.4 * pulse);
-      r.gate.m.scale.y = r.gate.m.scale.z = 1 + 0.12 * pulse;
+      r.gate.m.material.opacity = fade * (r.cleared ? 0.06 : 0.7 + 0.3 * pulse + near * 0.3);
+      r.gate.e.material.opacity = fade * (r.cleared ? 0.15 : 0.85 + 0.15 * pulse);
+      r.gate.m.scale.y = r.gate.m.scale.z = 1 + 0.18 * pulse;
+      for (const d of r.gate.d) { d.position.y = y; d.rotation.y += rdt * 2.2; d.scale.setScalar((0.85 + 0.35 * pulse) * Math.min(1.2, RS)); d.material.opacity = fade * (r.cleared ? 0.1 : 0.75 + 0.25 * pulse); }
     }
   }
   // the sides follow the rows there are; the label strip covers the well's height

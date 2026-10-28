@@ -1,8 +1,8 @@
 {
   "munten": {
-    "btc": true, "eth": true, "sol": true, "bnb": false, "xrp": false, "doge": false,
-    "sui": false, "ena": false, "pepe": false, "wld": false, "near": false,
-    "hype": false, "zec": false, "ltc": false, "ada": false, "uni": false, "link": false
+    "btc": true, "eth": true, "sol": true, "bnb": true, "xrp": true, "doge": true,
+    "sui": true, "ena": true, "pepe": true, "wld": true, "near": true,
+    "hype": true, "zec": true, "ltc": true, "ada": true, "uni": true, "link": true
   },
   "stil": {
     "van": "01:00",

@@ -1974,7 +1974,9 @@ function renderExchanges() {
   $('ex').innerHTML = Object.entries(EXCH).map(([k, e]) => {
     const has = state.data && state.data.books[k];
     const why = A[k] === null ? `${A.name} staat niet op ${e.name}` : e.snap && state.live ? 'Alleen in de uurlijkse data (de beurs blokkeert browsers)' : 'Niet bereikbaar';
-    const w = state.data?.weights[k], wt = e.doubt ? ` title="Volume en orderboek veel hoger dan de beurs groot is: standaard uit"` : has && state.weighted && w < 0.995 ? ` title="Telt voor ${Math.round(w * 100)}% mee"` : '';
+    const w = state.data?.weights[k], t0 = state.data?.bookAge?.[k], age = t0 ? Math.round((Date.now() - t0) / 6e4) : null;
+    const old = age != null ? ` · orderboek van ${age < 60 ? age + ' min' : fx(age / 60, 1) + ' uur'} geleden (uurlijkse data), zonder wat de prijs sindsdien raakte` : '';
+    const wt = e.doubt ? ` title="Volume en orderboek veel hoger dan de beurs groot is: standaard uit${old}"` : has && (state.weighted && w < 0.995 || old) ? ` title="${state.weighted && w < 0.995 ? `Telt voor ${Math.round(w * 100)}% mee` : 'Telt volledig mee'}${old}"` : '';
     return `<button data-k="${k}" ${has ? wt : `disabled title="${why}"`} class="${has ? (state.off.has(k) ? 'off' : 'on') : 'off'}" aria-pressed="${has && !state.off.has(k)}">${e.name}${has && state.weighted && w < 0.995 ? ` <span style="color:var(--faint)">${Math.round(w * 100)}%</span>` : ''}</button>`;
   }).join('');
 }
@@ -2059,7 +2061,8 @@ function setData(raw, mode) {
   $('upd').textContent = t.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
   $('dot').className = 'dot ' + (mode === 'live' ? 'live' : 'snap');
   const n = Object.keys(raw.books).length;
-  $('src').textContent = mode === 'live' ? `live · prijs per trade · ${n} orderboeken elke 15 s`
+  const nOld = Object.keys(raw.bookAge || {}).length;
+  $('src').textContent = mode === 'live' ? `live · prijs per trade · ${n - nOld} orderboeken elke 15 s${nOld ? `, ${nOld} uit de uurlijkse data` : ''}`
     : mode === 'site' ? `elk uur ververst · ${n} orderboeken · ${state.data.bookHist.length} uur boekgeschiedenis`
     : `${n} orderboeken`;
   refresh();
@@ -2082,15 +2085,23 @@ async function loadLive() {
     }
     const books = await fetchBooks(); if (g !== gen) return false;
     if (!Object.keys(books).length) throw new Error('no books');
-    for (const [k, v] of Object.entries(site?.books || {})) if (!books[k]) books[k] = v;   // hourly-only exchanges (and any that failed just now)
     const last = series.candles[series.candles.length - 1][4];
+    // hourly-only exchanges (and any that failed just now) from the hourly data. That book can be hours old: what the
+    // price traded through since it was taken is gone (filled or pulled), so it is left out; else a wall the price broke
+    // would come back at the same price from the old book. What is left counts as it stood then.
+    const since = site?.ts || 0, now = live.fresh() || last, bookAge = {};
+    let hiS = now, loS = now;
+    for (const c of series.candles15 || []) if (c[0] + 9e5 > since) { if (c[2] > hiS) hiS = c[2]; if (c[3] < loS) loS = c[3]; }
+    for (const [k, v] of Object.entries(site?.books || {})) if (!books[k]) {
+      books[k] = { b: v.b.filter(r => r[0] < loS), a: v.a.filter(r => r[0] > hiS) }; bookAge[k] = since;
+    }
     // the reading's open interest and taker share: the hourly line over all exchanges, while it is fresh (Gate's own
     // live stats otherwise)
     const agg = site?.oiSrc && Date.now() - site.ts < 2 * 3.6e6 ? { oi: site.oi, taker: site.taker, oiSrc: site.oiSrc } : {};
     if (agg.oi && series.bybitOi && Object.keys(series.bybitOi).length > 1) {
       agg.oi = addOi(agg.oi, series.bybitOi); agg.oiSrc = { ...agg.oiSrc, bybit: Object.keys(series.bybitOi).length };
     }
-    const ts = Date.now(), raw = { ts, price: live.fresh() || last, books, ...series, ...agg, market, bookHist: state.data?.bookHist || site?.bookHist };
+    const ts = Date.now(), raw = { ts, price: live.fresh() || last, books, bookAge, ...series, ...agg, market, bookHist: state.data?.bookHist || site?.bookHist };
     setData(raw, 'live');
     const e = histEntry(books, state.data.weights, last, ts);
     liveHist = [...liveHist.filter(x => x.t !== e.t), e].slice(-48);

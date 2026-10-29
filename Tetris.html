@@ -591,7 +591,7 @@ const valStr = r => r.t.u === 'usd' ? fmtUsd(r.val) : r.t.u === 'score' ? stopWo
 const hhmmss = ts => new Date(ts).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 const rnd = (a, b) => a + Math.random() * (b - a);
 const gauss = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
-const thOf = u => u > 0 ? 0.12 + 0.78 * Math.min(1, u / MAXB) : 0;   // units -> bar thickness
+const thOf = u => u > 0 ? 0.08 + 0.95 * Math.min(1, u / MAXB) ** 1.4 : 0;   // units -> bar thickness: small stays thin, the biggest stands out
 const baseOf = (type, rel) => TY[type].u === 'pct' ? 0 : Math.max(1, Math.min(MAXB, Math.round(rel * MAXB)));
 
 // row spacing: a tall phone screen spreads the rows out so the well fills the height (cubes stay cubes)
@@ -637,14 +637,15 @@ const blockTex = canvasTex(64, 64, g => {
 const tubeGeo = new THREE.CylinderGeometry(1, 1, 1, 40, 1, true), capGeo = new THREE.CylinderGeometry(1, 1, 1, 24);
 const TUBE_VS = `varying vec3 vN; varying vec3 vV; varying vec2 vUv;
 void main() { vUv = uv; vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = -mv.xyz; vN = normalMatrix * normal; gl_Position = projectionMatrix * mv; }`;
-const TUBE_HEAD = `uniform vec3 uCol; uniform float uOp, uLen, uOff, uHot; varying vec3 vN; varying vec3 vV; varying vec2 vUv;
+const TUBE_HEAD = `uniform vec3 uCol; uniform float uOp, uLen, uOff, uHot, uDash; varying vec3 vN; varying vec3 vV; varying vec2 vUv;
 float spec(vec3 n, vec3 v, vec3 l, float k) { return pow(max(dot(n, normalize(normalize(l) + v)), 0.0), k); }
 `;
 const GAS_FS = TUBE_HEAD + `void main() {
   float nv = abs(dot(normalize(vN), normalize(vV))), d = min(vUv.y, 1.0 - vUv.y) * uLen;
   float wisp = 0.95 + 0.05 * sin((vUv.y + uOff) * 18.85) * sin((vUv.y - uOff * 0.6) * 7.0 + 1.3);
   vec3 c = uCol * pow(nv, 1.3) * wisp + mix(uCol, vec3(1.0), 0.7) * pow(nv, 40.0) * uHot;
-  gl_FragColor = vec4(c, uOp * smoothstep(0.3, 0.48, d));
+  float dash = uDash > 0.5 ? 0.12 + 0.88 * step(0.45, fract(vUv.y * uLen / 0.7 + uOff * 2.0)) : 1.0;   // a new wall: broken gas
+  gl_FragColor = vec4(c, uOp * smoothstep(0.3, 0.48, d) * dash);
 }`;
 const GLASS_FS = TUBE_HEAD + `void main() {
   vec3 n = normalize(vN), v = normalize(vV);
@@ -660,7 +661,7 @@ const METAL_FS = TUBE_HEAD + `void main() {
 }`;
 // a shader material that still reads like the basic ones: .color and .opacity drive the uniforms
 function tubeMat(fs, col, opts) {
-  const u = { uCol: { value: new THREE.Color(col) }, uOp: { value: 1 }, uLen: { value: 1 }, uOff: { value: Math.random() }, uHot: { value: 0 } };
+  const u = { uCol: { value: new THREE.Color(col) }, uOp: { value: 1 }, uLen: { value: 1 }, uOff: { value: Math.random() }, uHot: { value: 0 }, uDash: { value: 0 } };
   const m = new THREE.ShaderMaterial(Object.assign({ uniforms: u, vertexShader: TUBE_VS, fragmentShader: fs, transparent: true, depthWrite: false }, opts));
   m.color = u.uCol.value; Object.defineProperty(m, 'opacity', { get: () => u.uOp.value, set: v => { u.uOp.value = v; } });
   return m;
@@ -676,7 +677,7 @@ const neonGlowTex = canvasTex(256, 64, g => {
   const h = g.createLinearGradient(0, 0, 256, 0); h.addColorStop(0, 'rgba(0,0,0,0)'); h.addColorStop(0.05, 'rgba(0,0,0,1)'); h.addColorStop(0.95, 'rgba(0,0,0,1)'); h.addColorStop(1, 'rgba(0,0,0,0)');
   g.fillStyle = h; g.fillRect(0, 0, 256, 64);
 });
-const glowGeo = new THREE.PlaneGeometry(1, 1), WIREN = 14;
+const glowGeo = new THREE.PlaneGeometry(1, 1), WIREN = 20;
 const barTex = canvasTex(512, 64, g => {
   const gr = g.createLinearGradient(0, 0, 0, 64); gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.2, '#e4e4e4'); gr.addColorStop(0.6, '#a6a6a6'); gr.addColorStop(1, '#666666');
   g.fillStyle = gr; g.fillRect(0, 0, 512, 64);
@@ -778,28 +779,35 @@ function drawKindIcon(g, x, cy, s, r) {
   g.restore();
 }
 function drawLabel(r) {
-  const key = r.price + '|' + r.type;   // no distance in % any more: the price itself gets the room, big
+  if (r.lead && r.lead !== r) { r.lblStr = ''; return; }   // a level sharing its slot: the lead's label names it
+  const others = (r.grp || []).filter(x => x !== r).map(x => x.t.n);   // a target sharing its slot: its arrow and the others' names
+  const names = r.gate && others.length ? (r.t.up ? '▲ ' : '▼ ') + others.join(' · ') : [r.t.n, ...others].join(' · ');
+  const key = r.price + '|' + names;   // no distance in % any more: the price itself gets the room, big
   if (key === r.lblStr) return; r.lblStr = key;
   const { g, c, t } = r.lbl; g.clearRect(0, 0, c.width, c.height);
   g.textBaseline = 'middle'; const my = c.height / 2;
   const ps = fmtP(r.price), pf = Math.min(COMPACT ? 76 : 60, c.height * 0.8, (COMPACT ? 330 : 290) / (ps.length * 0.6));
   const fP = `800 ${pf}px "JetBrains Mono", monospace`, fT = `700 ${COMPACT ? 42 : 32}px Inter, system-ui, sans-serif`;
   const wOf = (f, txt) => { g.font = f; return g.measureText(txt).width; };
-  const IS = Math.min(c.height * 0.5, COMPACT ? 40 : 34), IW = KIND[r.type] ? IS + 12 : 0, x2 = 18 + IW + wOf(fP, ps) + 22, tw = wOf(fT, r.t.n), fit = Math.min(1, (c.width - 20 - x2) / tw), end = Math.min(c.width - 2, x2 + tw * fit + 16);
+  const IS = Math.min(c.height * 0.5, COMPACT ? 40 : 34), IW = KIND[r.type] ? IS + 12 : 0, x2 = 18 + IW + wOf(fP, ps) + 22, tw = wOf(fT, names), fit = Math.min(1, (c.width - 20 - x2) / tw), end = Math.min(c.width - 2, x2 + tw * fit + 16);
   const tg = KIND[r.type] === 'target';   // a target: a solid plate in its colour with dark letters, so it jumps out
   roundRect(g, 2, 3, end - 2, c.height - 6, Math.min(16, c.height / 3)); g.fillStyle = tg ? r.t.c : 'rgba(5,4,12,.82)'; g.fill();
   g.lineWidth = tg ? 4 : 3; g.strokeStyle = tg ? '#ffffff' : r.t.c + (KIND[r.type] === 'push' ? 'dd' : '99'); g.setLineDash(KIND[r.type] === 'push' ? [12, 8] : []); g.stroke(); g.setLineDash([]);
   drawKindIcon(g, 14, my, IS, r);
   g.font = fP; g.fillStyle = tg ? '#06110c' : '#ffffff'; g.fillText(ps, 18 + IW, my + 1);
   g.font = fit < 1 ? fT.replace(/\d+px/, m => Math.floor(parseInt(m) * fit) + 'px') : fT;   // a long kind shrinks to fit beside the big price
-  g.fillStyle = tg ? '#06110c' : new THREE.Color(r.t.c).lerp(WHITE, 0.35).getStyle(); g.fillText(r.t.n, x2, my + 2);
+  g.fillStyle = tg ? '#06110c' : new THREE.Color(r.t.c).lerp(WHITE, 0.35).getStyle(); g.fillText(names, x2, my + 2);
+  r.lblW = end / 100;   // its width in the scene (100 px a unit), so the amount plate keeps clear of it
   t.needsUpdate = true;
 }
 function drawSize(r) {
-  const s = r.cleared && r.t.u !== 'pct' ? 'geveegd' : valStr(r);
-  if (s === r.sizeStr) return; r.sizeStr = s;
+  if (r.lead && r.lead !== r) { r.sizeStr = ''; return; }
+  const G = r.grp || [r], s = G.map(x => x.cleared && x.t.u !== 'pct' ? 'geveegd' : valStr(x)).join(' · ').replace(COMPACT && G.length > 1 ? 'eerst · ' : '\0', '');   // every level in the slot (shorter on a phone)
+  const room = Math.round(Math.min(640, (r.endX - 1.2 - (r.lblW || 4)) * 100));   // what the label leaves free on the tube
+  if (s + room === r.sizeStr) return; r.sizeStr = s + room;
   const { g, c, t } = r.sz; g.clearRect(0, 0, c.width, c.height);
-  g.textBaseline = 'middle'; g.textAlign = 'right'; g.font = `800 ${COMPACT ? 52 : 40}px "JetBrains Mono", monospace`;
+  g.textBaseline = 'middle'; g.textAlign = 'right'; const f0 = COMPACT ? 52 : 40; g.font = `800 ${f0}px "JetBrains Mono", monospace`;
+  const k = Math.min(1, (Math.max(120, room) - 40) / g.measureText(s).width); if (k < 1) g.font = `800 ${Math.floor(f0 * k)}px "JetBrains Mono", monospace`;
   const w = g.measureText(s).width + 34;
   const tg = r.t.u === 'pct';
   roundRect(g, c.width - 2 - w, 3, w, c.height - 6, Math.min(16, c.height / 3)); g.fillStyle = tg ? r.t.c : 'rgba(5,4,12,.82)'; g.fill();
@@ -881,9 +889,10 @@ const sideMat = col => new THREE.MeshBasicMaterial({ map: vGrad, color: col, tra
 const sideUp = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), sideMat(0xff4d6a)), sideDn = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), sideMat(0x35ffb0));
 sideDn.rotation.z = Math.PI; for (const m of [sideUp, sideDn]) { m.position.set(RX, 0, -0.72); m.scale.set(RW + 1, 1, 1); m.renderOrder = -3; scene.add(m); }
 let sideTop = 13.5 * RS, sideBot = -13.5 * RS;
-const sideLbl = (txt, css) => { const tp = textPlane(512, 64, 4.8, 0.6); tp.m.material.opacity = 0.75; const g = tp.g;
-  g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = '700 34px "JetBrains Mono", monospace'; g.fillStyle = css; g.shadowColor = css; g.shadowBlur = 10;
-  g.fillText(txt, 256, 33); tp.t.needsUpdate = true; tp.m.position.set(BW / 2, 0, 0.1); scene.add(tp.m); return tp.m; };
+const SLW = Math.min(BW * 0.75, 13);   // the side names: big neon letters over and under the board
+const sideLbl = (txt, css) => { const tp = textPlane(1024, 128, SLW, SLW / 8); tp.m.material.opacity = 0.95; const g = tp.g;
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = '800 72px "JetBrains Mono", monospace'; g.fillStyle = css; g.shadowColor = css; g.shadowBlur = 26;
+  g.fillText(txt, 512, 66); g.shadowBlur = 8; g.fillStyle = '#ffffff'; g.globalAlpha = 0.35; g.fillText(txt, 512, 66); g.globalAlpha = 1; tp.t.needsUpdate = true; tp.m.position.set(BW / 2, 0, 0.1); scene.add(tp.m); return tp.m; };
 const sideLblUp = sideLbl('▲  VERKOOPZIJDE  ▲', '#ff6b81'), sideLblDn = sideLbl('▼  KOOPZIJDE  ▼', '#35ffb0');
 const hGrad = canvasTex(256, 4, g => { const gr = g.createLinearGradient(0, 0, 256, 0); gr.addColorStop(0, 'rgba(5,3,9,.92)'); gr.addColorStop(0.82, 'rgba(5,3,9,.78)'); gr.addColorStop(1, 'rgba(5,3,9,0)'); g.fillStyle = gr; g.fillRect(0, 0, 256, 4); });
 // the dark board the neon is mounted on, with a thin frame
@@ -924,7 +933,7 @@ const EXC = { binance: '#f3ba2f', okx: '#eef2f5', bybit: '#ff7a1a', bitget: '#00
   lighter: '#d9d9ff', backpack: '#ff6f61', paradex: '#e0a3ff', blofin: '#c08a5a', toobit: '#5ec8ff', bitunix: '#ffe066', xt: '#9ad0c2' };
 // the exchanges that count on the coin page (the ones switched off there are left out), then the estimate
 const EXN = Object.fromEntries([...Object.keys(EXCH).filter(k => !OFF.has(k)).map(k => [k, [EXCH[k].name, EXC[k] || '#cccccc']]), ['model', ['Schatting', '#ffc857']]]);
-const TROWS = Math.ceil(Object.keys(EXN).length / 2);   // tiles per column
+let TROWS = Math.ceil(Object.keys(EXN).length / 2), tilesKey = '';   // tiles per column
 const EXKEY = { OKX: 'okx', Binance: 'binance', Bybit: 'bybit' };
 const SHORT = { hyperliquid: 'Hyper', cryptocom: 'Crypto', bitfinex: 'Bitfin.', backpack: 'Backp.', paradex: 'Parad.', model: 'Schat.' };
 const REGS = {};
@@ -973,6 +982,14 @@ Object.keys(EXN).forEach((k, i) => {
   REGS[k] = { k, side: tc ? 1 : -1, name, css, col, g, edge, scr, drawer, glow, open: 0, flash: 0, fTxt: '', fCss: css, tot: 0, on: false, str: '', seed: Math.random() * 9 };
   drawReg(REGS[k]);
 });
+// only the exchanges with data get a tile (all of them until any data is in); the others close up, half left, half right
+function relayoutTiles() {
+  const ks = Object.keys(REGS), on = ks.filter(k => k === 'model' || REGS[k].on), show = on.length > 1 ? on : ks, key = show.join(',');
+  if (key === tilesKey) return; tilesKey = key;
+  for (const k of ks) REGS[k].g.visible = show.includes(k);
+  show.forEach((k, i) => { const R = REGS[k], tc = i % 2; R.g.userData.col = tc; R.g.userData.row = Math.floor(i / 2); R.side = tc ? 1 : -1; R.glow.position.x = tc ? -1.7 : 1.7; });
+  TROWS = Math.max(2, Math.ceil(show.length / 2)); fit();
+}
 const regPos = k => { const R = REGS[k] || REGS.model, sc = R.g.scale.x; return new THREE.Vector3(R.g.position.x - R.side * (1.45 + R.open * 0.55) * sc, R.g.position.y, R.g.position.z + 0.2); };
 function regSend(k, txt, css) { const R = REGS[k]; if (!R) return; R.open = 1; R.flash = 1.3; R.fTxt = txt; R.fCss = css; const q = regPos(k); emit(q.x, q.y, q.z + 0.4, R.col, 6, 2.5, { vy: 1.5, life: 0.6, sx: 1.2 }); }
 const unitVal = (r, n) => r.t.u === 'usd' ? fmtUsd(r.val / Math.max(1, r.base) * n) : Math.round(r.val / Math.max(1, r.base) * n) + ' pnt';
@@ -1053,10 +1070,12 @@ function bolt(a, b, col, delay, dur, onHit, path, mag = 0.4) {
 const magUsd = usd => Math.max(0, Math.min(1, Math.log10(Math.max(1, usd) / 5e4) / 2));
 const magOf = r => r.t.u === 'usd' ? magUsd(r.val / Math.max(1, r.base)) : 0.45;
 // the wire from a tube's cap on the tile's side (s = 0) to an exchange tile (s = 1)
+// bundled: every wire of a tile runs in one trunk straight out of the tile and fans out to its tube near the tubes
 function wirePt(r, k, s, out) {
-  const sd = (REGS[k] || REGS.model).side, W0 = regPos(k), y = r.yd ?? r.y, iu = 1 - s, a0 = sd > 0 ? BW + 0.2 : -0.2, c1 = a0 + sd * 1.2, c2 = W0.x - sd * 1.2;
-  return out.set(iu ** 3 * a0 + 3 * iu * iu * s * c1 + 3 * iu * s * s * c2 + s ** 3 * W0.x,
-    iu ** 3 * y + 3 * iu * iu * s * y + 3 * iu * s * s * W0.y + s ** 3 * W0.y, -0.25 + s * (W0.z + 0.25));
+  const sd = (REGS[k] || REGS.model).side, W0 = regPos(k), y = r.yd ?? r.y, a0 = sd > 0 ? BW + 0.2 : -0.2, xT = a0 + (W0.x - a0) * 0.5, z = -0.25 + s * (W0.z + 0.25);
+  if (s >= 0.55) { const u = (s - 0.55) / 0.45; return out.set(xT + (W0.x - xT) * u, W0.y, z); }   // the trunk
+  const u = s / 0.55, iu = 1 - u, c1 = a0 + (xT - a0) * 0.45, c2 = xT - (xT - a0) * 0.45;   // the fan
+  return out.set(iu ** 3 * a0 + 3 * iu * iu * u * c1 + 3 * iu * u * u * c2 + u ** 3 * xT, iu ** 3 * y + 3 * iu * iu * u * y + 3 * iu * u * u * W0.y + u ** 3 * W0.y, z);
 }
 // a pulse's route: out of the tile, along the wire to the cap on its side, then through the gas to x (u = 0..1, back reverses it)
 function wireRoute(r, k, x, back) {
@@ -1180,7 +1199,7 @@ function makeRow(lv) {
     y: 0, yd: null, units: 0, inbound: 0, thS: 0, pulse: 0, cleared: false, clearedAt: -9, gone: false, goneT: 0, born: T, flare: 0, decayT: 0, hl: 0, endX: BW, lblStr: '', sizeStr: '' };
   const lh = COMPACT ? Math.min(1.05, 0.86 * RS) : 0.8;   // label height: as tall as the row allows on a phone
   r.lbl = textPlane(640, Math.round(lh * 100), 6.4, lh); scene.add(r.lbl.m);
-  r.sz = textPlane(360, Math.round(lh * 100), 3.6, lh); scene.add(r.sz.m);
+  r.sz = textPlane(640, Math.round(lh * 100), 6.4, lh); scene.add(r.sz.m);
   r.lbl.m.renderOrder = r.sz.m.renderOrder = 3;   // over the glass
   r.halo = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: glowTex, color: t.col, transparent: true, opacity: 0, blending: ADD, depthWrite: false }));
   r.halo.position.z = -0.6; scene.add(r.halo);
@@ -1240,8 +1259,19 @@ const liveRows = () => rows.filter(r => !r.gone);
 // slots: the levels above the price stack upwards from the price row, the ones below downwards, highest price on top
 function layout() {
   const lv = liveRows(), ord = (a, b) => b.price - a.price || a.t.o - b.t.o;
-  const up = lv.filter(r => r.t.up).sort(ord), dn = lv.filter(r => !r.t.up).sort(ord);
-  up.forEach((r, i) => r.y = (up.length - i) * RS); dn.forEach((r, i) => r.y = -(i + 1) * RS);
+  // levels on the same price share one slot: their tubes thinner and side by side in it (a target's gate around
+  // them), one label and one amount plate for all of them (the target's if there is one)
+  const place = (arr, yOf) => {
+    const gs = []; for (const r of arr) { const g = gs[gs.length - 1]; if (g && g[0].price === r.price) g.push(r); else gs.push([r]); }
+    gs.forEach((g, gi) => {
+      const y0 = yOf(gi, gs.length), tubes = g.filter(r => !r.gate), n = tubes.length, step = Math.min(0.3, 0.8 / Math.max(1, n)) * RS, lead = g.find(r => r.gate) || g[0];
+      if (lead !== g[0]) { g.splice(g.indexOf(lead), 1); g.unshift(lead); }
+      for (const r of g) { r.grp = g; r.lead = lead; r.off = r.gate ? 0 : (tubes.indexOf(r) - (n - 1) / 2) * step; r.grpK = n > 1 ? 0.6 : 1; r.y = y0 + r.off; }
+    });
+    return gs.length;
+  };
+  place(lv.filter(r => r.t.up).sort(ord), (gi, G) => (G - gi) * RS);
+  place(lv.filter(r => !r.t.up).sort(ord), gi => -(gi + 1) * RS);
   for (const r of lv) if (r.yd == null) r.yd = r.y;
 }
 // price -> y on the well (rows are table rows, not a linear price scale)
@@ -1286,6 +1316,7 @@ function applyLevels(L) {
   refP = L.P; ref24 = L.ref24 || 0; bucket = L.B || bucket;
   for (const k in REGS) { const R = REGS[k]; R.tot = L.ex?.[k] || 0; R.on = k === 'model' || R.tot > 0;
     if (k !== 'model' && R.tot > 0) { R.hist = R.hist || []; if (R.hist[R.hist.length - 1] !== R.tot) { R.hist.push(R.tot); if (R.hist.length > 40) R.hist.shift(); } } }
+  relayoutTiles();
   if (mode === 'live' && !tick.fresh()) p = L.P;
   if (firstApply) pS = shown = p;
   const seen = new Set(), quiet = firstApply || !armed, now = mode === 'live' ? tick.fresh() : null;
@@ -1731,7 +1762,7 @@ stage.addEventListener('pointerup', e => {
   const rc = stage.getBoundingClientRect();
   ndc.set((e.clientX - rc.left) / rc.width * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
   ray.setFromCamera(ndc, cam);
-  const x = e.clientX - rc.left, y = e.clientY - rc.top, regs = Object.values(REGS);
+  const x = e.clientX - rc.left, y = e.clientY - rc.top, regs = Object.values(REGS).filter(R => R.g.visible);
   const th = ray.intersectObjects(regs.map(R => R.g.children[0]))[0];
   if (th) { const R = regs.find(R => R.g.children[0] === th.object); selRow = null;
     if (selEx === R.k) { selEx = null; tip.hidden = true; } else { selEx = R.k; showTileTip(R, x, y); } return; }
@@ -1798,7 +1829,7 @@ function fit() {
   const w = stage.clientWidth, h = stage.clientHeight; if (!w || !h) return;
   renderer.setSize(w, h, false); cam.aspect = w / h;
   const tanH = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
-  const lv = liveRows(), nU = lv.filter(r => r.t.up).length || 13, nD = lv.filter(r => !r.t.up).length || 13;
+  const lv = liveRows(), slots = up => new Set(lv.filter(r => r.t.up === up).map(r => r.price)).size, nU = slots(true) || 13, nD = slots(false) || 13;
   dist = Math.max(((nU + nD + 1) * RS + 2.4) / 2 / tanH, WFIT / 2 / (tanH * cam.aspect)) * 1.03 + 1.2;
   ctrY = -(nD + 0.5) * RS - 1.1;
   sideTop = (nU + 0.5) * RS; sideBot = -(nD + 0.5) * RS;
@@ -2046,7 +2077,7 @@ function render(rdt) {
       if (r.cleared && !dying && !r.shattered) { r.shattered = true; shatter(r); r.thS = 0; }
       r.thS += ((dying ? r.thS : thOf(r.units)) - r.thS) * Math.min(1, rdt * 8);
       r.pulse = Math.max(0, r.pulse - rdt * 2.5);
-      const th = Math.max(0.001, r.thS * (1 + 0.12 * r.pulse)), fl = r.flare > 0;
+      const th = Math.max(0.001, r.thS * (r.grpK || 1) * (1 + 0.12 * r.pulse)), fl = r.flare > 0;
       const rad = th / 2;
       r.bar.position.set(BW / 2 + (fl ? rnd(-0.04, 0.04) : 0), y, fl ? rnd(-0.06, 0.06) : 0); r.bar.scale.set(rad, BW, rad);
       r.gas.position.copy(r.bar.position); r.gas.scale.set(rad * 0.8, BW * 0.99, rad * 0.8);
@@ -2064,10 +2095,13 @@ function render(rdt) {
       // a new tube strikes like neon (a few false starts), a gone one flickers out
       const ig = dying ? (Math.random() < 0.35 ? 1 : 0.04) : r.gone ? (Math.random() < r.goneT / 0.9 ? 1 : 0.05) : T - r.born < 0.7 ? (Math.random() < 0.55 ? 1 : 0.08) : 1;
       let br = 1 + 0.35 * Math.min(1, r.thS / 0.9) + 0.5 * r.pulse + 0.35 * r.hl + (exS > 0 ? 0.3 + exS : 0) + 0.9 * wb + (Math.abs(y - sy) < 1.2 * RS ? 0.2 : 0) + (fl ? 0.6 * Math.abs(Math.sin(t * 26)) : 0);
-      if (r.glass) br *= 0.75 + 0.35 * Math.abs(Math.sin(t * 7 + y));
+      br *= 0.6 + 0.5 * Math.min(1, r.thS / 0.7);   // a big level burns brighter than a small one
+      const stable = r.ps && r.ps[0] >= r.ps[1] - 1;   // stood (almost) all the last hours: steady light
+      if (r.glass) br *= 0.75 + 0.35 * Math.abs(Math.sin(t * 7 + y)); else if (stable) br *= 1.12;
       // the gas glows in the colour of the kind and flickers a little, like a neon sign; a wall that has only just
       // appeared (glass) flickers harder and glows weaker
-      const flick = 0.92 + 0.08 * Math.sin(t * 31 + y * 7) * Math.sin(t * 17 + y * 3) - (r.glass ? 0.35 * Math.abs(Math.sin(t * 9 + y)) : 0) + zN * 0.3 * Math.sin(t * 47 + y * 11);
+      const flick = (stable ? 1 : 0.92 + 0.08 * Math.sin(t * 31 + y * 7) * Math.sin(t * 17 + y * 3)) - (r.glass ? 0.35 * Math.abs(Math.sin(t * 9 + y)) : 0) + zN * 0.3 * Math.sin(t * 47 + y * 11);
+      r.gas.material.uniforms.uDash.value = r.glass ? 1 : 0;
       const lit = br * flick * (1 + 0.5 * zN), go = fade * ig * (r.glass ? 0.6 : 1);
       r.gas.material.color.copy(r.t.col).multiplyScalar(Math.min(lit, 1.6) * 0.95); r.gas.material.opacity = go;
       r.gas.material.uniforms.uHot.value = Math.min(lit, 2.2) * 0.45;
@@ -2098,7 +2132,8 @@ function render(rdt) {
       for (const k in r.wires) if (!on.has(k)) r.wires[k].visible = false;
       r.bar.visible = r.gas.visible = r.glowA.visible = r.edge.visible = r.thS > 0.01;
     }
-    r.lbl.m.position.set(3.6 - (1 - fadeL) * 1.4, y, 0.65); r.sz.m.position.set(r.endX - 0.4 - 1.8, y, 0.65); r.hit.position.set(RX, y, 0.5);
+    const yl = y - (r.off || 0);   // the slot's middle
+    r.lbl.m.position.set(3.6 - (1 - fadeL) * 1.4, yl, 0.65); r.sz.m.position.set(r.endX - 0.4 - 3.2, yl, 0.65); r.hit.position.set(RX, y, 0.5);
     if (!r.gone) drawSize(r);
     const near = Math.max(0, 1 - Math.abs(y - sy) / (3 * RS));
     r.hl += ((r === selRow ? 1 : 0) - r.hl) * Math.min(1, rdt * 4);
@@ -2107,7 +2142,8 @@ function render(rdt) {
     r.band.position.set(RX, y, -0.68); r.band.material.opacity = (r.gone ? 0 : Math.abs(Math.round(r.y / RS)) % 2 ? 0.035 : 0) * dim;
     r.halo.material.opacity = fade * (r.cleared ? 0.03 : 0.16 + (r.gate ? 0.3 + 0.15 * Math.sin(t * 4) : 0) + 0.07 * Math.sin(t * 2.2 + y * 0.7) + near * 0.22 + r.hl * 0.45 + 0.7 * wb + (r.flare > 0 ? 0.35 * Math.abs(Math.sin(t * 22)) : 0));
     const lo = (r.gone ? fadeL : T - r.born < 0.35 ? 0 : r.cleared ? 0.3 : 1) * (exS === 0 ? 0.35 : 1);
-    r.lbl.m.material.opacity = r.gone ? Math.min(r.lbl.m.material.opacity, lo) : r.lbl.m.material.opacity + (lo - r.lbl.m.material.opacity) * Math.min(1, rdt * 6);
+    const lo2 = r.lead && r.lead !== r && !r.gone ? 0 : lo;   // only the slot's lead shows its plates
+    r.lbl.m.material.opacity = r.gone ? Math.min(r.lbl.m.material.opacity, lo2) : r.lbl.m.material.opacity + (lo2 - r.lbl.m.material.opacity) * Math.min(1, rdt * 6);
     r.sz.m.material.opacity = r.lbl.m.material.opacity;
     if (r.gate) {
       r.gate.m.position.y = r.gate.e.position.y = y;
@@ -2122,7 +2158,7 @@ function render(rdt) {
   // the sides follow the rows there are; the label strip covers the well's height
   sideUp.scale.y += (sideTop - sideUp.scale.y) * Math.min(1, rdt * 4); sideUp.position.y = sideUp.scale.y / 2;
   sideDn.scale.y += (-sideBot - sideDn.scale.y) * Math.min(1, rdt * 4); sideDn.position.y = -sideDn.scale.y / 2;
-  sideLblUp.position.y = sideUp.scale.y + 0.5; sideLblDn.position.y = -sideDn.scale.y - 0.62;
+  sideLblUp.position.y = sideUp.scale.y + 0.25 + SLW / 16; sideLblDn.position.y = -sideDn.scale.y - 0.35 - SLW / 16;
   sideUp.material.opacity = 0.09 + 0.03 * Math.sin(t * 0.8); sideDn.material.opacity = 0.09 + 0.03 * Math.sin(t * 0.8 + 2);
   for (const m of [board, boardEdge]) { m.scale.set(BW + 1, sideUp.scale.y + sideDn.scale.y + 0.7, 1); m.position.y = (sideUp.scale.y - sideDn.scale.y) / 2; }
   // ripples and glints along the bars

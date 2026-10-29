@@ -982,9 +982,10 @@ Object.keys(EXN).forEach((k, i) => {
   REGS[k] = { k, side: tc ? 1 : -1, name, css, col, g, edge, scr, drawer, glow, open: 0, flash: 0, fTxt: '', fCss: css, tot: 0, on: false, str: '', seed: Math.random() * 9 };
   drawReg(REGS[k]);
 });
-// only the exchanges with data get a tile (all of them until any data is in); the others close up, half left, half right
+// an exchange keeps its tile once it has given data for this coin (a refresh that misses it does not take it away);
+// only one that never gave any is left out (all of them until any data is in); the others close up, half left, half right
 function relayoutTiles() {
-  const ks = Object.keys(REGS), on = ks.filter(k => k === 'model' || REGS[k].on), show = on.length > 1 ? on : ks, key = show.join(',');
+  const ks = Object.keys(REGS), on = ks.filter(k => k === 'model' || (REGS[k].seen ||= REGS[k].on)), show = on.length > 1 ? on : ks, key = show.join(',');
   if (key === tilesKey) return; tilesKey = key;
   for (const k of ks) REGS[k].g.visible = show.includes(k);
   show.forEach((k, i) => { const R = REGS[k], tc = i % 2; R.g.userData.col = tc; R.g.userData.row = Math.floor(i / 2); R.side = tc ? 1 : -1; R.glow.position.x = tc ? -1.7 : 1.7; });
@@ -1671,7 +1672,7 @@ function selectCoin(k) {
   for (const q of bolts) q.onHit = null;
   site = series = market = null; lastRaw = null; liveHist = []; firstApply = true; armed = false; mode = 'live';
   p = pS = shown = 0; nCleared = eaten = liqTot = 0; combo = 0; trades.length = 0; lastPx = 0; tagDir = 0; slabStr = ''; ref24 = 0;
-  for (const R of Object.values(REGS)) { R.tot = 0; R.on = false; R.str = ''; R.hist = []; }
+  for (const R of Object.values(REGS)) { R.tot = 0; R.on = false; R.seen = false; R.str = ''; R.hist = []; }
   $('px').textContent = '—'; $('chg').textContent = ''; selRow = null; selEx = null; tip.hidden = true;
   startLive();
 }

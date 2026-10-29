@@ -183,40 +183,114 @@ try {
     new Promise(r => setTimeout(r, 1800))]);
 } catch (e) {}
 
-/* ---------- data: the same sources and estimates as index.html (BTC) ---------- */
+/* ---------- data: the same sources and estimates as the coin page (index.html): every exchange and coin ---------- */
+const EXCH = {
+  binance:     { name: 'Binance' },
+  okx:         { name: 'OKX' },
+  bybit:       { name: 'Bybit' },
+  bitget:      { name: 'Bitget' },
+  gate:        { name: 'Gate' },
+  htx:         { name: 'HTX' },
+  mexc:        { name: 'MEXC', snap: true },
+  deribit:     { name: 'Deribit' },
+  bitmex:      { name: 'BitMEX' },
+  kraken:      { name: 'Kraken', snap: true },
+  cryptocom:   { name: 'Crypto.com' },
+  hyperliquid: { name: 'Hyperliquid' },
+  dydx:        { name: 'dYdX' },
+  bitfinex:    { name: 'Bitfinex', snap: true },
+  // added later, all from the hourly data. doubt: volume and book far above what the exchange's size suggests, so off
+  // until switched on
+  kucoin:      { name: 'KuCoin', snap: true },
+  aster:       { name: 'Aster', snap: true },
+  lighter:     { name: 'Lighter', snap: true },
+  backpack:    { name: 'Backpack', snap: true },
+  paradex:     { name: 'Paradex', snap: true },
+  blofin:      { name: 'BloFin', snap: true },
+  toobit:      { name: 'Toobit', snap: true, doubt: true },
+  bitunix:     { name: 'Bitunix', snap: true, doubt: true },
+  xt:          { name: 'XT', snap: true, doubt: true },
+};
+// Per asset: symbols and contract sizes on each exchange (null = not listed there), book bins (raw books and the
+// hourly history, as in scripts/glasssphere_snapshot.py), bucket choices, auto bucket per range and price decimals.
 const ASSETS = {
   btc: { name: 'BTC', file: 'glasssphere-data.json', okx: 'BTC-USDT-SWAP', okxCt: 0.01, usdt: 'BTCUSDT', gate: 'BTC_USDT', gateMul: 1e-4, gateIv: '10',
     htx: 'BTC-USDT', htxCt: 0.001, deribit: 'BTC-PERPETUAL', deribitUsd: true, bitmex: 'XBTUSD', cdc: 'BTCUSD-PERP', hl: 'BTC', hlSig: 3, dydx: 'BTC-USD',
-    bin: 10, histBin: 100, auto: { 0.015: 50, 0.03: 100, 0.06: 250, 0.12: 500 }, dec: 0 },
+    bin: 10, histBin: 100, buckets: [25, 50, 100, 250, 500], auto: { 0.015: 50, 0.03: 100, 0.06: 250, 0.12: 500 }, dec: 0 },
   eth: { name: 'ETH', file: 'glasssphere-eth.json', okx: 'ETH-USDT-SWAP', okxCt: 0.1, usdt: 'ETHUSDT', gate: 'ETH_USDT', gateMul: 0.01, gateIv: '1',
     htx: 'ETH-USDT', htxCt: 0.01, deribit: 'ETH-PERPETUAL', deribitUsd: true, bitmex: null, cdc: 'ETHUSD-PERP', hl: 'ETH', hlSig: 4, dydx: 'ETH-USD',
-    bin: 0.25, histBin: 2.5, auto: { 0.015: 1, 0.03: 2.5, 0.06: 5, 0.12: 10 }, dec: 1 },
+    bin: 0.25, histBin: 2.5, buckets: [0.5, 1, 2.5, 5, 10], auto: { 0.015: 1, 0.03: 2.5, 0.06: 5, 0.12: 10 }, dec: 1 },
   sol: { name: 'SOL', file: 'glasssphere-sol.json', okx: 'SOL-USDT-SWAP', okxCt: 1, usdt: 'SOLUSDT', gate: 'SOL_USDT', gateMul: 1, gateIv: '0.1',
     htx: 'SOL-USDT', htxCt: 1, deribit: 'SOL_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'SOLUSD-PERP', hl: 'SOL', hlSig: 4, dydx: 'SOL-USD',
-    bin: 0.01, histBin: 0.1, auto: { 0.015: 0.05, 0.03: 0.1, 0.06: 0.25, 0.12: 0.5 }, dec: 2 },
+    bin: 0.01, histBin: 0.1, buckets: [0.02, 0.05, 0.1, 0.25, 0.5], auto: { 0.015: 0.05, 0.03: 0.1, 0.06: 0.25, 0.12: 0.5 }, dec: 2 },
+  bnb: { name: 'BNB', file: 'glasssphere-bnb.json', okx: 'BNB-USDT-SWAP', okxCt: 0.01, usdt: 'BNBUSDT', gate: 'BNB_USDT', gateMul: 0.001, gateIv: '1',
+    htx: 'BNB-USDT', htxCt: 0.1, deribit: 'BNB_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: null, cryptocom: null, hl: 'BNB', hlSig: 3, dydx: 'BNB-USD',
+    bin: 0.1, histBin: 1, buckets: [0.2, 0.5, 1, 2.5, 5], auto: { 0.015: 0.5, 0.03: 1, 0.06: 2.5, 0.12: 5 }, dec: 2 },
   xrp: { name: 'XRP', file: 'glasssphere-xrp.json', okx: 'XRP-USDT-SWAP', okxCt: 100, usdt: 'XRPUSDT', gate: 'XRP_USDT', gateMul: 10, gateIv: '0.001',
     htx: 'XRP-USDT', htxCt: 10, deribit: 'XRP_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'XRPUSD-PERP', hl: 'XRP', hlSig: 4, dydx: 'XRP-USD', bitgetSc: 'scale1',
-    bin: 0.0001, histBin: 0.002, auto: { 0.015: 0.001, 0.03: 0.002, 0.06: 0.005, 0.12: 0.01 }, dec: 4 },
+    bin: 0.0001, histBin: 0.002, buckets: [0.0005, 0.001, 0.002, 0.005, 0.01], auto: { 0.015: 0.001, 0.03: 0.002, 0.06: 0.005, 0.12: 0.01 }, dec: 4 },
   doge: { name: 'DOGE', file: 'glasssphere-doge.json', okx: 'DOGE-USDT-SWAP', okxCt: 1000, usdt: 'DOGEUSDT', gate: 'DOGE_USDT', gateMul: 10, gateIv: '0.0001',
     htx: 'DOGE-USDT', htxCt: 100, deribit: 'DOGE_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'DOGEUSD-PERP', hl: 'DOGE', hlSig: 3, dydx: 'DOGE-USD', bitgetSc: 'scale1',
-    bin: 0.00001, histBin: 0.0001, auto: { 0.015: 0.00005, 0.03: 0.0001, 0.06: 0.00025, 0.12: 0.0005 }, dec: 5 },
+    bin: 0.00001, histBin: 0.0001, buckets: [0.00002, 0.00005, 0.0001, 0.00025, 0.0005], auto: { 0.015: 0.00005, 0.03: 0.0001, 0.06: 0.00025, 0.12: 0.0005 }, dec: 5 },
   sui: { name: 'SUI', file: 'glasssphere-sui.json', okx: 'SUI-USDT-SWAP', okxCt: 1, usdt: 'SUIUSDT', gate: 'SUI_USDT', gateMul: 1, gateIv: '0.001',
     htx: 'SUI-USDT', htxCt: 1, deribit: 'SUI_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'SUIUSD-PERP', hl: 'SUI', hlSig: 3, dydx: 'SUI-USD', bitgetSc: 'scale1',
-    bin: 0.0001, histBin: 0.001, auto: { 0.015: 0.0005, 0.03: 0.001, 0.06: 0.0025, 0.12: 0.005 }, dec: 4 },
+    bin: 0.0001, histBin: 0.001, buckets: [0.0002, 0.0005, 0.001, 0.0025, 0.005], auto: { 0.015: 0.0005, 0.03: 0.001, 0.06: 0.0025, 0.12: 0.005 }, dec: 4 },
+  ena: { name: 'ENA', file: 'glasssphere-ena.json', okx: 'ENA-USDT-SWAP', okxCt: 10, usdt: 'ENAUSDT', gate: 'ENA_USDT', gateMul: 10, gateIv: '0.0001',
+    htx: 'ENA-USDT', htxCt: 1, deribit: 'ENA_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'ENAUSD-PERP', hl: 'ENA', hlSig: 4, dydx: 'ENA-USD', bitgetSc: 'scale1',
+    bin: 0.00001, histBin: 0.0002, buckets: [0.00005, 0.0001, 0.0002, 0.0005, 0.001], auto: { 0.015: 0.0001, 0.03: 0.0002, 0.06: 0.0005, 0.12: 0.001 }, dec: 5 },
+  // Binance, Bybit, Hyperliquid (kPEPE) and Deribit quote PEPE per 1000 coins: div brings their prices back to one coin
+  pepe: { name: 'PEPE', file: 'glasssphere-pepe.json', okx: 'PEPE-USDT-SWAP', okxCt: 1e7, usdt: '1000PEPEUSDT', bitgetSym: 'PEPEUSDT', gate: 'PEPE_USDT', gateMul: 1e7, gateIv: '0.000000001',
+    htx: 'PEPE-USDT', htxCt: 1e6, deribit: '1000PEPE_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'PEPEUSD-PERP', hl: 'kPEPE', hlSig: 3, dydx: 'PEPE-USD', bitgetSc: 'scale1',
+    div: { binance: 1000, bybit: 1000, hyperliquid: 1000, deribit: 1000 },
+    bin: 1e-9, histBin: 5e-9, buckets: [1e-9, 2e-9, 5e-9, 1e-8, 2.5e-8], auto: { 0.015: 2e-9, 0.03: 5e-9, 0.06: 1e-8, 0.12: 2.5e-8 }, dec: 9 },
+  wld: { name: 'WLD', file: 'glasssphere-wld.json', okx: 'WLD-USDT-SWAP', okxCt: 1, usdt: 'WLDUSDT', gate: 'WLD_USDT', gateMul: 1, gateIv: '0.0001',
+    htx: 'WLD-USDT', htxCt: 1, deribit: 'WLD_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'WLDUSD-PERP', hl: 'WLD', hlSig: 3, dydx: 'WLD-USD', bitfinex: null, bitgetSc: 'scale0',
+    bin: 0.0001, histBin: 0.0005, buckets: [0.0001, 0.0002, 0.0005, 0.001, 0.0025], auto: { 0.015: 0.0002, 0.03: 0.0005, 0.06: 0.001, 0.12: 0.0025 }, dec: 4 },
+  near: { name: 'NEAR', file: 'glasssphere-near.json', okx: 'NEAR-USDT-SWAP', okxCt: 10, usdt: 'NEARUSDT', gate: 'NEAR_USDT', gateMul: 1, gateIv: '0.001',
+    htx: 'NEAR-USDT', htxCt: 1, deribit: 'NEAR_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'NEARUSD-PERP', hl: 'NEAR', hlSig: 3, dydx: 'NEAR-USD', bitgetSc: 'scale1',
+    bin: 0.001, histBin: 0.005, buckets: [0.001, 0.002, 0.005, 0.01, 0.025], auto: { 0.015: 0.002, 0.03: 0.005, 0.06: 0.01, 0.12: 0.025 }, dec: 3 },  hype: { name: 'HYPE', file: 'glasssphere-hype.json', okx: 'HYPE-USDT-SWAP', okxCt: 0.1, usdt: 'HYPEUSDT', gate: 'HYPE_USDT', gateMul: 0.1, gateIv: '0.1',
+    htx: 'HYPE-USDT', htxCt: 0.1, deribit: 'HYPE_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'HYPEUSD-PERP', hl: 'HYPE', hlSig: 3, dydx: 'HYPE-USD', bitgetSc: 'scale1',
+    bin: 0.01, histBin: 0.05, buckets: [0.01, 0.02, 0.05, 0.1, 0.25], auto: { 0.015: 0.02, 0.03: 0.05, 0.06: 0.1, 0.12: 0.25 }, dec: 2 },
+  zec: { name: 'ZEC', file: 'glasssphere-zec.json', okx: 'ZEC-USDT-SWAP', okxCt: 0.01, usdt: 'ZECUSDT', gate: 'ZEC_USDT', gateMul: 0.01, gateIv: '1',
+    htx: 'ZEC-USDT', htxCt: 0.01, deribit: 'ZEC_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: null, cryptocom: null, hl: 'ZEC', hlSig: 4, dydx: 'ZEC-USD', bitgetSc: 'scale1',
+    bin: 0.1, histBin: 1, buckets: [0.25, 0.5, 1, 2.5, 5], auto: { 0.015: 0.5, 0.03: 1, 0.06: 2.5, 0.12: 5 }, dec: 2 },
+  ltc: { name: 'LTC', file: 'glasssphere-ltc.json', okx: 'LTC-USDT-SWAP', okxCt: 1, usdt: 'LTCUSDT', gate: 'LTC_USDT', gateMul: 0.1, gateIv: '0.1',
+    htx: 'LTC-USDT', htxCt: 0.1, deribit: 'LTC_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'LTCUSD-PERP', hl: 'LTC', hlSig: 3, dydx: 'LTC-USD', bitgetSc: 'scale0',
+    bin: 0.01, histBin: 0.05, buckets: [0.01, 0.02, 0.05, 0.1, 0.25], auto: { 0.015: 0.02, 0.03: 0.05, 0.06: 0.1, 0.12: 0.25 }, dec: 2 },
+  ada: { name: 'ADA', file: 'glasssphere-ada.json', okx: 'ADA-USDT-SWAP', okxCt: 100, usdt: 'ADAUSDT', gate: 'ADA_USDT', gateMul: 10, gateIv: '0.0001',
+    htx: 'ADA-USDT', htxCt: 10, deribit: 'ADA_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'ADAUSD-PERP', hl: 'ADA', hlSig: 4, dydx: 'ADA-USD', bitgetSc: 'scale0',
+    bin: 0.00001, histBin: 0.0002, buckets: [0.0001, 0.0002, 0.0005, 0.001, 0.0025], auto: { 0.015: 0.0001, 0.03: 0.0002, 0.06: 0.0005, 0.12: 0.001 }, dec: 4 },
+  uni: { name: 'UNI', file: 'glasssphere-uni.json', okx: 'UNI-USDT-SWAP', okxCt: 1, usdt: 'UNIUSDT', gate: 'UNI_USDT', gateMul: 1, gateIv: '0.01',
+    htx: 'UNI-USDT', htxCt: 1, deribit: 'UNI_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'UNIUSD-PERP', hl: 'UNI', hlSig: 3, dydx: 'UNI-USD', bitgetSc: 'scale0',
+    bin: 0.001, histBin: 0.005, buckets: [0.001, 0.002, 0.005, 0.01, 0.025], auto: { 0.015: 0.002, 0.03: 0.005, 0.06: 0.01, 0.12: 0.025 }, dec: 3 },
+  link: { name: 'LINK', file: 'glasssphere-link.json', okx: 'LINK-USDT-SWAP', okxCt: 1, usdt: 'LINKUSDT', gate: 'LINK_USDT', gateMul: 1, gateIv: '0.01',
+    htx: 'LINK-USDT', htxCt: 0.1, deribit: 'LINK_USDC-PERPETUAL', deribitUsd: false, bitmex: null, cdc: 'LINKUSD-PERP', hl: 'LINK', hlSig: 4, dydx: 'LINK-USD', bitgetSc: 'scale0',
+    bin: 0.001, histBin: 0.01, buckets: [0.002, 0.005, 0.01, 0.025, 0.05], auto: { 0.015: 0.005, 0.03: 0.01, 0.06: 0.025, 0.12: 0.05 }, dec: 3 },
 };
 let coinKey = (() => { const h = location.hash.slice(1); if (ASSETS[h]) return h; try { const k = localStorage.getItem('tetris-coin'); if (ASSETS[k]) return k; } catch (e) {} return 'btc'; })();
 let A = ASSETS[coinKey];
+$('coin').innerHTML = Object.entries(ASSETS).map(([k, a]) => `<option value="${k}">${a.name}</option>`).join('');
+// Decimals that keep multiples of a bin exact after rounding (PEPE bins are 1e-9)
 const digits = step => Math.max(0, -Math.floor(Math.log10(step))) + 3;
+// The nearest of 1, 2, 2.5, 5 x 10^k: level sizes that scale with the price (as nice() in scripts/glasssphere_model.py)
 const nice = x => { const m = 10 ** Math.floor(Math.log10(x));
   return [1, 2, 2.5, 5, 10].map(c => c * m).reduce((a, b) => Math.abs(Math.log(x / b)) < Math.abs(Math.log(x / a)) ? b : a); };
-const LEV = [[5, .30], [10, .35], [25, .25], [50, .10]];
-const MAINT = 0.004, HALF_LIFE_H = 168, HZ_MIN = 0.3, READ_RANGE = 0.15;
+const LEV = [[5, .30], [10, .35], [25, .25], [50, .10]];   // leverage mix that best matched real liquidations
+const MAINT = 0.004;                  // maintenance margin used for the liquidation price
+const HALF_LIFE_H = 168;              // stop weight halves every week
+const HZ_MIN = 0.3, READ = { range: 0.15 };
+// the coin page's own choices (saved there): the exchanges switched off and whether books count volume-weighted; the
+// doubtful exchanges start off, as there
+const PREFS = (() => { try { return JSON.parse(localStorage.getItem('glasssphere-prefs') || '{}'); } catch (e) { return {}; } })();
+const OFF = new Set(PREFS.off || []), WEIGHTED = PREFS.weighted !== false;
+if (!PREFS.doubt) for (const k in EXCH) if (EXCH[k].doubt) OFF.add(k);
 async function getJSON(url, opts = {}) {
   const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 9000);
   try { const r = await fetch(url, { ...opts, signal: ctl.signal }); if (!r.ok) throw new Error(r.status); return await r.json(); }
   finally { clearTimeout(t); }
 }
 const hlPost = body => getJSON('https://api.hyperliquid.xyz/info', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+// [[price, usd], ...] -> [[price, usd], ...] in bins of A.bin
 function binLevels(rows, side) {
   const m = {}, B = A.bin;
   for (const [p, usd] of rows) {
@@ -232,31 +306,35 @@ const BOOKS = {
   binance: async () => { const j = await getJSON(`https://fapi.binance.com/fapi/v1/depth?symbol=${A.usdt}&limit=1000`);
     const f = r => [+r[0], +r[1] * +r[0]]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
   deribit: async () => { const j = (await getJSON(`https://www.deribit.com/api/v2/public/get_order_book?instrument_name=${A.deribit}&depth=10000`)).result;
-    const f = A.deribitUsd ? r => r : r => [r[0], r[1] * r[0]]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
+    const f = A.deribitUsd ? r => r : r => [r[0], r[1] * r[0]];   // inverse perps quote USD, the linear SOL perp quotes SOL
+    return { b: j.bids.map(f), a: j.asks.map(f) }; },
   gate: async () => { const j = await getJSON(`https://api.gateio.ws/api/v4/futures/usdt/order_book?contract=${A.gate}&limit=300&interval=${A.gateIv}`);
     const f = r => [+r.p, r.s * A.gateMul * +r.p]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
   hyperliquid: async () => { const j = await hlPost({ type: 'l2Book', coin: A.hl, nSigFigs: A.hlSig });
     const f = r => [+r.px, +r.sz * +r.px]; return { b: j.levels[0].map(f), a: j.levels[1].map(f) }; },
   bybit: async () => { const r = (await getJSON(`https://api.bybit.com/v5/market/orderbook?category=linear&symbol=${A.usdt}&limit=500`)).result;
     const f = x => [+x[0], +x[1] * +x[0]]; return { b: r.b.map(f), a: r.a.map(f) }; },
-  bitget: async () => { const d = (await getJSON(`https://api.bitget.com/api/v2/mix/market/merge-depth?productType=usdt-futures&symbol=${A.usdt}&limit=max&precision=${A.bitgetSc || 'scale2'}`)).data;
+  bitget: async () => { const d = (await getJSON(`https://api.bitget.com/api/v2/mix/market/merge-depth?productType=usdt-futures&symbol=${A.bitgetSym || A.usdt}&limit=max&precision=${A.bitgetSc || 'scale2'}`)).data;
     const f = x => [+x[0], +x[1] * +x[0]]; return { b: d.bids.map(f), a: d.asks.map(f) }; },
   htx: async () => { const t = (await getJSON(`https://api.hbdm.com/linear-swap-ex/market/depth?contract_code=${A.htx}&type=step0`)).tick;
     const f = x => [x[0], x[1] * A.htxCt * x[0]]; return { b: t.bids.map(f), a: t.asks.map(f) }; },
-  bitmex: async () => { if (!A.bitmex) throw new Error('not listed'); const j = await getJSON(`https://www.bitmex.com/api/v1/orderBook/L2?symbol=${A.bitmex}&depth=0`);
-    const f = x => [x.price, x.size]; return { b: j.filter(x => x.side === 'Buy').map(f), a: j.filter(x => x.side === 'Sell').map(f) }; },
+  bitmex: async () => { if (!A.bitmex) throw new Error('not listed');
+    const j = await getJSON(`https://www.bitmex.com/api/v1/orderBook/L2?symbol=${A.bitmex}&depth=0`);
+    const f = x => [x.price, x.size];      // XBTUSD contracts are $1 each
+    return { b: j.filter(x => x.side === 'Buy').map(f), a: j.filter(x => x.side === 'Sell').map(f) }; },
   cryptocom: async () => { if (!A.cdc) throw new Error('not listed'); const d = (await getJSON(`https://api.crypto.com/exchange/v1/public/get-book?instrument_name=${A.cdc}&depth=150`)).result.data[0];
     const f = x => [+x[0], +x[1] * +x[0]]; return { b: d.bids.map(f), a: d.asks.map(f) }; },
   dydx: async () => { const j = await getJSON(`https://indexer.dydx.trade/v4/orderbooks/perpetualMarket/${A.dydx}`);
     const f = x => [+x.price, +x.size * +x.price]; return { b: j.bids.map(f), a: j.asks.map(f) }; },
 };
+// open interest (USD), 24h volume (USD), funding per 8h
 const MARKET = {
   okx: async () => { const [o, t, f] = await Promise.all([getJSON(`https://www.okx.com/api/v5/public/open-interest?instType=SWAP&instId=${A.okx}`),
       getJSON(`https://www.okx.com/api/v5/market/ticker?instId=${A.okx}`), getJSON(`https://www.okx.com/api/v5/public/funding-rate?instId=${A.okx}`)]);
     return { oi: +o.data[0].oiUsd, vol: +t.data[0].volCcy24h * +t.data[0].last, fund: +f.data[0].fundingRate }; },
   gate: async () => { const [t] = await getJSON(`https://api.gateio.ws/api/v4/futures/usdt/tickers?contract=${A.gate}`);
     return { oi: +t.total_size * A.gateMul * +t.mark_price, vol: +t.volume_24h_quote, fund: +t.funding_rate }; },
-  bitget: async () => { const t = (await getJSON(`https://api.bitget.com/api/v2/mix/market/ticker?symbol=${A.usdt}&productType=usdt-futures`)).data[0];
+  bitget: async () => { const t = (await getJSON(`https://api.bitget.com/api/v2/mix/market/ticker?symbol=${A.bitgetSym || A.usdt}&productType=usdt-futures`)).data[0];
     return { oi: +t.holdingAmount * +t.lastPr, vol: +t.usdtVolume, fund: +t.fundingRate }; },
   htx: async () => ({ vol: +(await getJSON(`https://api.hbdm.com/linear-swap-ex/market/detail/merged?contract_code=${A.htx}`)).tick.trade_turnover }),
   deribit: async () => { const r = (await getJSON(`https://www.deribit.com/api/v2/public/get_book_summary_by_instrument?instrument_name=${A.deribit}`)).result[0];
@@ -272,24 +350,60 @@ const MARKET = {
     return { oi: +o.openInterest * +f.markPrice, vol: +t.quoteVolume, fund: +f.lastFundingRate }; },
   bybit: async () => { const t = (await getJSON(`https://api.bybit.com/v5/market/tickers?category=linear&symbol=${A.usdt}`)).result.list[0];
     return { oi: +t.openInterestValue, vol: +t.turnover24h, fund: +t.fundingRate }; },
-  bitmex: async () => { if (!A.bitmex) throw new Error('not listed'); const [x] = await getJSON(`https://www.bitmex.com/api/v1/instrument?symbol=${A.bitmex}`);
+  bitmex: async () => { if (!A.bitmex) throw new Error('not listed');
+    const [x] = await getJSON(`https://www.bitmex.com/api/v1/instrument?symbol=${A.bitmex}`);
     return { oi: x.openInterest, vol: x.foreignNotional24h || 0, fund: x.fundingRate }; },
 };
 async function fetchAll(table, wrap) {
   const out = {};
-  await Promise.all(Object.entries(table).map(async ([k, fn]) => { try { out[k] = wrap(await fn(), k); } catch (e) {} }));
+  await Promise.all(Object.entries(table).map(async ([k, fn]) => {
+    if (A[k] === null) return;                     // not listed there for this asset
+    try { out[k] = wrap(await fn(), k); } catch (e) {} }));
   return out;
 }
-const fetchBooks = () => fetchAll(BOOKS, r => ({ b: binLevels(r.b, 'b'), a: binLevels(r.a, 'a') }));
+const fetchBooks = () => fetchAll(BOOKS, (r, k) => {
+  const d = A.div?.[k] || 1, f = d === 1 ? x => x : x => x.map(([p, u]) => [p / d, u]);   // per 1000 coins -> one coin
+  return { b: binLevels(f(r.b), 'b'), a: binLevels(f(r.a), 'a') };
+});
 const fetchMarket = () => fetchAll(MARKET, r => r);
-async function fetchSeries() {
-  const base = 'https://www.okx.com/api/v5/market/', toC = r => [+r[0], +r[1], +r[2], +r[3], +r[4], +r[7]];
-  const rows = (await getJSON(base + `candles?instId=${A.okx}&bar=1H&limit=300`)).data;
-  try { rows.push(...(await getJSON(base + `history-candles?instId=${A.okx}&bar=1H&limit=100&after=${rows[rows.length - 1][0]}`)).data); } catch (e) {}
-  const candles = rows.map(toC).sort((a, b) => a[0] - b[0]).slice(-400);
-  const st = await getJSON(`https://api.gateio.ws/api/v4/futures/usdt/contract_stats?contract=${A.gate}&interval=1h&from=${candles[0][0] / 1000}&limit=1000`);
-  return { candles, oi: st.map(r => [r.time * 1000, Math.round(r.open_interest_usd)]), taker: st.map(r => [r.time * 1000, r.lsr_taker / (1 + r.lsr_taker)]) };
+// another exchange's own open interest {ms: usd} added into the hourly line over all exchanges, as combine_oi in the
+// snapshot script does: its level at the end, its hourly changes back from there (not a jump of more than 30%)
+function addOi(line, extra) {
+  const ts = Object.keys(extra).map(Number).sort((a, b) => a - b); if (ts.length < 2) return line;
+  let e = extra[ts[ts.length - 1]]; const out = [];
+  for (let i = line.length - 1; i >= 0; i--) {
+    const t = line[i][0], a = line[i - 1]?.[0]; out.push([t, Math.round(line[i][1] + e)]);
+    if (a != null && extra[a] > 0 && extra[t] != null && Math.abs(extra[t] / extra[a] - 1) <= 0.3) e -= extra[t] - extra[a];
+  }
+  return out.reverse();
 }
+async function fetchSeries() {
+  const base = 'https://www.okx.com/api/v5/market/';
+  const toC = r => [+r[0], +r[1], +r[2], +r[3], +r[4], +r[7]];
+  const okx = async (bar, more) => {
+    const rows = (await getJSON(base + `candles?instId=${A.okx}&bar=${bar}&limit=300`)).data;
+    if (more) try { rows.push(...(await getJSON(base + `history-candles?instId=${A.okx}&bar=${bar}&limit=100&after=${rows[rows.length - 1][0]}`)).data); } catch (e) {}
+    return rows.map(toC).sort((a, b) => a[0] - b[0]);
+  };
+  const candles = (await okx('1H', true)).slice(-400);
+  const [candles15, candles4h] = await Promise.all([okx('15m').catch(() => null), okx('4H').catch(() => null)]);
+  // Gate hourly stats: open interest, taker buy share and real liquidations
+  const st = await getJSON(`https://api.gateio.ws/api/v4/futures/usdt/contract_stats?contract=${A.gate}&interval=1h&from=${candles[0][0] / 1000}&limit=1000`);
+  // Bybit's own open interest per hour (it refuses the servers of the hourly data, not a phone): added into the line over
+  // all exchanges (addOi); in coins, priced at the hour's open
+  let bybitOi = null;
+  try {
+    const l = (await getJSON(`https://api.bybit.com/v5/market/open-interest?category=linear&symbol=${A.usdt}&intervalTime=1h&limit=200`)).result.list;
+    const px = new Map(candles.map(c => [c[0], c[1]])), m = A.div?.bybit || 1; bybitOi = {};
+    for (const x of l) { const t = +x.timestamp, p = px.get(t); if (p) bybitOi[t] = +x.openInterest * p * m; }
+  } catch (e) {}
+  return { candles, candles15, candles4h, bybitOi,
+    oi: st.map(r => [r.time * 1000, Math.round(r.open_interest_usd)]),
+    taker: st.map(r => [r.time * 1000, r.lsr_taker / (1 + r.lsr_taker)]),
+    liqReal: st.map(r => [r.time * 1000, Math.round(r.long_liq_usd), Math.round(r.short_liq_usd)]) };
+}
+/* ---------- estimates (mirrored in scripts/glasssphere_model.py) ---------- */
+// Stops: just beyond swing highs / lows that price has not traded through since.
 function estimateStops(candles, price, lo, hi) {
   const out = [], n = candles.length, now = candles[n - 1][0];
   const sufHi = new Float64Array(n + 1).fill(-Infinity), sufLo = new Float64Array(n + 1).fill(Infinity);
@@ -308,15 +422,18 @@ function estimateStops(candles, price, lo, hi) {
     }
   }
   const ws = out.map(o => o.w).sort((a, b) => a - b), med = ws.length ? ws[ws.length >> 1] : 1;
-  const rs = nice(price * 0.012);
+  const rs = nice(price * 0.012);       // round levels: $1000 for BTC
   for (let i = Math.ceil(lo / rs); i * rs <= hi; i++) {
     const p = i * rs; out.push({ p: p > price ? p + rs * 0.05 : p - rs * 0.05, side: p > price ? 'buy' : 'sell', w: med * 0.25 });
   }
   return out.filter(o => (o.side === 'buy') === (o.p > price));
 }
-function estimateLiqs(candles, oi, taker) {
+// Liquidations: OI added each hour at that hour's average price, split long/short half by where the candle
+// closed and half by the taker buy share, at the leverage mix that best matched real liquidations.
+// onBar(i, positions), if given, sees the open positions after each bar (the signals use it)
+function estimateLiqs(candles, oi, taker, onBar) {
   const oiAt = new Map(oi), tkAt = new Map(taker || []); let pos = [];
-  candles.forEach(([t, o, h, l, c]) => {
+  candles.forEach(([t, o, h, l, c], i) => {
     pos = pos.filter(q => q.side === 'long' ? l > q.p : h < q.p);
     const a = oiAt.get(t), b = oiAt.get(t + 3.6e6), d = a != null && b != null ? b - a : null;
     if (d != null && d < 0) { const r = b / a; pos.forEach(q => q.usd *= r); }
@@ -329,9 +446,11 @@ function estimateLiqs(candles, oi, taker) {
         pos.push({ p: entry * (1 + 1 / L - MAINT), side: 'short', usd: d * (1 - share) * w });
       }
     }
+    if (onBar) onBar(i, pos);
   });
   return pos;
 }
+// Exchanges whose share of the depth within ±1% exceeds their share of 24h volume are scaled down to it.
 function volumeWeights(books, market, P) {
   const depth = {};
   for (const [ex, bk] of Object.entries(books)) {
@@ -343,43 +462,84 @@ function volumeWeights(books, market, P) {
   for (const e of Object.keys(depth)) w[e] = has.includes(e) && dT && vT && depth[e] ? Math.min(1, (market[e].vol / vT) / (depth[e] / dT)) : 1;
   return w;
 }
+function histEntry(books, weights, P, ts) {
+  const m = new Map(), HB = A.histBin;
+  for (const [ex, bk] of Object.entries(books)) {
+    const w = weights[ex] ?? 1;
+    [['b', 0], ['a', 1]].forEach(([side, i]) => { for (const [p, v] of bk[side]) {
+      if (p < P * 0.94 || p > P * 1.06) continue;
+      const k = +(Math.floor(p / HB + 1e-9) * HB).toFixed(digits(HB)), o = m.get(k) || [0, 0]; o[i] += v * w; m.set(k, o); } });
+  }
+  return { t: Math.floor(ts / 3.6e6) * 3.6e6, b: [...m].sort((x, y) => x[0] - y[0]).map(([k, [b, a]]) => [k, Math.round(b), Math.round(a)]) };
+}
+// pools: stop score + liquidation size per level of B within ±15%, each normalised to its own maximum
 function poolsOf(stops, liqs, P) {
-  const B = nice(P * 0.0012), lo = P * (1 - READ_RANGE), hi = P * (1 + READ_RANGE), bins = new Map();
+  const B = nice(P * 0.0012), lo = P * (1 - READ.range), hi = P * (1 + READ.range), bins = new Map();   // B: $100 for BTC
   const add = (p, kind, v) => { if (p < lo || p > hi) return; const k = Math.floor(p / B + 1e-9) * B;
     const o = bins.get(k) || { stop: 0, liq: 0 }; o[kind] += v; bins.set(k, o); };
   stops.forEach(s => add(s.p, 'stop', s.w)); liqs.forEach(q => add(q.p, 'liq', q.usd));
   let mS = 1e-9, mL = 1e-9; for (const o of bins.values()) { if (o.stop > mS) mS = o.stop; if (o.liq > mL) mL = o.liq; }
-  return [...bins].map(([k, o]) => ({ p: k + B / 2, v: o.stop / mS + o.liq / mL }));
+  return [...bins].map(([k, o]) => ({ p: k + B / 2, stop: o.stop / mS, liq: o.liq / mL, liqUsd: o.liq, v: o.stop / mS + o.liq / mL }));
 }
+// targets: the largest pool on each side between HZ_MIN x and 1 x the expected range of the horizon (the average
+// high - low of the last 14 days x √days), and the chance the upper one comes first
 function targetsOf(cs, pools, P, days) {
   const n = cs.length, ranges = [];
   for (let e = n; e >= 24 && ranges.length < 14; e -= 24) { let h = -Infinity, l = Infinity;
     for (let k = e - 24; k < e; k++) { if (cs[k][2] > h) h = cs[k][2]; if (cs[k][3] < l) l = cs[k][3]; } ranges.push(h - l); }
-  const range24 = ranges.reduce((s, x) => s + x, 0) / ranges.length, rH = range24 * Math.sqrt(days), minD = HZ_MIN * rH;
+  const range24 = ranges.reduce((s, x) => s + x, 0) / ranges.length;
+  const rH = range24 * Math.sqrt(days), minD = HZ_MIN * rH;
   const best = arr => arr.length ? arr.reduce((x, y) => y.v > x.v ? y : x) : undefined;
-  const tUp = best(pools.filter(q => q.p - P > minD && q.p - P <= rH)), tDn = best(pools.filter(q => P - q.p > minD && P - q.p <= rH));
-  return { tUp, tDn, pUp: tUp && tDn ? (P - tDn.p) / (tUp.p - tDn.p) : null };
+  const tUp = best(pools.filter(q => q.p - P > minD && q.p - P <= rH));
+  const tDn = best(pools.filter(q => P - q.p > minD && P - q.p <= rH));
+  return { range24, rH, minD, tUp, tDn, pUp: tUp && tDn ? (P - tDn.p) / (tUp.p - tDn.p) : null };
 }
-// the levels table of index.html: the 4 largest of each kind on each side, in the "Doelen" range with the automatic
-// bucket, all exchanges volume-weighted, plus the two targets of the 1-day reading
+// The chance shown: the distance chance sharpened (a) and tilted by the net taker buying of the last 24 hours
+// (b x tanh(flow / 10%)), per horizon (days), fitted on 17 coins, Binance 2022 - Sep 2026 (scripts/glasssphere_edge_test.py,
+// backtests/glasssphere.md section 6). Fitted on 2022 - 2024 alone it matched 2025 - 2026: shown 72% came true 71%, 82% 81%
+// (of the times a target was reached within the horizon). Keep in step
+// with CAL in scripts/glasssphere_model.py
+const CAL = { 1: [1.561, 0.428], 3: [1.486, 0.421], 7: [1.411, 0.333] }, NEUTRAL = 65;
+// net taker buying of the 24 bars up to i as a share of their volume (tk: Map open ms -> buy share)
+function flowOf(cs, tk, i = cs.length - 1) {
+  let v = 0, net = 0;
+  for (let k = Math.max(0, i - 23); k <= i; k++) { v += cs[k][5]; net += cs[k][5] * (2 * (tk.get(cs[k][0]) ?? 0.5) - 1); }
+  return v ? net / v : 0;
+}
+function chanceOf(pDist, flow, days) {
+  if (pDist == null) return null;
+  const [a, b] = CAL[days] || CAL[1], p = Math.min(Math.max(pDist, 1e-4), 1 - 1e-4);
+  return 1 / (1 + Math.exp(-(a * Math.log(p / (1 - p)) + b * Math.tanh(flow / 0.1))));
+}
+// Alle niveaus on the coin page: the 4 largest of each kind on each side, in the "Doelen" range with the automatic
+// bucket, the exchanges switched on there (volume-weighted unless that is off), plus the two targets of the 1-day
+// reading with their calibrated chance
+let liveHist = [];       // one book snapshot per hour while the page is open live
 function levelsOf(raw) {
   const P = raw.price, market = raw.market || {}, weights = volumeWeights(raw.books, market, P);
   const gateOi = raw.oi?.length ? raw.oi[raw.oi.length - 1][1] : 0, total = Object.values(market).reduce((s, m) => s + (m.oi || 0), 0);
   const scale = gateOi && total > gateOi ? total / gateOi : 1;
   const liqs = estimateLiqs(raw.candles, raw.oi || [], raw.taker).map(q => ({ ...q, usd: q.usd * scale }));
   const stops = estimateStops(raw.candles, P, P * 0.85, P * 1.15);
-  const tg = targetsOf(raw.candles, poolsOf(stops, liqs, P), P, 1);
+  const tg = targetsOf(raw.candles, poolsOf(stops, liqs, P), P, 1), pUp = chanceOf(tg.pUp, flowOf(raw.candles, new Map(raw.taker || [])), 1);
   let first = null, prob = null;
-  if (tg.pUp != null) { const upF = tg.pUp >= 0.5; prob = upF ? tg.pUp : 1 - tg.pUp; first = upF ? tg.tUp : tg.tDn; }
+  if (pUp != null) { const upF = pUp >= 0.5; prob = upF ? pUp : 1 - pUp; first = upF ? tg.tUp : tg.tDn; }
+  // book history: the hourly file, the hours kept while live, and this book
+  const H = new Map((raw.bookHist || []).map(e => [e.t, e])); for (const e of liveHist) H.set(e.t, e);
+  const cur = histEntry(raw.books, weights, P, raw.ts); H.set(cur.t, cur);
+  const bookHist = [...H.values()].sort((a, b) => a.t - b.t).slice(-48);
   const far = Math.max(tg.tUp ? tg.tUp.p / P - 1 : 0, tg.tDn ? 1 - tg.tDn.p / P : 0);
   const rg = far ? Math.max(0.012, Math.min(0.25, far * 1.22)) : 0.03;
   const ks = Object.keys(A.auto).map(Number), B = A.auto[ks.reduce((a, b) => Math.abs(Math.log(b / rg)) < Math.abs(Math.log(a / rg)) ? b : a)];
   const lo = P * (1 - rg), hi = P * (1 + rg), i0 = Math.floor(lo / B), i1 = Math.ceil(hi / B), N = i1 - i0 + 1;
-  const bid = new Float64Array(N), ask = new Float64Array(N), stop = new Float64Array(N), liq = new Float64Array(N);
+  const bid = new Float64Array(N), ask = new Float64Array(N), stop = new Float64Array(N), liq = new Float64Array(N), wtot = new Float64Array(N);
   const idx = p => Math.floor(p / B + 1e-9) - i0;
   const per = {}, exTot = {};
-  for (const [ex, bk] of Object.entries(raw.books)) { const w = weights[ex] ?? 1, o = per[ex] = { b: new Float64Array(N), a: new Float64Array(N) };
-    for (const [side, arr] of [['b', bid], ['a', ask]]) for (const [p, v] of bk[side]) { const j = idx(p); if (j >= 0 && j < N) { arr[j] += v * w; o[side][j] += v * w; exTot[ex] = (exTot[ex] || 0) + v * w; } } }
+  for (const [ex, bk] of Object.entries(raw.books)) {
+    const w = weights[ex] ?? 1, f = WEIGHTED ? w : 1, on = !OFF.has(ex), o = per[ex] = { b: new Float64Array(N), a: new Float64Array(N) };
+    for (const [side, arr] of [['b', bid], ['a', ask]]) for (const [p, v] of bk[side]) { const j = idx(p); if (j < 0 || j >= N) continue;
+      wtot[j] += v * w;                                // presence always compares weighted books, like the history
+      if (on) { arr[j] += v * f; o[side][j] += v * f; exTot[ex] = (exTot[ex] || 0) + v * f; } } }
   const partsOf = (side, j) => { const out = {}; for (const ex in per) if (per[ex][side][j] > 0) out[ex] = per[ex][side][j]; return out; };
   for (const s of stops) { const j = idx(s.p); if (j >= 0 && j < N) stop[j] += s.w; }
   for (const q of liqs) { const j = idx(q.p); if (j >= 0 && j < N) liq[j] += q.usd; }
@@ -387,11 +547,11 @@ function levelsOf(raw) {
   const mBook = Math.max(mx(bid), mx(ask)), mStop = mx(stop), mLiq = mx(liq);
   // presence: in how many of the last 6 hours the level held at least half its size now (the hourly book history)
   const HB = A.histBin, sub = Math.max(1, Math.round(HB / B)), hourNow = Math.floor(raw.ts / 3.6e6) * 3.6e6;
-  const prev = (raw.bookHist || []).filter(e => e.t < hourNow).sort((a, b) => a.t - b.t).slice(-6).map(e => {
+  const prev = bookHist.filter(e => e.t < hourNow).slice(-6).map(e => {
     const tot = new Float64Array(N);
     for (const [q, vb, va] of e.b) for (let k = 0; k < sub; k++) { const j = idx(q + (k + 0.5) * HB / sub); if (j >= 0 && j < N) tot[j] += (vb + va) / sub; }
     return tot; });
-  const persist = j => { const w = bid[j] + ask[j]; return prev.length < 2 || !w ? null : [prev.filter(h => h[j] >= w * 0.5).length, prev.length]; };
+  const persist = j => prev.length < 2 || !wtot[j] ? null : [prev.filter(h => h[j] >= wtot[j] * 0.5).length, prev.length];
   const top = (arr, above) => { const out = [];
     for (let j = 0; j < N; j++) { const mid = (i0 + j + 0.5) * B; if ((mid > P) === above && arr[j] > 0) out.push([mid, arr[j], j]); }
     return out.sort((a, b) => b[1] - a[1]).slice(0, 4); };
@@ -404,7 +564,8 @@ function levelsOf(raw) {
     rows.push({ type: up ? 'tup' : 'tdn', price: q.p, val: q === first ? prob : 1 - prob, first: q === first, rel: 1 });
   }
   const cs = raw.candles;
-  return { P, ts: raw.ts, rows, B, ex: exTot, nBooks: Object.keys(raw.books).length, ref24: cs[Math.max(0, cs.length - 25)][4] };
+  const nOn = Object.keys(raw.books).filter(k => !OFF.has(k)), nOld = nOn.filter(k => raw.bookAge?.[k]).length;
+  return { P, ts: raw.ts, rows, B, ex: exTot, nBooks: nOn.length, nOld, weights, ref24: cs[Math.max(0, cs.length - 25)][4] };
 }
 
 /* ---------- kinds, formatting ---------- */
@@ -758,16 +919,19 @@ function floatText(x, y, txt, css) {
 
 /* ---------- the exchanges as cash registers behind the well; a blockchain on the wall behind them ---------- */
 // each exchange its own colour, far enough apart to tell the segments of a wall apart
-const EXN = { binance: ['Binance', '#f3ba2f'], okx: ['OKX', '#eef2f5'], bybit: ['Bybit', '#ff7a1a'], bitget: ['Bitget', '#00e1ff'], gate: ['Gate', '#2f6bff'],
-  htx: ['HTX', '#b6f03c'], hyperliquid: ['Hyperliquid', '#8dffd8'], deribit: ['Deribit', '#ff4fd8'], bitmex: ['BitMEX', '#ff4d4d'], cryptocom: ['Crypto.com', '#9db0ff'],
-  dydx: ['dYdX', '#a970ff'], model: ['Schatting', '#ffc857'] };
+const EXC = { binance: '#f3ba2f', okx: '#eef2f5', bybit: '#ff7a1a', bitget: '#00e1ff', gate: '#2f6bff', htx: '#b6f03c', mexc: '#3ddc84', deribit: '#ff4fd8',
+  bitmex: '#ff4d4d', kraken: '#7b5cff', cryptocom: '#9db0ff', hyperliquid: '#8dffd8', dydx: '#a970ff', bitfinex: '#16b157', kucoin: '#24d1b0', aster: '#ffb3c7',
+  lighter: '#d9d9ff', backpack: '#ff6f61', paradex: '#e0a3ff', blofin: '#c08a5a', toobit: '#5ec8ff', bitunix: '#ffe066', xt: '#9ad0c2' };
+// the exchanges that count on the coin page (the ones switched off there are left out), then the estimate
+const EXN = Object.fromEntries([...Object.keys(EXCH).filter(k => !OFF.has(k)).map(k => [k, [EXCH[k].name, EXC[k] || '#cccccc']]), ['model', ['Schatting', '#ffc857']]]);
+const TROWS = Math.ceil(Object.keys(EXN).length / 2);   // tiles per column
 const EXKEY = { OKX: 'okx', Binance: 'binance', Bybit: 'bybit' };
-const SHORT = { hyperliquid: 'Hyper', cryptocom: 'Crypto', model: 'Schat.' };
+const SHORT = { hyperliquid: 'Hyper', cryptocom: 'Crypto', bitfinex: 'Bitfin.', backpack: 'Backp.', paradex: 'Parad.', model: 'Schat.' };
 const REGS = {};
 let selRow = null;   // the tube tapped for its details
 // a column of tiles on each side of the bars, top to bottom along the well; the drawer opens towards the bars
 const regBodyGeo = new THREE.BoxGeometry(3, 1.7, 0.6), regDrawGeo = new THREE.BoxGeometry(0.28, 1.2, 0.45), regEdgeGeo = new THREE.EdgesGeometry(regBodyGeo);
-let tileTop = 13.5 * RS - 0.9, tileStep = 27 * RS / (12 / LAY.TC - 1), tileSc = 1;
+let tileTop = 13.5 * RS - 0.9, tileStep = 27 * RS / (TROWS - 1), tileSc = 1;
 const tileX = col => col ? TL + 1.5 * tileSc : -LL - 0.3 - 1.5 * tileSc;   // column 0 left of the prices, 1 right of the amounts
 function drawReg(R) {
   // with a tube tapped, each tile shows its share of that tube
@@ -1405,7 +1569,7 @@ function showLiq(long, q, usd, ex) {
   if (usd >= 250e3) banner(usd >= 1e6 ? 'LIQUIDATIE!' : 'ECHTE LIQUIDATIE', sub, '', TY.sliq.c, usd < 1e6);
   if (usd >= 50e3) feed(`<b>Echte liquidatie</b> ${sub}`, TY.sliq.c);
 }
-let site = null, series = null, seriesAt = 0, market = null, liveTimer = 0, liveGen = 0, lastRaw = null, fastTimer = 0, lastBooks = 0;
+let site = null, series = null, seriesAt = 0, market = null, liveTimer = 0, liveGen = 0, lastRaw = null, fastTimer = 0, lastBooks = 0, lastOld = 0;
 // OKX's nearest 400 levels every 3 s: the walls close to the price move between the full refreshes of all books
 async function fastBook() {
   const g = liveGen; if (!lastRaw || mode !== 'live' || document.hidden) return;
@@ -1420,7 +1584,7 @@ async function fastBook() {
   } catch (e) {}
 }
 const liveStatus = ts => status('live', COMPACT ? hhmmss(ts) : `live · ${lastBooks} boeken · ${hhmmss(ts)}`,
-  COMPACT ? `${lastBooks} boeken · stops/liq. geschat · glas = muur pas kort` : `${lastBooks} orderboeken · stops en liq. geschat · glas: muur pas kort · OKX elke 3 s`);
+  COMPACT ? `${lastBooks} boeken${lastOld ? ` (${lastOld} uurdata)` : ''} · stops/liq. geschat` : `${lastBooks - lastOld} orderboeken live${lastOld ? `, ${lastOld} uit de uurlijkse data` : ''} · stops en liq. geschat · glas: muur pas kort · OKX elke 3 s`);
 async function loadSite() {
   if (!/^https?:$/.test(location.protocol)) return null;
   try { const r = await fetch(A.file, { cache: 'no-store' }); return r.ok ? await r.json() : null; } catch (e) { return null; }
@@ -1434,8 +1598,19 @@ async function loadLive() {
     }
     const books = await fetchBooks(); if (g !== liveGen) return false;
     if (!Object.keys(books).length) throw new Error('no books');
-    const raw = { ts: Date.now(), price: tick.fresh() || series.candles[series.candles.length - 1][4], books, ...series, market, bookHist: site?.bookHist };
-    lastRaw = raw; const L = levelsOf(raw); applyLevels(L); armed = true; lastBooks = L.nBooks;
+    const last = series.candles[series.candles.length - 1][4];
+    // exchanges a browser cannot reach (and any that failed just now) from the hourly data. That book can be hours old:
+    // what the price traded through since it was taken is gone (filled or pulled), so it is left out
+    const since = site?.ts || 0, now = tick.fresh() || last, bookAge = {};
+    let hiS = now, loS = now;
+    for (const c of series.candles15 || []) if (c[0] + 9e5 > since) { if (c[2] > hiS) hiS = c[2]; if (c[3] < loS) loS = c[3]; }
+    for (const [k, v] of Object.entries(site?.books || {})) if (!books[k]) { books[k] = { b: v.b.filter(r => r[0] < loS), a: v.a.filter(r => r[0] > hiS) }; bookAge[k] = since; }
+    // open interest and taker share: the hourly line over all exchanges while it is fresh (plus Bybit's own), else Gate's
+    const agg = site?.oiSrc && Date.now() - site.ts < 2 * 3.6e6 ? { oi: site.oi, taker: site.taker } : {};
+    if (agg.oi && series.bybitOi && Object.keys(series.bybitOi).length > 1) agg.oi = addOi(agg.oi, series.bybitOi);
+    const ts = Date.now(), raw = { ts, price: now, books, bookAge, ...series, ...agg, market, bookHist: site?.bookHist };
+    lastRaw = raw; const L = levelsOf(raw); applyLevels(L); armed = true; lastBooks = L.nBooks; lastOld = L.nOld;
+    const e = histEntry(books, L.weights, last, ts); liveHist = [...liveHist.filter(x => x.t !== e.t), e].slice(-48);
     liveStatus(L.ts);
     return true;
   } catch (e) { return false; }
@@ -1463,7 +1638,7 @@ function selectCoin(k) {
   liveGen++; clearInterval(liveTimer); liveTimer = 0; clearInterval(fastTimer); fastTimer = 0; tick.stop(); liqWs.stop();
   for (const r of liveRows()) removeRow(r, true);
   for (const q of bolts) q.onHit = null;
-  site = series = market = null; lastRaw = null; firstApply = true; armed = false; mode = 'live';
+  site = series = market = null; lastRaw = null; liveHist = []; firstApply = true; armed = false; mode = 'live';
   p = pS = shown = 0; nCleared = eaten = liqTot = 0; combo = 0; trades.length = 0; lastPx = 0; tagDir = 0; slabStr = ''; ref24 = 0;
   for (const R of Object.values(REGS)) { R.tot = 0; R.on = false; R.str = ''; R.hist = []; }
   $('px').textContent = '—'; $('chg').textContent = ''; selRow = null; selEx = null; tip.hidden = true;
@@ -1629,7 +1804,7 @@ function fit() {
   sideTop = (nU + 0.5) * RS; sideBot = -(nD + 0.5) * RS;
   midY = ((nU - nD) * RS) / 2;
   const top = (nU + 0.5) * RS, bot = -(nD + 0.5) * RS;
-  tileStep = (top - bot - 1.8) / (12 / LAY.TC - 1); tileSc = Math.max(0.6, Math.min(LAY.TSC, tileStep * 0.88 / 1.7)); tileTop = top - 0.9 * tileSc;
+  tileStep = (top - bot - 1.8) / (TROWS - 1); tileSc = Math.max(0.6, Math.min(LAY.TSC, tileStep * 0.88 / 1.7)); tileTop = top - 0.9 * tileSc;
   scene.fog.near = dist + 4; scene.fog.far = dist + 70;
   cam.updateProjectionMatrix();
 }

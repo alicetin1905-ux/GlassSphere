@@ -158,7 +158,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
       <h3 id="intro-h">Zo lees je het</h3>
       <ul>
         <li>Elke <b>neonbuis</b> is een prijsniveau: een muur in de orderboeken, of geschatte stops of liquidaties. Prijs en soort staan links in de buis, het bedrag rechts.</li>
-        <li>Hoe <b>dikker</b> de buis, hoe groter het volume of de score.</li>
+        <li>Hoe <b>dikker</b> de buis, hoe groter het volume, of bij stops hoe sterker (zwak, gemiddeld, sterk, zeer sterk).</li>
         <li><b>Blokje</b> = muur: die <b>remt</b> de prijs. <b>Dubbele pijl</b> = stops of liquidaties: die <b>duwen</b> de prijs verder in die richting als ze geraakt worden.</li>
         <li>De <b>draden</b> lopen naar de beurzen die de buis vullen: hoe feller, hoe groter hun deel. Een <b>puls</b> is een order die erbij komt of verdwijnt; een grote puls is een groot bedrag.</li>
         <li><b>Tik op een buis</b> voor de details; de tegels tonen dan het deel van elke beurs. <b>Tik op een beurs</b> om alleen haar buizen te zien.</li>
@@ -424,7 +424,9 @@ const fx = (x, d) => x.toFixed(d).replace('.', ',');
 const fmtP = p => p.toLocaleString('nl-NL', { minimumFractionDigits: A.dec, maximumFractionDigits: A.dec });
 const fmtPct = x => Math.abs(x) < 0.005 ? '0,00%' : (x > 0 ? '+' : '') + fx(x, 2) + '%';
 const fmtUsd = v => v >= 1e9 ? '$' + fx(v / 1e9, 2) + ' mld' : v >= 1e6 ? '$' + fx(v / 1e6, 1) + ' mln' : v >= 1e3 ? '$' + fx(v / 1e3, 0) + 'K' : '$' + fx(v, 0);
-const valStr = r => r.t.u === 'usd' ? fmtUsd(r.val) : r.t.u === 'score' ? 'score ' + Math.round(r.val) : (r.first ? 'eerst · ' : '') + Math.round(r.val * 100) + '%';
+// stops have no amount: their strength in words against the strongest stop level in view, as in Alle niveaus on the coin page
+const stopWord = v => v >= 75 ? 'Zeer sterk' : v >= 50 ? 'Sterk' : v >= 25 ? 'Gemiddeld' : 'Zwak';
+const valStr = r => r.t.u === 'usd' ? fmtUsd(r.val) : r.t.u === 'score' ? stopWord(r.val) : (r.first ? 'eerst · ' : '') + Math.round(r.val * 100) + '%';
 const hhmmss = ts => new Date(ts).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 const rnd = (a, b) => a + Math.random() * (b - a);
 const gauss = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
@@ -1202,7 +1204,7 @@ function lock(q) {
   flashRow(r.yd, r.t.col); shake = Math.max(shake, 0.06);
 }
 
-// a strong level (stop score 80+, a wall or liquidation cluster of 80%+ of the largest, a target) close to the price:
+// a strong level (a stop of 80+ against the strongest, a wall or liquidation cluster of 80%+ of the largest, a target) close to the price:
 // its row flashes and a notice says how far it still is; once per approach
 function checkNear() {
   if (!armed) return;
@@ -1568,8 +1570,8 @@ stage.addEventListener('dblclick', () => { zoom = 1; });
 const EXPL = {
   ask: 'Verkooporders in het orderboek van alle beurzen samen, gewogen naar volume. Een muur remt een stijging af; wordt hij opgegeten, dan kan de prijs doorschieten.',
   bid: 'Kooporders in het orderboek van alle beurzen samen, gewogen naar volume. Een koopmuur vangt een daling op; breekt hij, dan valt die steun weg.',
-  bstop: 'Geschatte stop-orders net boven een top die nog niet geraakt is: stop-losses van shorts en uitbraakkopers. Geraakt worden het kooporders die de prijs verder omhoog kunnen duwen. Score 0–100 t.o.v. het sterkste stopniveau in beeld, geen bedrag.',
-  sstop: 'Geschatte stop-orders net onder een bodem die nog niet geraakt is: stop-losses van longs. Geraakt worden het verkooporders die de prijs verder omlaag kunnen duwen. Score 0–100 t.o.v. het sterkste stopniveau in beeld, geen bedrag.',
+  bstop: 'Geschatte stop-orders net boven een top die nog niet geraakt is: stop-losses van shorts en uitbraakkopers. Geraakt worden het kooporders die de prijs verder omhoog kunnen duwen. Een bedrag is niet bekend, dus de sterkte staat in woorden (zwak, gemiddeld, sterk, zeer sterk), naar het sterkste stopniveau in beeld.',
+  sstop: 'Geschatte stop-orders net onder een bodem die nog niet geraakt is: stop-losses van longs. Geraakt worden het verkooporders die de prijs verder omlaag kunnen duwen. Een bedrag is niet bekend, dus de sterkte staat in woorden (zwak, gemiddeld, sterk, zeer sterk), naar het sterkste stopniveau in beeld.',
   sliq: 'Geschatte liquidaties van shorts met hefboom, uit de groei van de open posities. Geraakt moeten ze terugkopen: een short squeeze kan de prijs verder omhoog jagen.',
   lliq: 'Geschatte liquidaties van longs met hefboom, uit de groei van de open posities. Geraakt moeten ze verkopen: een long-flush kan de prijs verder omlaag drukken.',
   tup: 'GlassSphere-doel voor 1 dag: het grootste cluster van stops en liquidaties boven de prijs. De kans zegt hoe vaak dit doel eerst geraakt wordt, berekend uit de afstanden; het is geen voorspelling van de richting.',

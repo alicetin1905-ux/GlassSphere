@@ -2230,7 +2230,7 @@ function refresh() {
   if (state.data) renderReading();     // first: the levels table lists the targets
   state.signals = state.data ? signals() : [];
   const rn = state.signals.running, when = t => new Date(t).toLocaleString('nl-NL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
-  $('sig-now').textContent = rn ? ` · nu: ${rn.side === 'buy' ? 'BUY' : 'SELL'} ${rn.t ? 'sinds ' + when(rn.t) : 'al meer dan 7 dagen'}${rn.pct >= 50 ? ` · ${rn.pct}%` : ''}` : '';
+  $('sig-now').textContent = rn ? ` · nu: ${rn.side === 'buy' ? 'BUY' : 'SELL'} ${rn.t ? 'sinds ' + when(rn.t + 3.6e6) : 'al meer dan 7 dagen'}${rn.pct >= 50 ? ` · ${rn.pct}%` : ''}` : '';
   $('sig-now').style.color = rn ? (rn.side === 'buy' ? 'var(--up)' : 'var(--dn)') : '';
   renderScore(); loadSigLog(); renderSigBox(); renderPos();
   renderLevels();

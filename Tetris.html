@@ -124,6 +124,28 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
   .note{font-size:9.5px}
 }
 #help{margin-left:6px;font:700 14px var(--mono)}
+/* the running GlassSphere signal, as on the coin page: side, chance at the start, entry / target / stop, where the price stands */
+.sig{position:absolute;left:max(12px,env(safe-area-inset-left,0px));top:58px;width:min(310px,46vw);pointer-events:none;font-family:var(--mono);font-size:11px;color:var(--txt);
+  background:#0d1311e6;border:1px solid var(--line);border-left:4px solid var(--sgc,var(--line));border-radius:10px;padding:8px 10px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.sig[hidden]{display:none}
+.sig .h{display:flex;align-items:baseline;gap:8px}
+.sig .h b{font-family:var(--pix);font-size:13px;color:var(--sgc);text-shadow:0 0 12px var(--sgc)}
+.sig .h span{color:var(--dim);font-size:10.5px}
+.sig .h em{margin-left:auto;font-style:normal;font-weight:700;font-size:13px}
+.sig .lv{display:flex;justify-content:space-between;gap:6px;margin-top:6px;color:var(--dim);font-size:10px}
+.sig .lv i{font-style:normal;color:var(--txt);display:block;font-size:11px}
+.sig .bar{position:relative;height:6px;border-radius:3px;margin:7px 0 4px;background:linear-gradient(90deg,#ff4d6a,#2a2f2c 50%,#35ffb0)}
+.sig .bar b{position:absolute;top:-3px;width:4px;height:12px;border-radius:2px;background:#fff;box-shadow:0 0 8px #fff;transform:translateX(-2px)}
+.sig .ft{color:var(--faint);font-size:9.5px}
+@media (max-width:520px){ .sig{top:40px;width:auto;right:max(12px,env(safe-area-inset-right,0px));padding:5px 8px;font-size:10px} .sig .lv,.sig .ft{display:none} .sig .bar{margin:4px 0 0} .sig .h b{font-size:10px} }
+/* stream mode (?stream): no buttons, a LIVE badge with the next coin, a line that it is not advice; bigger signal box */
+body.stream #snd,body.stream #help,body.stream .intro{display:none}
+.live-badge{display:none}
+body.stream .live-badge{display:flex;position:absolute;left:50%;top:10px;transform:translateX(-50%);align-items:center;gap:10px;pointer-events:none;
+  font-family:var(--mono);font-size:13px;color:var(--txt);background:#0d1311e6;border:1px solid var(--line);border-radius:999px;padding:6px 14px}
+body.stream .live-badge b{color:#ff4d6a;font-family:var(--pix);font-size:11px;animation:blink 1.4s steps(2) infinite}
+body.stream .sig{width:360px;font-size:12.5px} body.stream .sig .h b{font-size:16px} body.stream .sig .h em{font-size:16px}
+.disc{display:none} body.stream .disc{display:block;position:absolute;left:0;right:0;bottom:30px;text-align:center;pointer-events:none;font-family:var(--mono);font-size:12px;color:var(--dim)}
 .intro{position:absolute;inset:0;z-index:6;display:grid;place-items:center;background:rgba(3,2,8,.74);padding:16px}
 .intro[hidden]{display:none}
 .intro .card{width:min(460px,100%);max-height:100%;overflow:auto;background:#0d1311f7;border:1px solid var(--line);border-radius:14px;padding:18px 20px;font-family:var(--sans);color:var(--txt);font-size:14px;line-height:1.45}
@@ -152,6 +174,9 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
     <div class="next" aria-hidden="true"><span class="lab">VOLGENDE</span><div class="mini" id="mini"></div><span class="who" id="who">—</span></div>
     <ul class="feed" id="feed" aria-live="polite"></ul>
     <div class="banner" id="banner" aria-hidden="true"></div>
+    <div class="sig" id="sig" hidden></div>
+    <div class="live-badge" id="live-badge"><b>● LIVE</b><span>GlassSphere · orderboek-radar</span><span id="nextcoin"></span></div>
+    <p class="disc">GlassSphere · live orderboeken van alle grote beurzen · stops en liquidaties geschat · signalen zijn geen financieel advies</p>
     <div class="tip" id="tip" hidden></div>
     <p class="note" id="note">laden…</p>
     <div class="intro" id="intro" hidden><div class="card" role="dialog" aria-labelledby="intro-h">
@@ -176,6 +201,8 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);overflow:hidd
 (async function () {
 const $ = id => document.getElementById(id);
 const stage = $('stage'), cvs = $('c');
+const QS = new URLSearchParams(location.search), STREAM = QS.has('stream');   // ?stream: a fixed show for a live stream
+if (STREAM) document.body.classList.add('stream');
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let LOWP = false;   // saving power (a phone, or a device on battery): 30 frames a second and half the particles
 try {
@@ -565,7 +592,89 @@ function levelsOf(raw) {
   }
   const cs = raw.candles;
   const nOn = Object.keys(raw.books).filter(k => !OFF.has(k)), nOld = nOn.filter(k => raw.bookAge?.[k]).length;
-  return { P, ts: raw.ts, rows, B, ex: exTot, nBooks: nOn.length, nOld, weights, ref24: cs[Math.max(0, cs.length - 25)][4] };
+  return { P, ts: raw.ts, rows, B, ex: exTot, nBooks: nOn.length, nOld, weights, ref24: cs[Math.max(0, cs.length - 25)][4], stops, liqs, pUp, tUp: tg.tUp?.p, tDn: tg.tDn?.p };
+}
+
+/* ---------- Buy / Sell signals, as on the coin page ----------
+   The 1-day reading at 80% or more (the calibrated chance): Buy when "eerst omhoog", Sell when "eerst omlaag"; it runs
+   until the other one starts. The hours of the last 7 days worked out from the data as it was then, the current hour from
+   the data now, and the server's hourly log (glasssphere-signals.json) as the record where it covers the window. */
+const SIG = { days: 1, min: 80, hours: 168 }, sigCache = new Map();
+let sigLog = null, sigLogAt = 0, sigNow = null;
+async function loadSigLog() {
+  if (Date.now() - sigLogAt < 5 * 60e3) return; sigLogAt = Date.now();
+  try { const r = await fetch('glasssphere-signals.json', { cache: 'no-store' }); if (r.ok) sigLog = await r.json(); } catch (e) {}
+}
+function signalsOf(D, L) {
+  const cs = D.candles, n = cs.length; if (n < 72) return [];
+  const key = `${coinKey}:${cs[n - 1][0]}:${n}`;
+  let hist = sigCache.get(key);
+  if (!hist) {
+    const from = Math.max(48, n - SIG.hours), tk = new Map(D.taker || []); hist = [];
+    estimateLiqs(cs, D.oi || [], D.taker, (i, pos) => {
+      if (i < from || i >= n - 1) return;
+      const c = cs.slice(0, i + 1), P = cs[i][4];
+      const pDist = targetsOf(c, poolsOf(estimateStops(c, P, P * 0.85, P * 1.15), pos, P), P, SIG.days).pUp;
+      hist.push({ t: cs[i][0], pUp: chanceOf(pDist, flowOf(cs, tk, i), SIG.days) });
+    });
+    sigCache.set(key, hist); if (sigCache.size > 30) sigCache.delete(sigCache.keys().next().value);
+  }
+  const all = [...hist, { t: cs[n - 1][0], pUp: L.pUp }];
+  const pct = (h, sd) => h.pUp == null ? 0 : Math.round((sd === 'buy' ? h.pUp : 1 - h.pUp) * 100);
+  const step = (cur, h) => { for (const sd of ['buy', 'sell']) if (sd !== cur && pct(h, sd) >= SIG.min) return sd; return cur; };
+  const lg = sigLog?.coins?.[coinKey], t0 = all[0].t + 3.6e6;
+  const covered = lg && lg.last >= t0 && (lg.list.length < 100 || lg.list[0].t <= t0);
+  const out = []; let cur;
+  if (covered) {
+    cur = lg.cur;
+    for (const x of lg.list) if (x.t - 3.6e6 >= all[0].t) out.push({ t: x.t - 3.6e6, side: x.side, prob: x.pct / 100 });
+    for (const h of all) if (h.t + 3.6e6 > lg.last) { const nx = step(cur, h); if (nx && nx !== cur) out.push({ t: h.t, side: nx, prob: pct(h, nx) / 100 }); cur = nx; }
+  } else {
+    cur = step(null, all[0]);
+    for (const h of all.slice(1)) { const nx = step(cur, h); if (nx && nx !== cur) out.push({ t: h.t, side: nx, prob: pct(h, nx) / 100 }); cur = nx; }
+  }
+  if (out.length && cur === out[out.length - 1].side) out[out.length - 1].active = true;
+  const lastLog = covered ? lg.list.filter(x => x.side === cur).pop() : null;
+  const since = out.length && out[out.length - 1].active ? out[out.length - 1].t : lastLog ? lastLog.t - 3.6e6 : null;
+  out.running = cur ? { side: cur, t: since, pct: pct(all[all.length - 1], cur) } : null;
+  return out;
+}
+// the running signal as a trade: from the server's log when it has it (entry, target, stop), else from this reading
+function runningTrade(sg, L) {
+  const rn = sg.running; if (!rn) return null;
+  const lg = sigLog?.coins?.[coinKey], last = lg?.list?.[lg.list.length - 1];
+  if (last && last.side === rn.side && lg.cur === rn.side) return last;
+  if (!(L.tUp > 0 && L.tDn > 0)) return null;
+  const buy = rn.side === 'buy';
+  return { side: rn.side, t: rn.t != null ? rn.t + 3.6e6 : null, pct: rn.pct, entry: null, tp: buy ? L.tUp : L.tDn, sl: buy ? L.tDn : L.tUp };
+}
+function updateSignal(raw, L) { try { sigNow = { trade: runningTrade(signalsOf(raw, L), L), pUp: L.pUp }; } catch (e) { sigNow = null; } renderSig(); }
+const whenNl = t => new Date(t).toLocaleString('nl-NL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+let sigStr = '';
+function renderSig() {
+  const box = $('sig'), P = p;
+  if (!sigNow || !(P > 0)) { box.hidden = true; sigStr = ''; return; }
+  const s = sigNow.trade; let html;
+  if (!s) {   // no signal running: the chance of the reading
+    const up = sigNow.pUp != null && sigNow.pUp >= 0.5, ch = sigNow.pUp == null ? null : Math.round((up ? sigNow.pUp : 1 - sigNow.pUp) * 100);
+    box.style.setProperty('--sgc', 'var(--dim)');
+    html = `<div class="h"><b style="color:var(--dim);text-shadow:none">GEEN SIGNAAL</b><span>${ch != null ? `eerst ${up ? 'omhoog' : 'omlaag'} ${ch}%` : ''}</span></div>` +
+      `<div class="ft">Een Buy- of Sell-signaal start bij 80% (GlassSphere, 1 dag). Geen advies.</div>`;
+  } else {
+    const buy = s.side === 'buy', sg = buy ? 1 : -1, entry = s.entry || P, res = s.out ? s.res : s.entry ? (P / s.entry - 1) * sg : null;
+    const end = s.t != null ? s.t + 24 * 3.6e6 : null, left = end != null ? Math.ceil((end - Date.now()) / 3.6e6) : null;
+    const frac = Math.max(0, Math.min(1, (P - Math.min(s.sl, s.tp)) / Math.abs(s.tp - s.sl)));
+    const st = s.out === 'doel' ? 'doel geraakt' : s.out === 'stop' ? 'stop geraakt' : s.out === 'geen' ? '24 uur voorbij' : left != null && left > 0 ? `nog ${left} uur` : '';
+    const pc = x => (x > 0 ? '+' : '') + fx(x * 100, 2) + '%';
+    box.style.setProperty('--sgc', buy ? 'var(--up)' : 'var(--dn)');
+    html = `<div class="h"><b>${buy ? 'BUY' : 'SELL'}</b><span>${s.pct ? s.pct + '% bij de start' : ''}${st ? ' · ' + st : ''}</span>` +
+      `${res != null ? `<em style="color:${res >= 0 ? 'var(--up)' : 'var(--dn)'}">${pc(res)}</em>` : ''}</div>` +
+      `<div class="lv"><span>Instap<i>${s.entry ? fmtP(s.entry) : 'nu'}</i></span><span>Doel<i>${fmtP(s.tp)}</i></span><span>Stop<i>${fmtP(s.sl)}</i></span><span>Nu<i>${fmtP(P)}</i></span></div>` +
+      `<div class="bar"><b style="left:${frac * 100}%"></b></div>` +
+      `<div class="ft">${s.t != null ? 'sinds ' + whenNl(s.t) + ' · ' : ''}doel het waarschijnlijkste cluster, stop het andere, 24 uur · geen advies</div>`;
+  }
+  if (html !== sigStr) { box.innerHTML = html; sigStr = html; }
+  box.hidden = false;
 }
 
 /* ---------- kinds, formatting ---------- */
@@ -1496,7 +1605,7 @@ const snd = k => sound.play(k);
 $('snd').setAttribute('aria-pressed', sound.on);
 // the explanation, once on the first visit and again from the ? button
 { const intro = $('intro'); let seen = false; try { seen = localStorage.getItem('tetris-intro') === '1'; } catch (e) {}
-  if (!seen) intro.hidden = false;
+  if (!seen && !STREAM) intro.hidden = false;
   $('intro-ok').addEventListener('click', () => { intro.hidden = true; try { localStorage.setItem('tetris-intro', '1'); } catch (e) {} });
   $('help').addEventListener('click', () => { intro.hidden = false; }); }
 $('snd').addEventListener('click', () => { $('snd').setAttribute('aria-pressed', sound.toggle()); snd('warn'); });
@@ -1642,6 +1751,7 @@ async function loadLive() {
     if (agg.oi && series.bybitOi && Object.keys(series.bybitOi).length > 1) agg.oi = addOi(agg.oi, series.bybitOi);
     const ts = Date.now(), raw = { ts, price: now, books, bookAge, ...series, ...agg, market, bookHist: site?.bookHist };
     lastRaw = raw; const L = levelsOf(raw); applyLevels(L); armed = true; lastBooks = L.nBooks; lastOld = L.nOld;
+    loadSigLog(); updateSignal(raw, L);
     const e = histEntry(books, L.weights, last, ts); liveHist = [...liveHist.filter(x => x.t !== e.t), e].slice(-48);
     liveStatus(L.ts);
     return true;
@@ -1652,7 +1762,7 @@ async function startLive() {
   tick.start(); liqWs.start();
   status('', 'laden…', 'orderboeken ophalen…');
   site = await loadSite(); if (g !== liveGen) return;
-  if (site) { applyLevels(levelsOf(site)); status('site', `uurdata · ${hhmmss(site.ts)}`, 'Data van het laatste uur · live data laden…'); }
+  if (site) { const L = levelsOf(site); applyLevels(L); await loadSigLog(); if (g !== liveGen) return; updateSignal(site, L); status('site', `uurdata · ${hhmmss(site.ts)}`, 'Data van het laatste uur · live data laden…'); }
   if (await loadLive()) { if (g === liveGen) { liveTimer = setInterval(loadLive, 15e3); fastTimer = setInterval(fastBook, 3000); } return; }
   if (g !== liveGen) return;
   if (site) { liveTimer = setInterval(loadLive, 15e3); return; }
@@ -1666,11 +1776,11 @@ function selectCoin(k) {
   coinKey = k; A = ASSETS[k]; $('coin').value = k; $('coin-ico').src = `icons/coins/${k}.png`;
   document.title = 'GlassSphere · Tetris' + (k === 'btc' ? '' : ' · ' + A.name);
   try { localStorage.setItem('tetris-coin', k); } catch (e) {}
-  try { history.replaceState(null, '', location.pathname + (k === 'btc' ? '' : '#' + k)); } catch (e) {}
+  try { history.replaceState(null, '', location.pathname + location.search + (k === 'btc' ? '' : '#' + k)); } catch (e) {}
   liveGen++; clearInterval(liveTimer); liveTimer = 0; clearInterval(fastTimer); fastTimer = 0; tick.stop(); liqWs.stop();
   for (const r of liveRows()) removeRow(r, true);
   for (const q of bolts) q.onHit = null;
-  site = series = market = null; lastRaw = null; liveHist = []; firstApply = true; armed = false; mode = 'live';
+  site = series = market = null; lastRaw = null; liveHist = []; sigNow = null; renderSig(); firstApply = true; armed = false; mode = 'live';
   p = pS = shown = 0; nCleared = eaten = liqTot = 0; combo = 0; trades.length = 0; lastPx = 0; tagDir = 0; slabStr = ''; ref24 = 0;
   for (const R of Object.values(REGS)) { R.tot = 0; R.on = false; R.seen = false; R.str = ''; R.hist = []; }
   $('px').textContent = '—'; $('chg').textContent = ''; selRow = null; selEx = null; tip.hidden = true;
@@ -2033,7 +2143,7 @@ function update(dt) {
   if ($('chg').textContent !== chg) $('chg').textContent = chg;
   $('s-clr').textContent = nCleared; $('s-eat').textContent = eaten ? fmtUsd(eaten).replace(' mln', 'M').replace(' mld', 'B') : '$0';
   $('s-liq').textContent = liqTot ? fmtUsd(liqTot).replace(' mln', 'M').replace(' mld', 'B') : '$0'; $('s-cmb').textContent = '×' + (T - lastClearT < 4.5 ? combo : 0);
-  if ((tm.dist -= dt) <= 0) { tm.dist = 1; for (const r of liveRows()) drawLabel(r);
+  if ((tm.dist -= dt) <= 0) { tm.dist = 1; renderSig(); for (const r of liveRows()) drawLabel(r);
     checkNear(); }
   drawSlab();
 }
@@ -2231,6 +2341,18 @@ function render(rdt) {
   renderer.render(scene, cam);
 }
 requestAnimationFrame(frame);
+// stream mode: the coins take turns (?coins=btc,eth,sol and ?min=4 minutes each), the badge counts down to the next
+if (STREAM) {
+  const list = (QS.get('coins') || 'btc,eth,sol').split(',').map(k => k.trim().toLowerCase()).filter(k => ASSETS[k]), per = Math.max(1, +QS.get('min') || 4) * 60e3;
+  if (list.length && !list.includes(coinKey)) { coinKey = list[0]; A = ASSETS[coinKey]; }
+  let at = Date.now() + per;
+  setInterval(() => {
+    if (list.length < 2) return;
+    const left = Math.max(0, at - Date.now()), nx = list[(list.indexOf(coinKey) + 1) % list.length];
+    $('nextcoin').textContent = `· volgende: ${ASSETS[nx].name} over ${Math.floor(left / 60e3)}:${String(Math.floor(left / 1e3) % 60).padStart(2, '0')}`;
+    if (!left) { at = Date.now() + per; selectCoin(nx); }
+  }, 1000);
+}
 if (/^https?:$/.test(location.protocol)) selectCoin(coinKey); else startDemo();
 })();
 </script>

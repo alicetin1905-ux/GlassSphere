@@ -216,6 +216,18 @@ const $ = id => document.getElementById(id);
 const stage = $('stage'), cvs = $('c');
 const QS = new URLSearchParams(location.search), STREAM = QS.has('stream');   // ?stream: a fixed show for a live stream
 if (STREAM) document.body.classList.add('stream');
+// the stream is in English (text, numbers, dates), the page itself stays Dutch
+const EN = STREAM, say = (nl, en) => EN ? en : nl, LOC = EN ? 'en-US' : 'nl-NL', LOCD = EN ? 'en-GB' : 'nl-NL';
+if (EN) {
+  document.documentElement.lang = 'en';
+  const set = (sel, html) => { const el = document.querySelector(sel); if (el) el.innerHTML = html; };
+  const st = document.querySelectorAll('#stats span');
+  ['Swept', 'Eaten', '<em class="lng">Real </em>liq.', 'Combo', 'Log'].forEach((h, i) => { if (st[i]) st[i].innerHTML = h; });
+  set('.next .lab', 'NEXT'); set('#st-t', 'loading…'); set('#note', 'loading…'); set('#live-badge span', 'GlassSphere · order book radar');
+  set('#log .lh b', 'Log'); set('#log .lh span', 'newest first');
+  $('coin').setAttribute('aria-label', 'Coin'); $('stats').title = 'Log'; $('stats').setAttribute('aria-label', 'Open the log');
+  cvs.setAttribute('aria-label', '3D order book: walls, stops, liquidations and targets as neon tubes around the current price');
+}
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let LOWP = false;   // saving power (a phone, or a device on battery): 30 frames a second and half the particles
 try {
@@ -662,7 +674,7 @@ function runningTrade(sg, L) {
   return { side: rn.side, t: rn.t != null ? rn.t + 3.6e6 : null, pct: rn.pct, entry: null, tp: buy ? L.tUp : L.tDn, sl: buy ? L.tDn : L.tUp };
 }
 function updateSignal(raw, L) { try { sigNow = { trade: runningTrade(signalsOf(raw, L), L), pUp: L.pUp }; } catch (e) { sigNow = null; } renderSig(); }
-const whenNl = t => new Date(t).toLocaleString('nl-NL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+const whenNl = t => new Date(t).toLocaleString(LOCD, { day: 'numeric', month: EN ? 'short' : 'numeric', hour: '2-digit', minute: '2-digit' });
 let sigStr = '';
 function renderSig() {
   const box = $('sig'), P = p;
@@ -671,20 +683,20 @@ function renderSig() {
   if (!s) {   // no signal running: the chance of the reading
     const up = sigNow.pUp != null && sigNow.pUp >= 0.5, ch = sigNow.pUp == null ? null : Math.round((up ? sigNow.pUp : 1 - sigNow.pUp) * 100);
     box.style.setProperty('--sgc', 'var(--dim)');
-    html = `<div class="h"><b style="color:var(--dim);text-shadow:none">GEEN SIGNAAL</b><span>${ch != null ? `eerst ${up ? 'omhoog' : 'omlaag'} ${ch}%` : ''}</span></div>` +
-      `<div class="ft">Een Buy- of Sell-signaal start bij 80% (GlassSphere, 1 dag). Geen advies.</div>`;
+    html = `<div class="h"><b style="color:var(--dim);text-shadow:none">${say('GEEN SIGNAAL', 'NO SIGNAL')}</b><span>${ch != null ? say(`eerst ${up ? 'omhoog' : 'omlaag'} ${ch}%`, `${up ? 'up' : 'down'} first ${ch}%`) : ''}</span></div>` +
+      `<div class="ft">${say('Een Buy- of Sell-signaal start bij 80% (GlassSphere, 1 dag). Geen advies.', 'A Buy or Sell signal starts at 80% (GlassSphere, 1 day). Not advice.')}</div>`;
   } else {
     const buy = s.side === 'buy', sg = buy ? 1 : -1, entry = s.entry || P, res = s.out ? s.res : s.entry ? (P / s.entry - 1) * sg : null;
     const end = s.t != null ? s.t + 24 * 3.6e6 : null, left = end != null ? Math.ceil((end - Date.now()) / 3.6e6) : null;
     const frac = Math.max(0, Math.min(1, (P - Math.min(s.sl, s.tp)) / Math.abs(s.tp - s.sl)));
-    const st = s.out === 'doel' ? 'doel geraakt' : s.out === 'stop' ? 'stop geraakt' : s.out === 'geen' ? '24 uur voorbij' : left != null && left > 0 ? `nog ${left} uur` : '';
+    const st = s.out === 'doel' ? say('doel geraakt', 'target hit') : s.out === 'stop' ? say('stop geraakt', 'stop hit') : s.out === 'geen' ? say('24 uur voorbij', '24 hours over') : left != null && left > 0 ? say(`nog ${left} uur`, `${left} h left`) : '';   // 'doel', 'stop', 'geen': the outcomes as the server's log names them
     const pc = x => (x > 0 ? '+' : '') + fx(x * 100, 2) + '%';
     box.style.setProperty('--sgc', buy ? 'var(--up)' : 'var(--dn)');
-    html = `<div class="h"><b>${buy ? 'BUY' : 'SELL'}</b><span>${s.pct ? s.pct + '% bij de start' : ''}${st ? ' · ' + st : ''}</span>` +
+    html = `<div class="h"><b>${buy ? 'BUY' : 'SELL'}</b><span>${s.pct ? s.pct + say('% bij de start', '% at the start') : ''}${st ? ' · ' + st : ''}</span>` +
       `${res != null ? `<em style="color:${res >= 0 ? 'var(--up)' : 'var(--dn)'}">${pc(res)}</em>` : ''}</div>` +
-      `<div class="lv"><span>Instap<i>${s.entry ? fmtP(s.entry) : 'nu'}</i></span><span>Doel<i>${fmtP(s.tp)}</i></span><span>Stop<i>${fmtP(s.sl)}</i></span><span>Nu<i>${fmtP(P)}</i></span></div>` +
+      `<div class="lv"><span>${say('Instap', 'Entry')}<i>${s.entry ? fmtP(s.entry) : say('nu', 'now')}</i></span><span>${say('Doel', 'Target')}<i>${fmtP(s.tp)}</i></span><span>Stop<i>${fmtP(s.sl)}</i></span><span>${say('Nu', 'Now')}<i>${fmtP(P)}</i></span></div>` +
       `<div class="bar"><b style="left:${frac * 100}%"></b></div>` +
-      `<div class="ft">${s.t != null ? 'sinds ' + whenNl(s.t) + ' · ' : ''}doel het waarschijnlijkste cluster, stop het andere, 24 uur · geen advies</div>`;
+      `<div class="ft">${s.t != null ? say('sinds ', 'since ') + whenNl(s.t) + ' · ' : ''}${say('doel het waarschijnlijkste cluster, stop het andere, 24 uur · geen advies', 'target the more likely cluster, stop the other one, 24 hours · not advice')}</div>`;
   }
   if (html !== sigStr) { box.innerHTML = html; sigStr = html; }
   box.hidden = false;
@@ -692,25 +704,26 @@ function renderSig() {
 
 /* ---------- kinds, formatting ---------- */
 const TY = {
-  ask:   { n: 'Verkoopmuur',  c: '#ff4d6a', u: 'usd',   up: true,  o: 0 },
-  bid:   { n: 'Koopmuur',     c: '#35ffb0', u: 'usd',   up: false, o: 1 },
-  bstop: { n: 'Koopstops',    c: '#ffc857', u: 'score', up: true,  o: 2 },
-  sstop: { n: 'Verkoopstops', c: '#ffc857', u: 'score', up: false, o: 3 },
-  sliq:  { n: 'Short-liq.',   c: '#b48cff', u: 'usd',   up: true,  o: 4 },
-  lliq:  { n: 'Long-liq.',    c: '#b48cff', u: 'usd',   up: false, o: 5 },
-  tup:   { n: 'Doel ▲',       c: '#35ffb0', u: 'pct',   up: true,  o: 6 },
-  tdn:   { n: 'Doel ▼',       c: '#ff4d6a', u: 'pct',   up: false, o: 7 },
+  ask:   { n: say('Verkoopmuur', 'Sell wall'), c: '#ff4d6a', u: 'usd',   up: true,  o: 0 },
+  bid:   { n: say('Koopmuur', 'Buy wall'), c: '#35ffb0', u: 'usd',   up: false, o: 1 },
+  bstop: { n: say('Koopstops', 'Buy stops'), c: '#ffc857', u: 'score', up: true,  o: 2 },
+  sstop: { n: say('Verkoopstops', 'Sell stops'), c: '#ffc857', u: 'score', up: false, o: 3 },
+  sliq:  { n: say('Short-liq.', 'Short liq.'), c: '#b48cff', u: 'usd',   up: true,  o: 4 },
+  lliq:  { n: say('Long-liq.', 'Long liq.'), c: '#b48cff', u: 'usd',   up: false, o: 5 },
+  tup:   { n: say('Doel ▲', 'Target ▲'), c: '#35ffb0', u: 'pct',   up: true,  o: 6 },
+  tdn:   { n: say('Doel ▼', 'Target ▼'), c: '#ff4d6a', u: 'pct',   up: false, o: 7 },
 };
 for (const k in TY) TY[k].col = new THREE.Color(TY[k].c);
 const MAXB = 12, CAP = 12;   // a bar is 0..12 units thick
-const fx = (x, d) => x.toFixed(d).replace('.', ',');
-const fmtP = p => p.toLocaleString('nl-NL', { minimumFractionDigits: A.dec, maximumFractionDigits: A.dec });
-const fmtPct = x => Math.abs(x) < 0.005 ? '0,00%' : (x > 0 ? '+' : '') + fx(x, 2) + '%';
-const fmtUsd = v => v >= 1e9 ? '$' + fx(v / 1e9, 2) + ' mld' : v >= 1e6 ? '$' + fx(v / 1e6, 1) + ' mln' : v >= 1e3 ? '$' + fx(v / 1e3, 0) + 'K' : '$' + fx(v, 0);
+const fx = (x, d) => EN ? x.toFixed(d) : x.toFixed(d).replace('.', ',');
+const fmtP = p => p.toLocaleString(LOC, { minimumFractionDigits: A.dec, maximumFractionDigits: A.dec });
+const fmtPct = x => Math.abs(x) < 0.005 ? say('0,00%', '0.00%') : (x > 0 ? '+' : '') + fx(x, 2) + '%';
+const fmtUsd = v => v >= 1e9 ? '$' + fx(v / 1e9, 2) + say(' mld', 'B') : v >= 1e6 ? '$' + fx(v / 1e6, 1) + say(' mln', 'M') : v >= 1e3 ? '$' + fx(v / 1e3, 0) + 'K' : '$' + fx(v, 0);
 // stops have no amount: their strength in words against the strongest stop level in view, as in Alle niveaus on the coin page
-const stopWord = v => v >= 75 ? 'Zeer sterk' : v >= 50 ? 'Sterk' : v >= 25 ? 'Gemiddeld' : 'Zwak';
-const valStr = r => r.t.u === 'usd' ? fmtUsd(r.val) : r.t.u === 'score' ? stopWord(r.val) : (r.first ? 'eerst · ' : '') + Math.round(r.val * 100) + '%';
-const hhmmss = ts => new Date(ts).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const FIRST = say('eerst · ', 'first · ');
+const stopWord = v => v >= 75 ? say('Zeer sterk', 'Very strong') : v >= 50 ? say('Sterk', 'Strong') : v >= 25 ? say('Gemiddeld', 'Medium') : say('Zwak', 'Weak');
+const valStr = r => r.t.u === 'usd' ? fmtUsd(r.val) : r.t.u === 'score' ? stopWord(r.val) : (r.first ? FIRST : '') + Math.round(r.val * 100) + '%';
+const hhmmss = ts => new Date(ts).toLocaleTimeString(LOCD, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 const rnd = (a, b) => a + Math.random() * (b - a);
 const gauss = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
 const thOf = u => u > 0 ? 0.08 + 0.95 * Math.min(1, u / MAXB) ** 1.4 : 0;   // units -> bar thickness: small stays thin, the biggest stands out
@@ -924,7 +937,7 @@ function drawLabel(r) {
 }
 function drawSize(r) {
   if (r.lead && r.lead !== r) { r.sizeStr = ''; return; }
-  const G = r.grp || [r], s = G.map(x => x.cleared && x.t.u !== 'pct' ? 'geveegd' : valStr(x)).join(' · ').replace(COMPACT && G.length > 1 ? 'eerst · ' : '\0', '');   // every level in the slot (shorter on a phone)
+  const G = r.grp || [r], s = G.map(x => x.cleared && x.t.u !== 'pct' ? say('geveegd', 'swept') : valStr(x)).join(' · ').replace(COMPACT && G.length > 1 ? FIRST : '\0', '');   // every level in the slot (shorter on a phone)
   const room = Math.round(Math.min(640, (r.endX - 1.2 - (r.lblW || 4)) * 100));   // what the label leaves free on the tube
   if (s + room === r.sizeStr) return; r.sizeStr = s + room;
   const { g, c, t } = r.sz; g.clearRect(0, 0, c.width, c.height);
@@ -1015,7 +1028,7 @@ const SLW = Math.min(BW * 0.75, 13);   // the side names: big neon letters over 
 const sideLbl = (txt, css) => { const tp = textPlane(1024, 128, SLW, SLW / 8); tp.m.material.opacity = 0.95; const g = tp.g;
   g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = '800 72px "JetBrains Mono", monospace'; g.fillStyle = css; g.shadowColor = css; g.shadowBlur = 26;
   g.fillText(txt, 512, 66); g.shadowBlur = 8; g.fillStyle = '#ffffff'; g.globalAlpha = 0.35; g.fillText(txt, 512, 66); g.globalAlpha = 1; tp.t.needsUpdate = true; tp.m.position.set(BW / 2, 0, 0.1); scene.add(tp.m); return tp.m; };
-const sideLblUp = sideLbl('▲  VERKOOPZIJDE  ▲', '#ff6b81'), sideLblDn = sideLbl('▼  KOOPZIJDE  ▼', '#35ffb0');
+const sideLblUp = sideLbl(say('▲  VERKOOPZIJDE  ▲', '▲  SELL SIDE  ▲'), '#ff6b81'), sideLblDn = sideLbl(say('▼  KOOPZIJDE  ▼', '▼  BUY SIDE  ▼'), '#35ffb0');
 const hGrad = canvasTex(256, 4, g => { const gr = g.createLinearGradient(0, 0, 256, 0); gr.addColorStop(0, 'rgba(5,3,9,.92)'); gr.addColorStop(0.82, 'rgba(5,3,9,.78)'); gr.addColorStop(1, 'rgba(5,3,9,0)'); g.fillStyle = gr; g.fillRect(0, 0, 256, 4); });
 // the dark board the neon is mounted on, with a thin frame
 const board = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0x07050d, transparent: true, opacity: 0.85, depthWrite: false }));
@@ -1054,10 +1067,10 @@ const EXC = { binance: '#f3ba2f', okx: '#eef2f5', bybit: '#ff7a1a', bitget: '#00
   bitmex: '#ff4d4d', kraken: '#7b5cff', cryptocom: '#9db0ff', hyperliquid: '#8dffd8', dydx: '#a970ff', bitfinex: '#16b157', kucoin: '#24d1b0', aster: '#ffb3c7',
   lighter: '#d9d9ff', backpack: '#ff6f61', paradex: '#e0a3ff', blofin: '#c08a5a', toobit: '#5ec8ff', bitunix: '#ffe066', xt: '#9ad0c2' };
 // the exchanges that count on the coin page (the ones switched off there are left out), then the estimate
-const EXN = Object.fromEntries([...Object.keys(EXCH).filter(k => !OFF.has(k)).map(k => [k, [EXCH[k].name, EXC[k] || '#cccccc']]), ['model', ['Schatting', '#ffc857']]]);
+const EXN = Object.fromEntries([...Object.keys(EXCH).filter(k => !OFF.has(k)).map(k => [k, [EXCH[k].name, EXC[k] || '#cccccc']]), ['model', [say('Schatting', 'Estimate'), '#ffc857']]]);
 let TROWS = Math.ceil(Object.keys(EXN).length / 2), tilesKey = null;   // tiles per column
 const EXKEY = { OKX: 'okx', Binance: 'binance', Bybit: 'bybit' };
-const SHORT = { hyperliquid: 'Hyper', cryptocom: 'Crypto', bitfinex: 'Bitfin.', backpack: 'Backp.', paradex: 'Parad.', model: 'Schat.' };
+const SHORT = { hyperliquid: 'Hyper', cryptocom: 'Crypto', bitfinex: 'Bitfin.', backpack: 'Backp.', paradex: 'Parad.', model: say('Schat.', 'Estim.') };
 const REGS = {};
 let selRow = null;   // the tube tapped for its details
 // a column of tiles on each side of the bars, top to bottom along the well; the drawer opens towards the bars
@@ -1078,7 +1091,7 @@ function drawReg(R) {
   g.font = `800 ${fit(nm, COMPACT ? 86 : 62)}px "JetBrains Mono", monospace`; g.fillStyle = R.on ? R.css : '#4a5852'; g.shadowColor = R.css; g.shadowBlur = R.on ? 14 : 0;
   g.fillText(nm, 24, 80); g.shadowBlur = 0;
   const shTxt = share == null ? '' : share > 0.005 ? Math.round(share * 100) + '%' + (!COMPACT && sr.t.u === 'usd' ? ' · ' + fmtUsd(sr.val * share) : '') : '—';
-  const line = fl || shTxt || (R.k === 'model' ? (R.on ? (COMPACT ? 'stops/liq' : 'stops · liq.') : '—') : R.on ? fmtUsd(R.tot) : 'geen data');
+  const line = fl || shTxt || (R.k === 'model' ? (R.on ? (COMPACT ? 'stops/liq' : 'stops · liq.') : '—') : R.on ? fmtUsd(R.tot) : say('geen data', 'no data'));
   g.font = `700 ${fit(line, COMPACT ? 72 : 56)}px "JetBrains Mono", monospace`;
   if (fl) { g.fillStyle = R.fCss; g.shadowColor = R.fCss; g.shadowBlur = 12; g.fillText(line, 24, 192); g.shadowBlur = 0; }
   else if (shTxt) { g.fillStyle = share > 0.005 ? '#ffffff' : '#4a5852'; g.fillText(line, 24, 192); }
@@ -1115,7 +1128,7 @@ function relayoutTiles() {
 }
 const regPos = k => { const R = REGS[k] || REGS.model, sc = R.g.scale.x; return new THREE.Vector3(R.g.position.x - R.side * (1.45 + R.open * 0.55) * sc, R.g.position.y, R.g.position.z + 0.2); };
 function regSend(k, txt, css) { const R = REGS[k]; if (!R) return; R.open = 1; R.flash = 1.3; R.fTxt = txt; R.fCss = css; const q = regPos(k); emit(q.x, q.y, q.z + 0.4, R.col, 6, 2.5, { vy: 1.5, life: 0.6, sx: 1.2 }); }
-const unitVal = (r, n) => r.t.u === 'usd' ? fmtUsd(r.val / Math.max(1, r.base) * n) : Math.round(r.val / Math.max(1, r.base) * n) + ' pnt';
+const unitVal = (r, n) => r.t.u === 'usd' ? fmtUsd(r.val / Math.max(1, r.base) * n) : Math.round(r.val / Math.max(1, r.base) * n) + say(' pnt', ' pts');
 // which register a block of this level comes from (sign +) or goes back to: the books whose part grew or shrank most
 function pickReg(r, w) {
   if (!r.per) return 'model';
@@ -1137,8 +1150,8 @@ async function loadChain() {
       if (A.name !== 'BTC') continue;
       snd('block');
       const pool = b.extras?.pool?.name;
-      banner('NIEUW BTC-BLOK', `#${b.height.toLocaleString('nl-NL')} · ${b.tx_count.toLocaleString('nl-NL')} transacties${pool ? ' · ' + pool : ''}`, '', '#f7931a', true);
-      feed(`<b>Nieuw blok</b> #${b.height.toLocaleString('nl-NL')} · ${b.tx_count.toLocaleString('nl-NL')} tx${pool ? ' · ' + pool : ''}`, '#f7931a');
+      banner(say('NIEUW BTC-BLOK', 'NEW BTC BLOCK'), `#${b.height.toLocaleString(LOC)} · ${b.tx_count.toLocaleString(LOC)} ${say('transacties', 'transactions')}${pool ? ' · ' + pool : ''}`, '', '#f7931a', true);
+      feed(`<b>${say('Nieuw blok', 'New block')}</b> #${b.height.toLocaleString(LOC)} · ${b.tx_count.toLocaleString(LOC)} tx${pool ? ' · ' + pool : ''}`, '#f7931a');
     }
   } catch (e) {}
 }
@@ -1375,7 +1388,7 @@ function removeRow(r, quiet) {
     debris(r, Math.min(4, r.units), 'dying'); }
   r.units = 0;
   if (!quiet && !r.cleared && r.rel >= 0.6 && r.t.u === 'usd')
-    feed(`<b>${r.t.n} ${fmtP(r.price)}</b> weggetrokken · ${fmtUsd(r.val)}`, r.t.c);
+    feed(`<b>${r.t.n} ${fmtP(r.price)}</b> ${say('weggetrokken', 'pulled')} · ${fmtUsd(r.val)}`, r.t.c);
   if (selRow === r) { selRow = null; tip.hidden = true; }
 }
 const liveRows = () => rows.filter(r => !r.gone);
@@ -1450,8 +1463,8 @@ function applyLevels(L) {
     seen.add(k);
     if (!r) {
       r = makeRow(lv); r.isNew = true;
-      if (!quiet && r.rel >= 0.6 && r.t.u !== 'pct') feed(`Nieuw: <b>${r.t.n} ${fmtP(r.price)}</b> · ${valStr(r)}${r.glass ? ' · pas kort, mogelijk nep' : ''}`, r.t.c);
-      if (!quiet && r.t.u === 'pct') feed(`Nieuw <b>${r.t.n}</b> ${fmtP(r.price)} · ${valStr(r)}`, r.t.c);
+      if (!quiet && r.rel >= 0.6 && r.t.u !== 'pct') feed(`${say('Nieuw', 'New')}: <b>${r.t.n} ${fmtP(r.price)}</b> · ${valStr(r)}${r.glass ? say(' · pas kort, mogelijk nep', ' · only just there, may be a spoof') : ''}`, r.t.c);
+      if (!quiet && r.t.u === 'pct') feed(`${say('Nieuw', 'New')} <b>${r.t.n}</b> ${fmtP(r.price)} · ${valStr(r)}`, r.t.c);
       continue;
     }
     const old = r.val;
@@ -1494,7 +1507,7 @@ const mini = $('mini'); for (let i = 0; i < 8; i++) mini.appendChild(document.cr
 function drawNext() {
   const cells = mini.children;
   for (const c of cells) c.className = '';
-  if (!nextP) { $('who').textContent = 'wacht op orders'; return; }
+  if (!nextP) { $('who').textContent = say('wacht op orders', 'waiting for orders'); return; }
   mini.style.setProperty('--mc', nextP.row.t.c);
   for (const [dx, dy] of SHAPES[nextP.key]) cells[(1 - dy) * 4 + dx].className = 'on';
   $('who').textContent = '⚡ ' + REGS[nextP.src].name + ' → ' + nextP.row.t.n + ' ' + fmtP(nextP.row.price);
@@ -1531,8 +1544,8 @@ function checkNear() {
     if (r.cleared) continue;
     const strong = r.t.u === 'score' ? r.val >= 80 : r.t.u === 'usd' ? r.rel >= 0.8 : true, d = Math.abs(r.price - p);
     if (strong && !r.warned && d <= th) {
-      r.warned = true; r.warnT = 6; const tx = `${r.t.n} ${fmtP(r.price)} · nog ${fmtDist(d)}`;
-      feed(`<b>Nadert</b> ${esc(tx)}`, r.t.c); banner('NADERT ' + r.t.n.toUpperCase(), tx, '', r.t.c, true); snd('warn');
+      r.warned = true; r.warnT = 6; const tx = `${r.t.n} ${fmtP(r.price)} · ${say(`nog ${fmtDist(d)}`, `${fmtDist(d)} away`)}`;
+      feed(`<b>${say('Nadert', 'Nearing')}</b> ${esc(tx)}`, r.t.c); banner(say('NADERT ', 'NEARING ') + r.t.n.toUpperCase(), tx, '', r.t.c, true); snd('warn');
     } else if (r.warned && d > th * 2) r.warned = false;
   }
 }
@@ -1556,8 +1569,8 @@ function clearRow(r) {
   }
   pending.push(r); pendingT = 0.45;
   if (r.t.u !== 'usd' || r.type.endsWith('liq')) {
-    const what = r.gate ? `<b>${r.t.n} geraakt</b> op ${fmtP(r.price)}` : r.t.u === 'score' ? `<b>${r.t.n} ${fmtP(r.price)}</b> geraakt`
-      : `<b>${r.type === 'sliq' ? 'Short squeeze' : 'Long-flush'}</b> ${fmtP(r.price)} · ${fmtUsd(r.val)} geschat`;
+    const what = r.gate ? `<b>${r.t.n} ${say('geraakt', 'hit')}</b> ${say('op', 'at')} ${fmtP(r.price)}` : r.t.u === 'score' ? `<b>${r.t.n} ${fmtP(r.price)}</b> ${say('geraakt', 'hit')}`
+      : `<b>${r.type === 'sliq' ? 'Short squeeze' : say('Long-flush', 'Long flush')}</b> ${fmtP(r.price)} · ${fmtUsd(r.val)} ${say('geschat', 'estimated')}`;
     feed(what, r.t.c);
   }
 }
@@ -1565,9 +1578,9 @@ function flushPending() {
   const n = pending.length; if (!n) return;
   combo = T - lastClearT < 4.5 ? combo + 1 : 1; lastClearT = T;
   const gate = pending.find(r => r.gate);
-  const big = gate ? gate.t.n.toUpperCase() + ' GERAAKT' : n >= 4 ? 'TETRIS!' : ['', 'SINGLE', 'DOUBLE', 'TRIPLE'][n];
+  const big = gate ? gate.t.n.toUpperCase() + say(' GERAAKT', ' HIT') : n >= 4 ? 'TETRIS!' : ['', 'SINGLE', 'DOUBLE', 'TRIPLE'][n];
   const first = gate || pending[0];
-  const sub = pending.slice(0, 2).map(r => r.gate ? `${r.t.n} ${fmtP(r.price)}` : `${r.t.n} ${fmtP(r.price)} · ${valStr(r)}`).join('  ·  ') + (n > 2 ? `  ·  +${n - 2} meer` : '');
+  const sub = pending.slice(0, 2).map(r => r.gate ? `${r.t.n} ${fmtP(r.price)}` : `${r.t.n} ${fmtP(r.price)} · ${valStr(r)}`).join('  ·  ') + (n > 2 ? `  ·  +${n - 2} ${say('meer', 'more')}` : '');
   banner(big, sub, combo > 1 ? 'COMBO ×' + combo : '', first.t.c, n === 1 && !gate);
   pending = [];
 }
@@ -1626,7 +1639,7 @@ addEventListener('pointerdown', () => sound.wake(), { capture: true });   // the
 const logEv = [];
 function drawLog() {
   $('log-l').innerHTML = logEv.length ? logEv.slice().reverse().map(e => `<li style="--fc:${e.col}"><time>${hhmmss(e.t)}</time>${e.html}</li>`).join('')
-    : '<li class="none">Nog niets gebeurd. Veegacties, liquidaties, weggetrokken muren en waarschuwingen komen hier.</li>';
+    : `<li class="none">${say('Nog niets gebeurd. Veegacties, liquidaties, weggetrokken muren en waarschuwingen komen hier.', 'Nothing happened yet. Sweeps, liquidations, pulled walls and warnings come here.')}</li>`;
 }
 function toggleLog(open) { const l = $('log'); l.hidden = open === undefined ? !l.hidden : !open; if (!l.hidden) { drawLog(); tip.hidden = true; } }
 $('stats').addEventListener('click', () => toggleLog());
@@ -1720,8 +1733,8 @@ function showLiq(long, q, usd, ex) {
   if (near && Math.abs(near.price - q) <= bucket * 3) { near.flare = 1.4; near.hl = 1; }
   floatText(4, sy + (long ? -1.1 : 1.1), (long ? 'longs ' : 'shorts ') + fmtUsd(usd), TY.sliq.c);
   const sub = `${long ? 'Longs' : 'Shorts'} · ${fmtUsd(usd)} · ${ex.join(' + ')} · ${fmtP(q)}`;
-  if (usd >= 250e3) banner(usd >= 1e6 ? 'LIQUIDATIE!' : 'ECHTE LIQUIDATIE', sub, '', TY.sliq.c, usd < 1e6);
-  if (usd >= 50e3) feed(`<b>Echte liquidatie</b> ${sub}`, TY.sliq.c);
+  if (usd >= 250e3) banner(usd >= 1e6 ? say('LIQUIDATIE!', 'LIQUIDATION!') : say('ECHTE LIQUIDATIE', 'REAL LIQUIDATION'), sub, '', TY.sliq.c, usd < 1e6);
+  if (usd >= 50e3) feed(`<b>${say('Echte liquidatie', 'Real liquidation')}</b> ${sub}`, TY.sliq.c);
 }
 let site = null, series = null, seriesAt = 0, market = null, liveTimer = 0, liveGen = 0, lastRaw = null, fastTimer = 0, lastBooks = 0, lastOld = 0;
 // OKX's nearest 400 levels every 3 s: the walls close to the price move between the full refreshes of all books
@@ -1737,8 +1750,9 @@ async function fastBook() {
     applyLevels(levelsOf(lastRaw)); liveStatus(Date.now());
   } catch (e) {}
 }
-const liveStatus = ts => status('live', COMPACT ? hhmmss(ts) : `live · ${lastBooks} boeken · ${hhmmss(ts)}`,
-  COMPACT ? `${lastBooks} boeken${lastOld ? ` (${lastOld} uurdata)` : ''} · stops/liq. geschat` : `${lastBooks - lastOld} orderboeken live${lastOld ? `, ${lastOld} uit de uurlijkse data` : ''} · stops en liq. geschat · glas: muur pas kort · OKX elke 3 s`);
+const liveStatus = ts => status('live', COMPACT ? hhmmss(ts) : `live · ${lastBooks} ${say('boeken', 'books')} · ${hhmmss(ts)}`,
+  EN ? `${lastBooks - lastOld} order books live${lastOld ? `, ${lastOld} from the hourly data` : ''} · stops and liq. estimated`
+  : COMPACT ? `${lastBooks} boeken${lastOld ? ` (${lastOld} uurdata)` : ''} · stops/liq. geschat` : `${lastBooks - lastOld} orderboeken live${lastOld ? `, ${lastOld} uit de uurlijkse data` : ''} · stops en liq. geschat · glas: muur pas kort · OKX elke 3 s`);
 async function loadSite() {
   if (!/^https?:$/.test(location.protocol)) return null;
   try { const r = await fetch(A.file, { cache: 'no-store' }); return r.ok ? await r.json() : null; } catch (e) { return null; }
@@ -1773,14 +1787,14 @@ async function loadLive() {
 async function startLive() {
   const g = ++liveGen; mode = 'live'; armed = false;
   tick.start(); liqWs.start();
-  status('', 'laden…', 'orderboeken ophalen…');
+  status('', say('laden…', 'loading…'), say('orderboeken ophalen…', 'fetching order books…'));
   site = await loadSite(); if (g !== liveGen) return;
-  if (site) { const L = levelsOf(site); applyLevels(L); await loadSigLog(); if (g !== liveGen) return; updateSignal(site, L); status('site', `uurdata · ${hhmmss(site.ts)}`, 'Data van het laatste uur · live data laden…'); }
+  if (site) { const L = levelsOf(site); applyLevels(L); await loadSigLog(); if (g !== liveGen) return; updateSignal(site, L); status('site', `${say('uurdata', 'hourly data')} · ${hhmmss(site.ts)}`, say('Data van het laatste uur · live data laden…', 'Data of the last hour · loading live data…')); }
   if (await loadLive()) { if (g === liveGen) { liveTimer = setInterval(loadLive, 15e3); fastTimer = setInterval(fastBook, 3000); } return; }
   if (g !== liveGen) return;
   if (site) { liveTimer = setInterval(loadLive, 15e3); return; }
-  if (A.name !== 'BTC') { status('', 'geen data', `Geen data voor ${A.name}: beurzen en ${A.file} niet bereikbaar`); return; }
-  feed('<b>Geen live data</b> bereikbaar · demo gestart', TY.sliq.c);
+  if (A.name !== 'BTC') { status('', say('geen data', 'no data'), say(`Geen data voor ${A.name}: beurzen en ${A.file} niet bereikbaar`, `No data for ${A.name}: the exchanges and ${A.file} cannot be reached`)); return; }
+  feed(say('<b>Geen live data</b> bereikbaar · demo gestart', '<b>No live data</b> within reach · demo started'), TY.sliq.c);
   startDemo();
 }
 // switch coin: everything starts again for the new one
@@ -1835,7 +1849,7 @@ function startDemo() {
   for (const r of liveRows()) removeRow(r, true);
   firstApply = true; armed = true; p = P0; pv = 0; boost = 0; anchorOff = 0; tm.demo = 4; ref24 = 0;
   applyLevels(demoLevels());
-  status('demo', 'demo', 'Demo: de tabel van 13:21, beweging gesimuleerd');
+  status('demo', 'demo', say('Demo: de tabel van 13:21, beweging gesimuleerd', 'Demo: the table of 13:21, movement simulated'));
 }
 function spike(dir, size) {
   if (size === 'small') { anchorOff = dir * rnd(30, 90); spikeUntil = T + rnd(1.5, 2.5); return; }
@@ -1898,17 +1912,17 @@ stage.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); pinch0 
 stage.addEventListener('wheel', e => { e.preventDefault(); zoomAt(zoom * Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY); }, { passive: false });
 stage.addEventListener('dblclick', () => { zoom = 1; });
 const EXPL = {
-  ask: 'Verkooporders in het orderboek van alle beurzen samen, gewogen naar volume. Een muur remt een stijging af; wordt hij opgegeten, dan kan de prijs doorschieten.',
-  bid: 'Kooporders in het orderboek van alle beurzen samen, gewogen naar volume. Een koopmuur vangt een daling op; breekt hij, dan valt die steun weg.',
-  bstop: 'Geschatte stop-orders net boven een top die nog niet geraakt is: stop-losses van shorts en uitbraakkopers. Geraakt worden het kooporders die de prijs verder omhoog kunnen duwen. Een bedrag is niet bekend, dus de sterkte staat in woorden (zwak, gemiddeld, sterk, zeer sterk), naar het sterkste stopniveau in beeld.',
-  sstop: 'Geschatte stop-orders net onder een bodem die nog niet geraakt is: stop-losses van longs. Geraakt worden het verkooporders die de prijs verder omlaag kunnen duwen. Een bedrag is niet bekend, dus de sterkte staat in woorden (zwak, gemiddeld, sterk, zeer sterk), naar het sterkste stopniveau in beeld.',
-  sliq: 'Geschatte liquidaties van shorts met hefboom, uit de groei van de open posities. Geraakt moeten ze terugkopen: een short squeeze kan de prijs verder omhoog jagen.',
-  lliq: 'Geschatte liquidaties van longs met hefboom, uit de groei van de open posities. Geraakt moeten ze verkopen: een long-flush kan de prijs verder omlaag drukken.',
-  tup: 'GlassSphere-doel voor 1 dag: het grootste cluster van stops en liquidaties boven de prijs. De kans zegt hoe vaak dit doel eerst geraakt wordt, berekend uit de afstanden; het is geen voorspelling van de richting.',
-  tdn: 'GlassSphere-doel voor 1 dag: het grootste cluster van stops en liquidaties onder de prijs. De kans zegt hoe vaak dit doel eerst geraakt wordt, berekend uit de afstanden; het is geen voorspelling van de richting.',
+  ask: say('Verkooporders in het orderboek van alle beurzen samen, gewogen naar volume. Een muur remt een stijging af; wordt hij opgegeten, dan kan de prijs doorschieten.', 'Sell orders in the order books of all exchanges together, weighted by volume. A wall slows a rise down; once it is eaten, the price can shoot on.'),
+  bid: say('Kooporders in het orderboek van alle beurzen samen, gewogen naar volume. Een koopmuur vangt een daling op; breekt hij, dan valt die steun weg.', 'Buy orders in the order books of all exchanges together, weighted by volume. A buy wall catches a fall; when it breaks, that support is gone.'),
+  bstop: say('Geschatte stop-orders net boven een top die nog niet geraakt is: stop-losses van shorts en uitbraakkopers. Geraakt worden het kooporders die de prijs verder omhoog kunnen duwen. Een bedrag is niet bekend, dus de sterkte staat in woorden (zwak, gemiddeld, sterk, zeer sterk), naar het sterkste stopniveau in beeld.', 'Estimated stop orders just above a high that has not been hit yet: stop losses of shorts and breakout buyers. Once hit they become buy orders that can push the price further up. No amount is known, so the strength is given in words (weak, medium, strong, very strong), against the strongest stop level in view.'),
+  sstop: say('Geschatte stop-orders net onder een bodem die nog niet geraakt is: stop-losses van longs. Geraakt worden het verkooporders die de prijs verder omlaag kunnen duwen. Een bedrag is niet bekend, dus de sterkte staat in woorden (zwak, gemiddeld, sterk, zeer sterk), naar het sterkste stopniveau in beeld.', 'Estimated stop orders just below a low that has not been hit yet: stop losses of longs. Once hit they become sell orders that can push the price further down. No amount is known, so the strength is given in words (weak, medium, strong, very strong), against the strongest stop level in view.'),
+  sliq: say('Geschatte liquidaties van shorts met hefboom, uit de groei van de open posities. Geraakt moeten ze terugkopen: een short squeeze kan de prijs verder omhoog jagen.', 'Estimated liquidations of leveraged shorts, from the growth of the open interest. Once hit they have to buy back: a short squeeze can drive the price further up.'),
+  lliq: say('Geschatte liquidaties van longs met hefboom, uit de groei van de open posities. Geraakt moeten ze verkopen: een long-flush kan de prijs verder omlaag drukken.', 'Estimated liquidations of leveraged longs, from the growth of the open interest. Once hit they have to sell: a long flush can press the price further down.'),
+  tup: say('GlassSphere-doel voor 1 dag: het grootste cluster van stops en liquidaties boven de prijs. De kans zegt hoe vaak dit doel eerst geraakt wordt, berekend uit de afstanden; het is geen voorspelling van de richting.', 'GlassSphere target for 1 day: the largest cluster of stops and liquidations above the price. The chance says how often this target is hit first; it is not advice.'),
+  tdn: say('GlassSphere-doel voor 1 dag: het grootste cluster van stops en liquidaties onder de prijs. De kans zegt hoe vaak dit doel eerst geraakt wordt, berekend uit de afstanden; het is geen voorspelling van de richting.', 'GlassSphere target for 1 day: the largest cluster of stops and liquidations below the price. The chance says how often this target is hit first; it is not advice.'),
 };
 const esc = x => String(x).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const fmtDist = v => '$' + Math.abs(v).toLocaleString('nl-NL', { minimumFractionDigits: A.dec, maximumFractionDigits: A.dec });
+const fmtDist = v => '$' + Math.abs(v).toLocaleString(LOC, { minimumFractionDigits: A.dec, maximumFractionDigits: A.dec });
 function placeTip(x, y) {
   tip.hidden = false;
   const w = stage.clientWidth, h = stage.clientHeight, tw = tip.offsetWidth, th = tip.offsetHeight;
@@ -1917,13 +1931,14 @@ function placeTip(x, y) {
 }
 const kv = rows_ => rows_.map(([k, v]) => `<div class="r"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('');
 function showTip(r, x, y) {
-  const rows_ = [['Prijs', fmtP(r.price)], ['Afstand', fmtPct((r.price / p - 1) * 100) + ' · ' + fmtDist(r.price - p)], ['Grootte', r.cleared && r.t.u !== 'pct' ? 'geveegd' : valStr(r)],
-    ...(r.base ? [['Dikte', `${r.units} van ${MAXB}`]] : []), ...(r.ps ? [['Aanwezig', `${r.ps[0]} van ${r.ps[1]} uur${r.glass ? ' · glas, mogelijk nep' : ''}`]] : [])];
+  const rows_ = [[say('Prijs', 'Price'), fmtP(r.price)], [say('Afstand', 'Distance'), fmtPct((r.price / p - 1) * 100) + ' · ' + fmtDist(r.price - p)], [say('Grootte', 'Size'), r.cleared && r.t.u !== 'pct' ? say('geveegd', 'swept') : valStr(r)],
+    ...(r.base ? [[say('Dikte', 'Thickness'), `${r.units} ${say('van', 'of')} ${MAXB}`]] : []),
+    ...(r.ps ? [[say('Aanwezig', 'Present'), `${r.ps[0]} ${say('van', 'of')} ${r.ps[1]} ${say('uur', 'hours')}${r.glass ? say(' · glas, mogelijk nep', ' · only just there, may be a spoof') : ''}`]] : [])];
   let parts = '';
   if (r.per) {   // which books the wall is made of
     const e = Object.entries(r.per).filter(([k]) => REGS[k]).sort((a, b) => b[1] - a[1]), sum = e.reduce((a, [, v]) => a + v, 0) || 1;
     parts = '<div class="parts">' + e.slice(0, 5).map(([k, v]) => `<div class="pt"><span style="color:${REGS[k].css}">${esc(REGS[k].name)}</span><i style="width:${Math.max(4, v / sum * 100).toFixed(0)}%;background:${REGS[k].css}"></i><b>${esc(fmtUsd(v))}</b></div>`).join('')
-      + (e.length > 5 ? `<div class="more">+${e.length - 5} beurzen</div>` : '') + '</div>';
+      + (e.length > 5 ? `<div class="more">+${e.length - 5} ${say('beurzen', 'exchanges')}</div>` : '') + '</div>';
   }
   tip.style.setProperty('--tc', r.t.c);
   tip.innerHTML = `<h4>${esc(r.t.n)}</h4>${kv(rows_)}${parts}<p>${esc(EXPL[r.type])}</p>`;
@@ -1935,9 +1950,9 @@ function showTileTip(R, x, y) {
     : mine.map(r => [r, r.per[R.k], r.per[R.k] / (Object.values(r.per).reduce((a, b) => a + b, 0) || 1)]).sort((a, b) => b[1] - a[1]).slice(0, 5)
       .map(([r, v, f]) => [r.t.n + ' ' + fmtP(r.price), fmtUsd(v) + ' · ' + Math.round(f * 100) + '%']);
   tip.style.setProperty('--tc', R.css);
-  tip.innerHTML = `<h4>${esc(R.name)}</h4>` + kv([[R.k === 'model' ? 'Niveaus' : 'Boek in beeld', R.k === 'model' ? String(mine.length) : R.on ? fmtUsd(R.tot) : 'geen data'],
-    ...(R.k === 'model' ? [] : [['Muren met een deel', String(mine.length)]])]) + (lines.length ? '<div class="parts">' + kv(lines) + '</div>' : '')
-    + `<p>${R.k === 'model' ? 'Stops en liquidaties staan in geen enkel orderboek; ze zijn geschat uit de koershistorie en de open posities. Hun niveaus lichten nu op.' : 'De muren waar ' + esc(R.name) + ' aan bijdraagt lichten nu op, de rest dimt. Tik de tegel nog eens om terug te gaan.'}</p>`;
+  tip.innerHTML = `<h4>${esc(R.name)}</h4>` + kv([[R.k === 'model' ? say('Niveaus', 'Levels') : say('Boek in beeld', 'Book in view'), R.k === 'model' ? String(mine.length) : R.on ? fmtUsd(R.tot) : say('geen data', 'no data')],
+    ...(R.k === 'model' ? [] : [[say('Muren met een deel', 'Walls with a share'), String(mine.length)]])]) + (lines.length ? '<div class="parts">' + kv(lines) + '</div>' : '')
+    + `<p>${R.k === 'model' ? say('Stops en liquidaties staan in geen enkel orderboek; ze zijn geschat uit de koershistorie en de open posities. Hun niveaus lichten nu op.', 'Stops and liquidations are in no order book; they are estimated from the price history and the open interest. Their levels light up now.') : say('De muren waar ' + esc(R.name) + ' aan bijdraagt lichten nu op, de rest dimt. Tik de tegel nog eens om terug te gaan.', 'The walls ' + esc(R.name) + ' has a share in light up now, the rest dims. Tap the tile again to go back.')}</p>`;
   placeTip(x, y);
 }
 document.addEventListener('visibilitychange', () => {
@@ -2040,8 +2055,8 @@ function update(dt) {
         tgt ? wireRoute(tgt, 'okx', x) : tileCurve('okx', end), magUsd(tr.usd));
       if (tgt) wireHeat(tgt, 'okx', 1);
       REGS.okx.open = Math.max(REGS.okx.open, 0.6);
-      if (tr.usd >= 1e6) floatText(x, sy + (tr.buy ? 1 : -1), (tr.buy ? 'koop ' : 'verkoop ') + fmtUsd(tr.usd), tr.buy ? '#35ffb0' : '#ff4d6a');
-      if (tr.usd >= 3e6) feed(`<b>${tr.buy ? 'Grote koop' : 'Grote verkoop'}</b> ${fmtUsd(tr.usd)} op ${fmtP(tr.px)}`, tr.buy ? TY.bid.c : TY.ask.c);
+      if (tr.usd >= 1e6) floatText(x, sy + (tr.buy ? 1 : -1), (tr.buy ? say('koop ', 'buy ') : say('verkoop ', 'sell ')) + fmtUsd(tr.usd), tr.buy ? '#35ffb0' : '#ff4d6a');
+      if (tr.usd >= 3e6) feed(`<b>${tr.buy ? say('Grote koop', 'Big buy') : say('Grote verkoop', 'Big sell')}</b> ${fmtUsd(tr.usd)} ${say('op', 'at')} ${fmtP(tr.px)}`, tr.buy ? TY.bid.c : TY.ask.c);
       ecgCol.set(tr.buy ? 0x35ffb0 : 0xff4d6a); heart.heat += 0.6;
     }
   }
@@ -2152,7 +2167,7 @@ function update(dt) {
   // HUD
   if ((shownT -= dt) <= 0) { shownT = 0.5; const v = Math.round(p * 10 ** A.dec);   // in the coin's own decimals
     if (v !== lastPx) { const el = $('px'); el.textContent = fmtP(p); el.className = v > lastPx ? 'u' : 'd'; if (lastPx) { tagDir = v > lastPx ? 1 : -1; tagFlash = 1; heart.heat += Math.abs(v - lastPx) / 10 ** A.dec / p * 1e4; } lastPx = v; shown = p; } }
-  const chg = ref24 ? fmtPct((shown / ref24 - 1) * 100) + (COMPACT ? '' : ' 24u') : mode === 'demo' ? fmtPct((shown / P0 - 1) * 100) + ' t.o.v. 13:21' : '';
+  const chg = ref24 ? fmtPct((shown / ref24 - 1) * 100) + (COMPACT ? '' : say(' 24u', ' 24h')) : mode === 'demo' ? fmtPct((shown / P0 - 1) * 100) + say(' t.o.v. 13:21', ' vs 13:21') : '';
   if ($('chg').textContent !== chg) $('chg').textContent = chg;
   $('s-clr').textContent = nCleared; $('s-eat').textContent = eaten ? fmtUsd(eaten).replace(' mln', 'M').replace(' mld', 'B') : '$0';
   $('s-liq').textContent = liqTot ? fmtUsd(liqTot).replace(' mln', 'M').replace(' mld', 'B') : '$0'; $('s-cmb').textContent = '×' + (T - lastClearT < 4.5 ? combo : 0);
@@ -2360,9 +2375,9 @@ if (STREAM) {
   // the ticker along the bottom, right to left: each coin's price and its change over 24 hours. Twice in a row, so the
   // loop runs on without a seam; the numbers change in place and the scroll never restarts
   const one = list.map(k => `<span class="it" data-k="${k}"><img src="icons/coins/${k}.png" alt=""><b>${ASSETS[k].name}</b><span class="pr">—</span><span class="ch"></span></span><span class="sep">◆</span>`).join('') +
-    '<span class="nfa">GlassSphere · live orderboeken · stops en liquidaties geschat · geen financieel advies</span><span class="sep">◆</span>';
+    '<span class="nfa">GlassSphere · live order books · stops and liquidations estimated · not financial advice</span><span class="sep">◆</span>';
   $('ticker').innerHTML = one + one;
-  const tickPx = (k, v) => v.toLocaleString('nl-NL', { minimumFractionDigits: ASSETS[k].dec, maximumFractionDigits: ASSETS[k].dec });
+  const tickPx = (k, v) => v.toLocaleString(LOC, { minimumFractionDigits: ASSETS[k].dec, maximumFractionDigits: ASSETS[k].dec });
   const pollTicker = () => list.forEach(async k => {
     try {
       const x = (await getJSON(`https://www.okx.com/api/v5/market/ticker?instId=${ASSETS[k].okx}`)).data[0], last = +x.last, ch = (last / +x.open24h - 1) * 100;
@@ -2378,7 +2393,7 @@ if (STREAM) {
   setInterval(() => {
     if (list.length < 2) return;
     const left = Math.max(0, at - Date.now()), nx = list[(list.indexOf(coinKey) + 1) % list.length];
-    $('nextcoin').textContent = `· volgende: ${ASSETS[nx].name} over ${Math.floor(left / 60e3)}:${String(Math.floor(left / 1e3) % 60).padStart(2, '0')}`;
+    $('nextcoin').textContent = `· next: ${ASSETS[nx].name} in ${Math.floor(left / 60e3)}:${String(Math.floor(left / 1e3) % 60).padStart(2, '0')}`;
     if (!left) { at = Date.now() + per; selectCoin(nx); }
   }, 1000);
 }

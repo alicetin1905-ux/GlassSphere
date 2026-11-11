@@ -145,10 +145,10 @@ body.stream #snd,body.stream #help,body.stream .intro{display:none}
 body.stream .live-badge{display:flex;position:absolute;left:max(12px,env(safe-area-inset-left,0px));top:10px;align-items:center;gap:10px;pointer-events:none;
   font-family:var(--mono);font-size:13px;color:var(--txt);background:#0d1311e6;border:1px solid var(--line);border-radius:999px;padding:6px 14px}
 body.stream .live-badge b{color:#ff4d6a;font-family:var(--pix);font-size:11px;animation:blink 1.4s steps(2) infinite}
-body.stream .sig{width:min(640px,36vw);font-size:13px} body.stream .sig .h b{font-size:17px} body.stream .sig .h em{font-size:17px} body.stream .sig .lv i{font-size:13px}
+body.stream .sig{width:min(640px,36vw);font-size:13px;padding:6px 10px} body.stream .sig .lv{margin-top:2px} body.stream .sig .bar{margin:4px 0 0} body.stream .sig .h b{font-size:17px} body.stream .sig .h em{font-size:17px} body.stream .sig .lv i{font-size:13px}
 body.stream .next,body.stream .note{display:none}
 .ticker{display:none}
-body.stream .ticker{display:block;position:absolute;left:0;right:0;bottom:0;height:46px;overflow:hidden;pointer-events:none;
+body.stream .ticker{display:block;flex:none;height:46px;overflow:hidden;pointer-events:none;
   background:linear-gradient(180deg,#0b0914ee,#06040bf5);border-top:1px solid var(--line)}
 .ticker .tr{display:flex;width:max-content;height:100%;align-items:center;animation:tick 30s linear infinite}
 .ticker .it{display:flex;align-items:baseline;gap:12px;padding:0 44px;font-family:var(--mono);font-size:22px;color:var(--txt);white-space:nowrap}
@@ -159,6 +159,24 @@ body.stream .ticker{display:block;position:absolute;left:0;right:0;bottom:0;heig
 @keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 @media (prefers-reduced-motion:reduce){.ticker .tr{animation-duration:90s}}
 .ticker .nfa{font-family:var(--mono);font-size:15px;color:var(--dim);padding:0 44px;white-space:nowrap}
+/* a phone watching the stream: the badge on one line, the signal under it, a smaller ticker with the feed above it */
+@media (max-width:520px){
+  body.stream .live-badge{top:6px;right:max(12px,env(safe-area-inset-right,0px));font-size:10.5px;padding:4px 10px;gap:6px;white-space:nowrap;overflow:hidden}
+  body.stream .live-badge span:first-of-type{display:none}
+  body.stream .live-badge b{font-size:8px}
+  body.stream .sig{width:auto;font-size:10px} body.stream .sig .h b{font-size:10px} body.stream .sig .h em{font-size:13px}
+}
+/* a low screen (a phone on its side): a small signal box without the details, small badge and ticker */
+@media (max-height:520px) and (min-width:521px){
+  .sig,body.stream .sig{width:min(280px,34vw);padding:5px 9px;font-size:10px} .sig .lv,.sig .ft{display:none} .sig .bar{margin:4px 0 0}
+  .sig .h b,body.stream .sig .h b{font-size:11px} .sig .h em,body.stream .sig .h em{font-size:12px}
+  body.stream .live-badge{font-size:10.5px;padding:4px 10px;gap:6px;white-space:nowrap} body.stream .live-badge span:first-of-type{display:none} body.stream .live-badge b{font-size:8px}
+  .feed li:nth-child(n+2){display:none}
+}
+@media (max-width:520px),(max-height:520px){
+  body.stream .ticker{height:30px} body.stream .ticker .it{font-size:14px;padding:0 20px;gap:8px} body.stream .ticker .it img{width:15px;height:15px}
+  body.stream .ticker .nfa{font-size:11px;padding:0 20px} body.stream .ticker .sep{font-size:12px}
+}
 .intro{position:absolute;inset:0;z-index:6;display:grid;place-items:center;background:rgba(3,2,8,.74);padding:16px}
 .intro[hidden]{display:none}
 .intro .card{width:min(460px,100%);max-height:100%;overflow:auto;background:#0d1311f7;border:1px solid var(--line);border-radius:14px;padding:18px 20px;font-family:var(--sans);color:var(--txt);font-size:14px;line-height:1.45}
@@ -189,7 +207,6 @@ body.stream .ticker{display:block;position:absolute;left:0;right:0;bottom:0;heig
     <div class="banner" id="banner" aria-hidden="true"></div>
     <div class="sig" id="sig" hidden></div>
     <div class="live-badge" id="live-badge"><b>● LIVE</b><span>GlassSphere · orderboek-radar</span><span id="nextcoin"></span></div>
-    <div class="ticker" aria-hidden="true"><div class="tr" id="ticker"></div></div>
     <div class="tip" id="tip" hidden></div>
     <p class="note" id="note">laden…</p>
     <div class="intro" id="intro" hidden><div class="card" role="dialog" aria-labelledby="intro-h">
@@ -207,6 +224,7 @@ body.stream .ticker{display:block;position:absolute;left:0;right:0;bottom:0;heig
     <div class="log" id="log" hidden><div class="lh"><b>Logboek</b><span>nieuwste boven</span><button id="log-x" type="button" aria-label="Logboek sluiten">×</button></div><ol id="log-l"></ol></div>
   </main>
   </div>
+  <div class="ticker" aria-hidden="true"><div class="tr" id="ticker"></div></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>

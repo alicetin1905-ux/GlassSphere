@@ -171,6 +171,7 @@ body.stream .ticker{display:block;flex:none;height:46px;overflow:hidden;pointer-
   .sig,body.stream .sig{width:min(280px,34vw);padding:5px 9px;font-size:10px} .sig .lv,.sig .ft{display:none} .sig .bar{margin:4px 0 0}
   .sig .h b,body.stream .sig .h b{font-size:11px} .sig .h em,body.stream .sig .h em{font-size:12px}
   body.stream .live-badge{font-size:10.5px;padding:4px 10px;gap:6px;white-space:nowrap} body.stream .live-badge span:first-of-type{display:none} body.stream .live-badge b{font-size:8px}
+  .sig .h span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
   .feed li:nth-child(n+2){display:none}
 }
 @media (max-width:520px),(max-height:520px){
@@ -754,9 +755,11 @@ const baseOf = (type, rel) => TY[type].u === 'pct' ? 0 : Math.max(1, Math.min(MA
 // tiles, so the pulses on the wires stay in view
 const LAY = (() => {
   const w = stage.clientWidth || 400, h = stage.clientHeight || 700, asp = w / h, wide = asp > 1.15 && w >= 700;
-  const TC = 2, TSC = wide ? 1.6 : 1.15, LW = 3.3 * TSC + 0.4, LL = wide ? 8 : 4, RR = LL, side = LW + LL + RR + 3.3 * TSC + 0.8;
-  const BW = wide ? Math.max(14, Math.min(32, (27 + 2.4) * asp / 1.03 * 0.95 - side)) : 12;
-  return { BW, TC, TSC, LW, LL, RR, W: side + BW };
+  // a wide screen: two columns of tiles on each side (half as many under each other, so each one bigger); the tubes
+  // are shorter for it. A phone: one column on each side
+  const TC = 2, COLS = wide ? 2 : 1, TSC = wide ? 1.9 : 1.15, LW = COLS * 3.3 * TSC + 0.4, LL = 4, RR = LL, side = LW + LL + RR + COLS * 3.3 * TSC + 0.8;
+  const BW = wide ? Math.max(12, Math.min(32, (27 + 2.4) * asp / 1.03 * 0.95 - side)) : 12;
+  return { BW, TC, COLS, TSC, LW, LL, RR, W: side + BW };
 })();
 const LL = LAY.LL, RR = LAY.RR;
 const BW = LAY.BW, TL = BW + RR - 0.05, WFIT = LAY.W;   // bar length, left edge of the tiles, width in view
@@ -1086,7 +1089,7 @@ const EXC = { binance: '#f3ba2f', okx: '#eef2f5', bybit: '#ff7a1a', bitget: '#00
   lighter: '#d9d9ff', backpack: '#ff6f61', paradex: '#e0a3ff', blofin: '#c08a5a', toobit: '#5ec8ff', bitunix: '#ffe066', xt: '#9ad0c2' };
 // the exchanges that count on the coin page (the ones switched off there are left out), then the estimate
 const EXN = Object.fromEntries([...Object.keys(EXCH).filter(k => !OFF.has(k)).map(k => [k, [EXCH[k].name, EXC[k] || '#cccccc']]), ['model', [say('Schatting', 'Estimate'), '#ffc857']]]);
-let TROWS = Math.ceil(Object.keys(EXN).length / 2), tilesKey = null;   // tiles per column
+let TROWS = Math.ceil(Object.keys(EXN).length / 2 / LAY.COLS) + (LAY.COLS > 1 ? 0.5 : 0), tilesKey = null;   // tile rows on a side (the outer column sits half a row lower)
 const EXKEY = { OKX: 'okx', Binance: 'binance', Bybit: 'bybit' };
 const SHORT = { hyperliquid: 'Hyper', cryptocom: 'Crypto', bitfinex: 'Bitfin.', backpack: 'Backp.', paradex: 'Parad.', model: say('Schat.', 'Estim.') };
 const REGS = {};
@@ -1094,7 +1097,8 @@ let selRow = null;   // the tube tapped for its details
 // a column of tiles on each side of the bars, top to bottom along the well; the drawer opens towards the bars
 const regBodyGeo = new THREE.BoxGeometry(3, 1.7, 0.6), regDrawGeo = new THREE.BoxGeometry(0.28, 1.2, 0.45), regEdgeGeo = new THREE.EdgesGeometry(regBodyGeo);
 let tileTop = 13.5 * RS - 0.9, tileStep = 27 * RS / (TROWS - 1), tileSc = 1;
-const tileX = col => col ? TL + 1.5 * tileSc : -LL - 0.3 - 1.5 * tileSc;   // column 0 left of the prices, 1 right of the amounts
+// side 0 left of the prices, 1 right of the amounts; sub 0 the column next to the tubes, 1 the outer one
+const tileX = (col, sub = 0) => col ? TL + (1.5 + 3.3 * sub) * tileSc : -LL - 0.3 - (1.5 + 3.3 * sub) * tileSc;
 function drawReg(R) {
   // with a tube tapped, each tile shows its share of that tube
   const sr = selRow && !selRow.gone ? selRow : null;
@@ -1126,7 +1130,7 @@ function drawReg(R) {
 }
 Object.keys(EXN).forEach((k, i) => {
   const [name, css] = EXN[k], col = new THREE.Color(css);
-  const tc = i % LAY.TC, row = Math.floor(i / LAY.TC), g = new THREE.Group(); g.position.set(tileX(tc), tileTop - row * tileStep, 0.3); g.userData = { i, col: tc, row }; scene.add(g);
+  const tc = i % LAY.TC, row = Math.floor(i / LAY.TC), g = new THREE.Group(); g.position.set(tileX(tc), tileTop - row * tileStep, 0.3); g.userData = { i, col: tc, sub: 0, row }; scene.add(g);
   g.add(new THREE.Mesh(regBodyGeo, new THREE.MeshBasicMaterial({ color: 0x0a0812 })));
   const edge = new THREE.LineSegments(regEdgeGeo, new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.4, blending: ADD })); g.add(edge);
   const scr = textPlane(512, 274, 2.8, 1.5); scr.m.material.opacity = 1; scr.m.position.set(0.08, 0, 0.31); g.add(scr.m);
@@ -1141,8 +1145,11 @@ function relayoutTiles() {
   const ks = Object.keys(REGS), on = ks.filter(k => k === 'model' || (REGS[k].seen ||= REGS[k].on)), show = on.length > 1 ? on : ks, key = show.join(',');
   if (key === tilesKey) return; tilesKey = key;
   for (const k of ks) REGS[k].g.visible = show.includes(k);
-  show.forEach((k, i) => { const R = REGS[k], tc = i % 2; R.g.userData.col = tc; R.g.userData.row = Math.floor(i / 2); R.side = tc ? 1 : -1; R.glow.position.x = tc ? -1.7 : 1.7; });
-  TROWS = Math.max(2, Math.ceil(show.length / 2)); fit();
+  // half left, half right; with two columns the outer one sits half a row lower, so its wires run between the inner tiles
+  const C = LAY.COLS, nS = Math.ceil(show.length / 2);
+  show.forEach((k, i) => { const R = REGS[k], tc = i % 2, j = Math.floor(i / 2), sub = j % C;
+    R.g.userData.col = tc; R.g.userData.sub = sub; R.g.userData.row = Math.floor(j / C) + (sub ? 0.5 : 0); R.side = tc ? 1 : -1; R.glow.position.x = tc ? -1.7 : 1.7; });
+  TROWS = Math.max(2, Math.ceil(nS / C) + (C > 1 && nS > 1 ? 0.5 : 0)); fit();
 }
 const regPos = k => { const R = REGS[k] || REGS.model, sc = R.g.scale.x; return new THREE.Vector3(R.g.position.x - R.side * (1.45 + R.open * 0.55) * sc, R.g.position.y, R.g.position.z + 0.2); };
 function regSend(k, txt, css) { const R = REGS[k]; if (!R) return; R.open = 1; R.flash = 1.3; R.fTxt = txt; R.fCss = css; const q = regPos(k); emit(q.x, q.y, q.z + 0.4, R.col, 6, 2.5, { vy: 1.5, life: 0.6, sx: 1.2 }); }
@@ -1226,7 +1233,7 @@ const magOf = r => r.t.u === 'usd' ? magUsd(r.val / Math.max(1, r.base)) : 0.45;
 // the wire from a tube's cap on the tile's side (s = 0) to an exchange tile (s = 1)
 // bundled: every wire of a tile runs in one trunk straight out of the tile and fans out to its tube near the tubes
 function wirePt(r, k, s, out) {
-  const sd = (REGS[k] || REGS.model).side, W0 = regPos(k), y = r.yd ?? r.y, a0 = sd > 0 ? BW + 0.2 : -0.2, xT = a0 + (W0.x - a0) * 0.5, z = -0.25 + s * (W0.z + 0.25);
+  const sd = (REGS[k] || REGS.model).side, W0 = regPos(k), y = r.yd ?? r.y, a0 = sd > 0 ? BW + 0.2 : -0.2, xT = a0 + sd * Math.min(Math.abs(W0.x - a0), LL - 1) * 0.5, z = -0.25 + s * (W0.z + 0.25);
   if (s >= 0.55) { const u = (s - 0.55) / 0.45; return out.set(xT + (W0.x - xT) * u, W0.y, z); }   // the trunk
   const u = s / 0.55, iu = 1 - u, c1 = a0 + (xT - a0) * 0.45, c2 = xT - (xT - a0) * 0.45;   // the fan
   return out.set(iu ** 3 * a0 + 3 * iu * iu * u * c1 + 3 * iu * u * u * c2 + u ** 3 * xT, iu ** 3 * y + 3 * iu * iu * u * y + 3 * iu * u * u * W0.y + u ** 3 * W0.y, z);
@@ -2213,7 +2220,7 @@ function render(rdt) {
   for (const k in REGS) { const R = REGS[k];
     R.open = Math.max(0, R.open - rdt * 1.4); R.flash = Math.max(0, R.flash - rdt);
     R.drawer.position.x = -R.side * (1.38 + R.open * 0.55); R.glow.material.opacity = R.open * 0.9;
-    const ky = Math.min(1, rdt * 4); R.g.position.y += (tileTop - R.g.userData.row * tileStep - R.g.position.y) * ky; R.g.position.x += (tileX(R.g.userData.col) - R.g.position.x) * ky;
+    const ky = Math.min(1, rdt * 4); R.g.position.y += (tileTop - R.g.userData.row * tileStep - R.g.position.y) * ky; R.g.position.x += (tileX(R.g.userData.col, R.g.userData.sub) - R.g.position.x) * ky;
     R.g.scale.setScalar(R.g.scale.x + (tileSc - R.g.scale.x) * ky);
     R.edge.material.opacity = selEx === k ? 0.8 + 0.2 * Math.sin(t * 6) : (R.on ? 0.3 : 0.12) + 0.6 * R.open + 0.06 * Math.sin(t * 2 + R.seed);
     if (selEx === k) R.glow.material.opacity = Math.max(R.glow.material.opacity, 0.5);

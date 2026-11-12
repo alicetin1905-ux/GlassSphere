@@ -757,18 +757,19 @@ const LAY = (() => {
   const w = stage.clientWidth || 400, h = stage.clientHeight || 700, asp = w / h, wide = asp > 1.15 && w >= 700;
   // a wide screen: two columns of tiles on each side (half as many under each other, so each one bigger); the tubes
   // are shorter for it. A phone: one column on each side
-  const TC = 2, COLS = wide ? 2 : 1, TSC = wide ? 1.9 : 1.15, LW = COLS * 3.3 * TSC + 0.4, LL = 4, RR = LL, side = LW + LL + RR + COLS * 3.3 * TSC + 0.8;
+  const TC = 2, COLS = wide ? 2 : 1, TSC = wide ? 1.7 : 1.15, LW = COLS * 3.3 * TSC + 0.4, LL = 4, RR = LL, side = LW + LL + RR + COLS * 3.3 * TSC + 0.8;
   const BW = wide ? Math.max(12, Math.min(32, (27 + 2.4) * asp / 1.03 * 0.95 - side)) : 12;
-  return { BW, TC, COLS, TSC, LW, LL, RR, W: side + BW };
+  return { BW, TC, COLS, TSC, LW, LL, RR, wide, W: side + BW };
 })();
 const LL = LAY.LL, RR = LAY.RR;
 const BW = LAY.BW, TL = BW + RR - 0.05, WFIT = LAY.W;   // bar length, left edge of the tiles, width in view
 const CX = -LL - LAY.LW + WFIT / 2, RW = BW + 1.4, RX = BW / 2;   // view centre, row width and its centre
+const TOPPAD = LAY.wide ? 2.6 : 0;   // room over the tubes for the signal box, on a wide screen
 const COMPACT = (stage.clientWidth || 400) < 560;   // phone: bigger labels without the distance column
 LOWP = COMPACT;
 if (navigator.getBattery) navigator.getBattery().then(b => { const u = () => { LOWP = COMPACT || !b.charging; }; u(); b.addEventListener('chargingchange', u); }).catch(() => {});
 const RS = (() => { const w = stage.clientWidth || 400, h = stage.clientHeight || 700, tanH = Math.tan(17.5 * Math.PI / 180);
-  const visH = WFIT / (w / h) * 1.03 + 2.4 * tanH; return Math.max(1, Math.min(1.85, (visH * 0.94 - 2.4) / 27)); })();
+  const visH = WFIT / (w / h) * 1.03 + 2.4 * tanH; return Math.max(1, Math.min(1.85, (visH * 0.94 - 2.4 - (LAY.wide ? 2.6 : 0)) / (LAY.wide ? 20 : 27))); })();   // a wide screen counts on some 20 rows (levels on one price share a row), a phone on 27
 
 /* ---------- three.js scene ---------- */
 const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
@@ -942,10 +943,10 @@ function drawLabel(r) {
   if (key === r.lblStr) return; r.lblStr = key;
   const { g, c, t } = r.lbl; g.clearRect(0, 0, c.width, c.height);
   g.textBaseline = 'middle'; const my = c.height / 2;
-  const ps = fmtP(r.price), pf = Math.min(COMPACT ? 76 : 60, c.height * 0.8, (COMPACT ? 330 : 290) / (ps.length * 0.6));
-  const fP = `800 ${pf}px "JetBrains Mono", monospace`, fT = `700 ${COMPACT ? 42 : 32}px Inter, system-ui, sans-serif`;
+  const ps = fmtP(r.price), K = COMPACT ? 1 : c.height / 80, pf = Math.min(COMPACT ? 76 : 60 * K, c.height * 0.8, (COMPACT ? 330 : 290 * K) / (ps.length * 0.6));   // K: the text grows with the label's height
+  const fP = `800 ${pf}px "JetBrains Mono", monospace`, fT = `700 ${COMPACT ? 42 : Math.round(32 * K)}px Inter, system-ui, sans-serif`;
   const wOf = (f, txt) => { g.font = f; return g.measureText(txt).width; };
-  const IS = Math.min(c.height * 0.5, COMPACT ? 40 : 34), IW = KIND[r.type] ? IS + 12 : 0, x2 = 18 + IW + wOf(fP, ps) + 22, tw = wOf(fT, names), fit = Math.min(1, (c.width - 20 - x2) / tw), end = Math.min(c.width - 2, x2 + tw * fit + 16);
+  const IS = Math.min(c.height * 0.5, COMPACT ? 40 : 34 * K), IW = KIND[r.type] ? IS + 12 : 0, x2 = 18 + IW + wOf(fP, ps) + 22, tw = wOf(fT, names), fit = Math.min(1, (c.width - 20 - x2) / tw), end = Math.min(c.width - 2, x2 + tw * fit + 16);
   const tg = KIND[r.type] === 'target';   // a target: a solid plate in its colour with dark letters, so it jumps out
   roundRect(g, 2, 3, end - 2, c.height - 6, Math.min(16, c.height / 3)); g.fillStyle = tg ? r.t.c : 'rgba(5,4,12,.82)'; g.fill();
   g.lineWidth = tg ? 4 : 3; g.strokeStyle = tg ? '#ffffff' : r.t.c + (KIND[r.type] === 'push' ? 'dd' : '99'); g.setLineDash(KIND[r.type] === 'push' ? [12, 8] : []); g.stroke(); g.setLineDash([]);
@@ -962,7 +963,7 @@ function drawSize(r) {
   const room = Math.round(Math.min(640, (r.endX - 1.2 - (r.lblW || 4)) * 100));   // what the label leaves free on the tube
   if (s + room === r.sizeStr) return; r.sizeStr = s + room;
   const { g, c, t } = r.sz; g.clearRect(0, 0, c.width, c.height);
-  g.textBaseline = 'middle'; g.textAlign = 'right'; const f0 = COMPACT ? 52 : 40; g.font = `800 ${f0}px "JetBrains Mono", monospace`;
+  g.textBaseline = 'middle'; g.textAlign = 'right'; const f0 = COMPACT ? 52 : Math.round(40 * c.height / 80); g.font = `800 ${f0}px "JetBrains Mono", monospace`;
   const k = Math.min(1, (Math.max(120, room) - 40) / g.measureText(s).width); if (k < 1) g.font = `800 ${Math.floor(f0 * k)}px "JetBrains Mono", monospace`;
   const w = g.measureText(s).width + 34;
   const tg = r.t.u === 'pct';
@@ -1104,7 +1105,8 @@ function drawReg(R) {
   const sr = selRow && !selRow.gone ? selRow : null;
   let share = null;
   if (sr) { if (sr.per) { const tot = Object.values(sr.per).reduce((a, b) => a + b, 0) || 1; share = (sr.per[R.k] || 0) / tot; } else share = R.k === 'model' ? 1 : 0; }
-  const fl = R.flash > 0 ? R.fTxt : '', st = R.on + '|' + R.tot + '|' + fl + '|' + (R.hist ? R.hist.length : 0) + '|' + (share == null ? '' : share.toFixed(3) + sr.key);
+  const allTot = LAY.wide && R.k !== 'model' && R.on ? Object.values(REGS).reduce((a, x) => a + (x.k === 'model' ? 0 : x.tot || 0), 0) : 0, mine = allTot ? Math.round(R.tot / allTot * 100) : null;
+  const fl = R.flash > 0 ? R.fTxt : '', st = R.on + '|' + R.tot + '|' + mine + '|' + fl + '|' + (R.hist ? R.hist.length : 0) + '|' + (share == null ? '' : share.toFixed(3) + sr.key);
   if (st === R.str) return; R.str = st;
   const { g, c, t } = R.scr; g.clearRect(0, 0, c.width, c.height);
   roundRect(g, 4, 4, 504, 266, 22); g.fillStyle = 'rgba(8,6,16,.94)'; g.fill(); g.lineWidth = 4; g.strokeStyle = R.css + (R.on ? 'cc' : '40'); g.stroke();
@@ -1113,7 +1115,7 @@ function drawReg(R) {
   g.font = `800 ${fit(nm, COMPACT ? 86 : 62)}px "JetBrains Mono", monospace`; g.fillStyle = R.on ? R.css : '#4a5852'; g.shadowColor = R.css; g.shadowBlur = R.on ? 14 : 0;
   g.fillText(nm, 24, 80); g.shadowBlur = 0;
   const shTxt = share == null ? '' : share > 0.005 ? Math.round(share * 100) + '%' + (!COMPACT && sr.t.u === 'usd' ? ' · ' + fmtUsd(sr.val * share) : '') : '—';
-  const line = fl || shTxt || (R.k === 'model' ? (R.on ? (COMPACT ? 'stops/liq' : 'stops · liq.') : '—') : R.on ? fmtUsd(R.tot) : say('geen data', 'no data'));
+  const line = fl || shTxt || (R.k === 'model' ? (R.on ? (COMPACT ? 'stops/liq' : 'stops · liq.') : '—') : R.on ? fmtUsd(R.tot) + (mine != null ? ` · ${mine < 1 ? '<1' : mine}%` : '') : say('geen data', 'no data'));   // on a wide screen with its share of all books in view
   g.font = `700 ${fit(line, COMPACT ? 72 : 56)}px "JetBrains Mono", monospace`;
   if (fl) { g.fillStyle = R.fCss; g.shadowColor = R.fCss; g.shadowBlur = 12; g.fillText(line, 24, 192); g.shadowBlur = 0; }
   else if (shTxt) { g.fillStyle = share > 0.005 ? '#ffffff' : '#4a5852'; g.fillText(line, 24, 192); }
@@ -1358,7 +1360,7 @@ function makeRow(lv) {
   const t = TY[lv.type];
   const r = { key: keyOf(lv), type: lv.type, t, price: lv.price, val: lv.val, rel: lv.rel, first: !!lv.first, base: baseOf(lv.type, lv.rel), ps: lv.ps || null, glass: !!(lv.ps && lv.ps[0] <= 1), per: lv.per || null, srcW: lv.per || null, dstW: null,
     y: 0, yd: null, units: 0, inbound: 0, thS: 0, pulse: 0, cleared: false, clearedAt: -9, gone: false, goneT: 0, born: T, flare: 0, decayT: 0, hl: 0, endX: BW, lblStr: '', sizeStr: '' };
-  const lh = COMPACT ? Math.min(1.05, 0.86 * RS) : 0.8;   // label height: as tall as the row allows on a phone
+  const lh = COMPACT ? Math.min(1.05, 0.86 * RS) : Math.min(1.05, 0.8 * RS);   // label height: as tall as the row allows
   r.lbl = textPlane(640, Math.round(lh * 100), 6.4, lh); scene.add(r.lbl.m);
   r.sz = textPlane(640, Math.round(lh * 100), 6.4, lh); scene.add(r.sz.m);
   r.lbl.m.renderOrder = r.sz.m.renderOrder = 3;   // over the glass
@@ -1994,7 +1996,7 @@ function fit() {
   renderer.setSize(w, h, false); cam.aspect = w / h;
   const tanH = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
   const lv = liveRows(), slots = up => new Set(lv.filter(r => r.t.up === up).map(r => r.price)).size, nU = slots(true) || 13, nD = slots(false) || 13;
-  dist = Math.max(((nU + nD + 1) * RS + 2.4) / 2 / tanH, WFIT / 2 / (tanH * cam.aspect)) * 1.03 + 1.2;
+  dist = Math.max(((nU + nD + 1) * RS + 2.4 + TOPPAD) / 2 / tanH, WFIT / 2 / (tanH * cam.aspect)) * 1.03 + 1.2;
   ctrY = -(nD + 0.5) * RS - 1.1;
   sideTop = (nU + 0.5) * RS; sideBot = -(nD + 0.5) * RS;
   midY = ((nU - nD) * RS) / 2;
@@ -2383,7 +2385,7 @@ function render(rdt) {
   const zm = zoom > 1.05;
   panX = Math.max(-WFIT / 2, Math.min(WFIT / 2, panX)); panY = Math.max(-14 * RS, Math.min(14 * RS, panY));
   camT.x += ((zm ? CX + panX : CX) - camT.x) * Math.min(1, rdt * (zm ? 10 : 3));
-  camT.y += ((zm ? panY : 0.7 + midY + Math.max(-3, Math.min(3, (sy - midY) * 0.25))) - camT.y) * Math.min(1, rdt * (zm ? 10 : 3));
+  camT.y += ((zm ? panY : 0.7 + Math.max(0, TOPPAD / 2 - 0.5) + midY + Math.max(-3, Math.min(3, (sy - midY) * 0.25))) - camT.y) * Math.min(1, rdt * (zm ? 10 : 3));
   shake *= Math.exp(-rdt * 6);
   const sh = RM ? 0 : shake;
   const dz = dist / zoom;
